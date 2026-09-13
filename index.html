@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<script>
+/* Runs before any stylesheet is parsed, so the first paint is already the
+   right theme. The <html> tag used to hard-code data-theme="dark", which
+   meant a light-theme user got a dark flash on every single load while
+   app.js downloaded, parsed and finally corrected it.
+   Device preferences live in their own key, deliberately outside the synced
+   state blob, see loadDevicePrefs() in app.js for why. */
+(function(){
+  var t = "dark";
+  try {
+    var raw = localStorage.getItem("paisafolio_device_prefs");
+    if (raw) { t = (JSON.parse(raw) || {}).theme || "dark"; }
+    else {
+      /* Existing installs have no prefs key yet; fall back to whichever
+         state blob this device last wrote so they see no change. */
+      var keys = ["paisafolio_local"], i;
+      for (i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf("paisafolio_cloud_") === 0) keys.unshift(k);
+      }
+      for (i = 0; i < keys.length; i++) {
+        var s = localStorage.getItem(keys[i]);
+        if (!s) continue;
+        var st = JSON.parse(s);
+        if (st && st.settings && st.settings.theme) { t = st.settings.theme; break; }
+      }
+    }
+  } catch (e) {}
+  if (t === "auto") {
+    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+  }
+  document.documentElement.dataset.theme = (t === "light") ? "light" : "dark";
+})();
+</script>
+<!-- interactive-widget=resizes-content makes the on-screen keyboard shrink the
+     LAYOUT viewport, not just the visual one. A position:fixed sheet then sits
+     on top of the keyboard by itself, with no JavaScript measuring anything.
+     Two hand-rolled attempts at that arithmetic both got it wrong; this is what
+     the platform provides for exactly this problem. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
+<meta name="theme-color" content="#0e0e0e" id="metaTheme"/>
+<meta name="color-scheme" content="dark light"/>
+<meta name="description" content="Paisafolio: track investments, debts and goals across crypto, stocks, gold, savings and property. Works offline. Optional cloud sync. No tracking."/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Paisafolio"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="icon" href="icon.svg" type="image/svg+xml"/>
+<link rel="apple-touch-icon" href="icon.svg"/>
+<title>Paisafolio - Net Worth & Portfolio Tracker</title>
+<link rel="preload" href="app.js" as="script"/>
+<!-- Poppins is self-hosted (fonts/*.woff2). It used to come from the Google Fonts
+     CDN, which meant the app silently fell back to the system sans whenever that
+     CDN was slow, blocked, or simply unreachable, including every offline PWA
+     launch, since the stylesheet was never part of the precached shell.
+     Self-hosting makes the typeface a first-party asset that ships with the app. -->
+<link rel="preload" href="fonts/poppins-400-latin.woff2" as="font" type="font/woff2" crossorigin/>
+<link rel="preload" href="fonts/poppins-700-latin.woff2" as="font" type="font/woff2" crossorigin/>
+<link rel="preload" href="fonts/poppins-800-latin.woff2" as="font" type="font/woff2" crossorigin/>
+<!-- ₹ (U+20B9) lives in the latin-ext subset, so it is critical for a rupee-first app. -->
+<link rel="preload" href="fonts/poppins-700-latin-ext.woff2" as="font" type="font/woff2" crossorigin/>
+<!-- Chart.js and supabase-js are vendored into vendor/ rather than pulled from
+     cdn.jsdelivr.net. The CDN is blocked on some networks and hosts, and when
+     it was, charts silently vanished and sign-in failed outright with
+     "Couldn’t load the sign-in library". Same reasoning as the fonts: a
+     dependency the app cannot start without should ship with the app. -->
+<script defer src="vendor/chart.umd.js" onerror="console.warn('chart.umd.js failed to load, charts will be unavailable')"></script>
+<script src="sb-config.js"></script>
+<script src="vendor/supabase-js.umd.js" onerror="console.warn('supabase-js.umd.js failed to load, cloud sync will be unavailable')"></script>
+<script src="supabase.js" onerror="console.warn('supabase.js failed to load, running fully offline/local-only')"></script>
+<script>
+// Fallback shim: if supabase.js didn't load (e.g. file missing, blocked CDN,
+// or you're just previewing index.html standalone without that file present),
+// these no-op stand-ins keep the app fully functional in local-only mode
+// instead of throwing "X is not defined" errors.
+// IMPORTANT: everything here is assigned via window.xxx (never `var`/`const`)
+// so this block can NEVER throw "already been declared", even if a stale
+// cached copy of this file or of supabase.js ends up loaded alongside a
+// newer one (e.g. a service worker serving an old supabase.js while a fresh
+// index.html loads, or vice versa).
+// These are declared with `var` (not `let`/`const`) specifically because
+// `var` is safely re-declarable across sibling <script> tags sharing the
+// same top-level scope, unlike `let`/`const` (which would throw
+// "already been declared" if supabase.js declares them again). This
+// guarantees the bare identifiers below always exist, so if supabase.js
+// fails to load/execute for any reason (missing file, blocked by host,
+// wrong MIME type, an HTML error page served instead of the real file -
+// all seen on some free hosts), index.html's own references to `sbClient`
+// etc. resolve to a safe default instead of throwing ReferenceError.
+var sbClient = null;
+if (typeof window.STORE_KEY === 'undefined') window.STORE_KEY = 'paisafolio_local';
+if (typeof window.cloudKey === 'undefined') window.cloudKey = function (uid) { return 'paisafolio_cloud_' + uid; };
+if (typeof window.supabaseUser === 'undefined') window.supabaseUser = null;
+if (typeof window.syncStatus === 'undefined') window.syncStatus = 'offline';
+if (typeof window.lastSyncTime === 'undefined') window.lastSyncTime = null;
+if (typeof window.initSupabase !== 'function') {
+  window.initSupabase = function () { console.warn('[offline mode] initSupabase: supabase.js not loaded'); };
+}
+if (typeof window.schedulePush !== 'function') {
+  window.schedulePush = function () {};
+}
+if (typeof window.manualSync !== 'function') {
+  window.manualSync = function () { if (typeof toast === 'function') toast('Cloud sync unavailable in this preview', 'error'); };
+}
+if (typeof window.signInWithGoogle !== 'function') {
+  window.signInWithGoogle = function () { if (typeof toast === 'function') toast('Cloud sign-in unavailable in this preview', 'error'); };
+}
+if (typeof window.pullFromCloud !== 'function') {
+  window.pullFromCloud = async function () {};
+}
+if (typeof window.pushToCloud !== 'function') {
+  window.pushToCloud = async function () {};
+}
+if (typeof window.loadCloudCache !== 'function') {
+  window.loadCloudCache = function () {};
+}
+if (typeof window.updateSyncDot !== 'function') {
+  window.updateSyncDot = function () {
+    var dot = document.getElementById('syncDot');
+    if (dot) dot.style.display = 'none';
+  };
+}
+if (typeof window.updateSyncLabels !== 'function') {
+  window.updateSyncLabels = function () {};
+}
+if (typeof window.importLocalToCloud !== 'function') {
+  window.importLocalToCloud = function () {};
+}
+if (typeof window.discardLocalStartFresh !== 'function') {
+  window.discardLocalStartFresh = function () {};
+}
+if (typeof window.showImportLocalPrompt !== 'function') {
+  window.showImportLocalPrompt = function () {};
+}
+if (typeof window.openSyncConfirm !== 'function') {
+  window.openSyncConfirm = function (kind, resolve) { if (resolve) resolve('cancel'); };
+}
+if (typeof window.renderSyncCenter !== 'function') {
+  window.renderSyncCenter = function () {};
+}
+if (typeof window.pendingSyncCount !== 'function') {
+  window.pendingSyncCount = function () { return 0; };
+}
+if (typeof window.isPendingSync !== 'function') {
+  window.isPendingSync = function () { return false; };
+}
+</script>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<div class="aura" aria-hidden="true"><b></b><b></b><b></b></div>
+
+<div class="splash" id="splash" aria-hidden="true">
+  <div class="slogo"><img src="icon.svg" width="86" height="86" style="border-radius:24px;display:block" alt="Paisafolio"/></div>
+  <div class="sname">Paisafolio</div>
+  <div class="sbar"><i></i></div>
+</div>
+
+<div class="lock-screen" id="lockScreen" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Enter PIN">
+  <div class="lock-aura" aria-hidden="true"><b></b><b></b><b></b></div>
+  <button class="lock-close-btn" id="lockCloseBtn" onclick="dismissLockScreen()" aria-label="Close" style="display:none">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+  <div class="lock-card">
+    <div id="lockPinView">
+      <div class="lock-logo"><img src="icon.svg" width="58" height="58" style="border-radius:16px;display:block" alt="Paisafolio"/></div>
+      <div class="lock-title" id="lockTitle">Enter PIN</div>
+      <div class="lock-dots" id="lockDots"><span></span><span></span><span></span><span></span></div>
+      <div class="lock-error" id="lockError">&nbsp;</div>
+      <div class="lock-keypad" id="lockKeypad">
+        <button onclick="lockKeyPress('1')"><span>1</span></button><button onclick="lockKeyPress('2')"><span>2</span></button><button onclick="lockKeyPress('3')"><span>3</span></button>
+        <button onclick="lockKeyPress('4')"><span>4</span></button><button onclick="lockKeyPress('5')"><span>5</span></button><button onclick="lockKeyPress('6')"><span>6</span></button>
+        <button onclick="lockKeyPress('7')"><span>7</span></button><button onclick="lockKeyPress('8')"><span>8</span></button><button onclick="lockKeyPress('9')"><span>9</span></button>
+        <button class="lock-key-blank" tabindex="-1" aria-hidden="true"></button><button onclick="lockKeyPress('0')"><span>0</span></button>
+        <button class="lock-key-back" onclick="lockKeyBackspace()" aria-label="Backspace"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>
+      </div>
+      <button class="lock-forgot-btn" id="lockForgotBtn" onclick="showLockRecovery()" style="display:none">Forgot PIN?</button>
+    </div>
+    <div id="lockRecoveryView" style="display:none">
+      <div class="lock-logo"><img src="icon.svg" width="58" height="58" style="border-radius:16px;display:block" alt="Paisafolio"/></div>
+      <div class="lock-title">Confirm your password</div>
+      <div class="lock-sub">Re-enter your account password to remove the PIN on this device.</div>
+      <input class="form-input" id="lockRecoveryPass" type="password" placeholder="Account password" autocomplete="current-password" style="max-width:280px;margin:14px 0 8px;text-align:center"/>
+      <div class="lock-error" id="lockRecoveryError">&nbsp;</div>
+      <button class="submit-btn" id="lockRecoveryBtn" onclick="confirmLockRecovery()" style="max-width:280px">Remove PIN</button>
+      <button class="lock-forgot-btn" onclick="cancelLockRecovery()">Back to PIN</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- HEADER -->
+  <header class="hdr">
+    <button class="hdr-brand" onclick="goHome()" aria-label="Go to dashboard" title="Dashboard">
+      <div class="logo" aria-hidden="true">
+        <img src="icon.svg" width="40" height="40" style="border-radius:10px;display:block" alt="Paisafolio"/>
+      </div>
+      <div class="brand-wrap"><div class="sub">Portfolio</div><div class="name">Paisafolio</div></div>
+    </button>
+    <div class="hdr-right">
+      <span class="live-dot" title="Live prices" aria-hidden="true"></span>
+      <button class="hdr-btn icon-only ai-hdr-btn" id="aiHdrBtn" onclick="openAI()" aria-label="Ask the assistant" data-testid="ai-btn"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 16l.7 1.8L21.5 18.5l-1.8.7L19 21l-.7-1.8L16.5 18.5l1.8-.7L19 16z"/></svg></button>
+      <button class="hdr-btn icon-only" onclick="openGlobalSearch()" aria-label="Search everything" data-testid="global-search-btn"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+      <button class="hdr-btn icon-only" onclick="quickToggleBalance()" aria-label="Toggle privacy / hide balances" data-testid="privacy-toggle" id="privacyBtn"><svg id="privacyIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button class="hdr-btn icon-only" id="themeToggle" onclick="toggleTheme()" aria-label="Switch theme" title="Switch theme" data-testid="theme-toggle"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
+      <button class="acct-btn" id="acctBtn" onclick="openAuthOrAccount()" aria-label="Account" data-testid="acct-btn"><div id="acctBtnInner"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></button>
+    </div>
+  </header>
+
+  <!-- TICKER -->
+
+  <!-- PAGES -->
+  <main class="pages" id="main" tabindex="-1">
+
+    <!-- DASHBOARD -->
+    <section class="page active" id="page-dash" role="tabpanel" aria-label="Dashboard">
+      <div class="verify-banner" id="verifyBanner" role="status" style="display:none">
+        <div class="vb-ico"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+        <div class="vb-text"><b>Your email is not verified</b><span id="verifyBannerMsg">Verify it so you can get back into this account if you lose this device.</span></div>
+        <button class="vb-act" id="verifyBannerBtn" onclick="event.stopPropagation();resendVerifyEmail(this)">Send link</button>
+        <button class="vb-x" onclick="event.stopPropagation();dismissVerifyBanner()" aria-label="Hide until next time"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="conn-banner" id="connBanner" role="status" style="display:none">
+        <div class="conn-banner-ico"></div>
+        <div class="conn-banner-text"><span id="connBannerMsg"></span></div>
+        <button class="conn-banner-retry" id="connBannerRetry" onclick="refreshAll()">Retry</button>
+      </div>
+      <div class="nw-card enter" data-arrive>
+        <div class="nw-lbl">NET WORTH <span class="sec-title" id="nwTrendNote" style="letter-spacing:.5px;text-transform:none;font-weight:600"></span></div>
+        <div class="nw-top">
+          <div class="nw-amount" id="nwAmount" onclick="quickToggleBalance()" role="button" tabindex="0" aria-label="Net worth, tap to toggle privacy">-</div>
+          <div class="nw-change-wrap">
+            <div class="nw-badge pos" id="nwBadge">+0.00%</div>
+            <div class="nw-change pos" id="nwChange">+0.00</div>
+          </div>
+        </div>
+        <div class="nw-since" id="nwSince"></div>
+        <div class="nw-meta">
+          <div class="nw-sub">
+            <span>Assets <b id="nwAssets">-</b></span>
+            <span class="dot"></span>
+            <span>Liab <b id="nwLiab">-</b></span>
+            <span class="dot" id="nwPnlDot"></span>
+            <span id="nwPnlWrap">P&amp;L <b id="nwPnl">-</b></span>
+          </div>
+        </div>
+        <div class="mini-chart" id="miniChartWrap">
+          <div class="chart-vline" id="chartVLine"></div>
+          <canvas id="miniChart" role="img" aria-label="Net worth trend chart"></canvas>
+          <div class="chart-tooltip" id="chartTooltip"></div>
+        </div>
+      </div>
+
+      <div class="needs" id="needsCard" style="display:none" aria-label="Needs attention">
+        <div class="needs-hdr"><span class="needs-dot"></span><span id="needsTitle">Needs you</span></div>
+        <div id="needsList"></div>
+      </div>
+
+      <div class="insights" id="insights" aria-label="Insights"></div>
+
+      <div class="pnl-filter-row" id="pnlFilterRow" role="group" aria-label="Net worth time range">
+        <button class="pnl-pill" data-range="1d">1D</button>
+        <button class="pnl-pill" data-range="7d">1W</button>
+        <button class="pnl-pill active" data-range="30d">1M</button>
+        <button class="pnl-pill" data-range="3m">3M</button>
+        <button class="pnl-pill" data-range="6m">6M</button>
+        <button class="pnl-pill" data-range="1y">1Y</button>
+        <button class="pnl-pill" data-range="5y">5Y</button>
+        <button class="pnl-pill" data-range="all">All</button>
+        <button class="pnl-pill" data-range="custom">Custom</button>
+      </div>
+      <div id="customRangeRow" style="display:none;padding:8px 12px 0">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" type="date" id="customFrom" aria-label="From date" style="flex:1"/>
+          <span style="color:var(--text3);font-size:12px">to</span>
+          <input class="form-input" type="date" id="customTo" aria-label="To date" style="flex:1"/>
+          <button class="add-btn" style="padding:8px 11px;font-size:11px" onclick="applyCustomRange()">Go</button>
+        </div>
+      </div>
+
+      <div class="dash-2col">
+        <div class="dash-left">
+          <div class="movers-card" data-arrive id="moversCard" style="display:none">
+            <div class="sec-title" style="margin-bottom:7px">TOP MOVERS · 24H</div>
+            <div class="movers-scroll" id="moversScroll"></div>
+          </div>
+
+          <div class="stat-grid">
+            <button class="stat-card" onclick="goPage('assets')"><div class="stat-lbl">TOTAL ASSETS</div><div class="stat-val green" id="statAssets">-</div><div class="stat-sub" id="statAssetsCount">0 assets</div></button>
+            <button class="stat-card" onclick="goPage('plan')"><div class="stat-lbl">GOALS</div><div class="stat-val blue" id="statGoals">0 / 0</div><div class="stat-sub">active goals</div></button>
+            <button class="stat-card" onclick="goPage('debts')"><div class="stat-lbl">OWED TO ME</div><div class="stat-val accent" id="statOwed">-</div><div class="stat-sub" id="statOwedCount">0 people</div></button>
+            <button class="stat-card" onclick="goPage('debts')"><div class="stat-lbl">I OWE</div><div class="stat-val red" id="statIOwe">-</div><div class="stat-sub" id="statIOweCount">0 people</div></button>
+          </div>
+
+          <div style="margin:10px 12px 0">
+            <div class="sec-title" style="margin-bottom:7px">PORTFOLIO BREAKDOWN</div>
+            <div id="breakdownList"></div>
+          </div>
+        </div>
+
+        <div class="alloc-card" data-arrive>
+          <div class="alloc-hdr">
+            <div class="sec-title">ALLOCATION</div>
+            <div class="seg" role="group" aria-label="Allocation grouping">
+              <button id="allocSegCat" class="on" onclick="setAllocMode('cat')">Category</button>
+              <button id="allocSegAsset" onclick="setAllocMode('asset')">Assets</button>
+            </div>
+          </div>
+          <div id="allocBody"><div class="empty-state" style="padding:18px 0"><p style="font-size:11px">Add assets to see allocation</p></div></div>
+        </div>
+      </div>
+
+      <div class="recent-card" data-arrive>
+        <div class="recent-hdr"><div class="sec-title">RECENT TRANSACTIONS</div><button class="see-all" onclick="openLedger()">See all</button></div>
+        <div id="recentTx"><div class="empty-state" style="padding:20px"><p>No transactions yet</p></div></div>
+      </div>
+      <div style="height:6px"></div>
+    </section>
+
+    <!-- ASSETS -->
+    <section class="page" id="page-assets" role="tabpanel" aria-label="Assets">
+      <div class="page-hdr">
+        <h1 class="page-ttl">Assets</h1>
+        <button class="add-btn" onclick="openAddAsset()" data-testid="add-asset-btn"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Asset</button>
+      </div>
+      <div class="search-row">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="assetSearch" type="search" placeholder="Search assets…" oninput="onAssetSearch()" aria-label="Search assets" data-testid="asset-search"/>
+        </div>
+        <button class="sort-btn" id="assetSortBtn" onclick="cycleAssetSort()" data-testid="asset-sort" aria-label="Change sort order">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+          <span id="assetSortLbl">Value</span>
+        </button>
+        <div class="view-seg" role="group" aria-label="View mode">
+          <button id="viewCardsBtn" class="on" onclick="setAssetView('cards')" aria-label="Card view"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+          <button id="viewTableBtn" onclick="setAssetView('table')" aria-label="Table view"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+        </div>
+      </div>
+      <div class="cat-bar" id="catBar" role="group" aria-label="Filter by category">
+        <button class="cat-pill active" data-cat="all">All</button>
+        <button class="cat-pill" data-cat="crypto">Crypto</button>
+        <button class="cat-pill" data-cat="stock">Stocks</button>
+        <button class="cat-pill" data-cat="commodity">Commodity</button>
+        <button class="cat-pill" data-cat="liquidity">Liquidity</button>
+        <button class="cat-pill" data-cat="property">Property</button>
+        <button class="cat-pill" data-cat="other">Other</button>
+      </div>
+      <div class="assets-list" id="assetsList"></div>
+      <div id="assetsSummaryBar"></div>
+      <div style="position:relative"><div class="assets-table-wrap" id="assetsTableWrap" style="display:none"></div><div class="table-scroll-fade" id="assetsTableFade"></div></div>
+      <div style="height:8px"></div>
+    </section>
+
+    <!-- SPENDING -->
+    <section class="page" id="page-spend" role="tabpanel" aria-label="Spendings">
+      <div class="page-hdr">
+        <h1 class="page-ttl">Spendings</h1>
+        <button class="add-btn" onclick="openAddSpend('expense')" data-testid="add-spend-btn"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Expense</button>
+      </div>
+      <div class="month-bar">
+        <button class="month-nav" onclick="goSpendMonth(-1)" aria-label="Previous month"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <span class="month-lbl" id="spendMonthLbl">This month</span>
+        <button class="month-nav" id="spendMonthNext" onclick="goSpendMonth(1)" aria-label="Next month"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+      </div>
+
+      <div class="card spend-hero">
+        <div class="nw-lbl">SPENT THIS MONTH</div>
+        <div class="spend-total" id="spendTotal">-</div>
+        <div class="spend-compare" id="spendCompare"></div>
+        <div class="spend-day-chart" id="spendDayChartWrap"><canvas id="spendDayChart" role="img" aria-label="Spending by day"></canvas></div>
+        <div class="chart-empty" id="spendDayEmpty" style="display:none">Add an expense and the daily shape of your month shows up here.</div>
+      </div>
+
+      <div class="spend-stats">
+        <div class="spend-stat"><div class="spend-stat-l">IN</div><div class="spend-stat-v" id="spendStatIn" style="color:var(--green)">-</div></div>
+        <div class="spend-stat"><div class="spend-stat-l">OUT</div><div class="spend-stat-v" id="spendStatOut">-</div></div>
+        <div class="spend-stat"><div class="spend-stat-l">KEPT</div><div class="spend-stat-v" id="spendStatSaved">-</div><div class="spend-stat-s" id="spendSaveRate"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="sec-head"><div class="sec-title">WHERE IT WENT</div></div>
+        <div class="where-bar" id="whereBar"></div>
+        <div class="where-list" id="whereList"></div>
+      </div>
+
+      <div class="card" id="recurBillCard" style="display:none">
+        <div class="sec-head"><div class="sec-title">RECURRING BILLS</div><button class="link-btn" onclick="openAddRecur('bill')">Add bill</button></div>
+        <div id="recurBillList"></div>
+      </div>
+
+      <div class="card" id="budgetCard">
+        <div class="sec-head"><div class="sec-title">MONTHLY BUDGET</div><button class="link-btn" onclick="openBudgetModal()">Manage</button></div>
+        <div class="budget-row1">
+          <span class="budget-status on" id="budgetStatusDot"></span>
+          <span class="budget-status-lbl" id="budgetStatusLbl">On track</span>
+          <span class="budget-day" id="budgetDayLbl"></span>
+        </div>
+        <div class="budget-left-row"><span class="budget-left" id="budgetLeft">-</span><span class="budget-left-lbl" id="budgetLeftLbl">left</span></div>
+        <div class="budget-of" id="budgetOf"></div>
+        <div class="budget-pace"><canvas id="budgetPaceChart" role="img" aria-label="Spending pace against budget"></canvas></div>
+        <div class="budget-foot">
+          <div><div class="budget-foot-l">SPENT SO FAR</div><div class="budget-foot-v" id="budgetSpent">-</div></div>
+          <div style="text-align:right"><div class="budget-foot-l">FORECAST</div><div class="budget-foot-v" id="budgetForecast">-</div><div class="budget-foot-s" id="budgetForecastNote"></div></div>
+        </div>
+        <div class="budget-groups" id="budgetGroups"></div>
+      </div>
+      <div class="card budget-empty" id="budgetEmpty" style="display:none">
+        <div class="sec-title">MONTHLY BUDGET</div>
+        <p>Set what you plan to spend and this card tells you whether you are on pace, every day of the month.</p>
+        <button class="empty-cta" onclick="openBudgetModal()">Set a budget</button>
+      </div>
+
+      <div class="card" id="spendListCard">
+        <div class="sec-head"><div class="sec-title">ACTIVITY</div>
+          <button class="filter-chip" id="spendFilterChip" style="display:none" onclick="filterSpendCat(spendFilter)"><span id="spendFilterName"></span><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="spend-list" id="spendList"></div>
+      </div>
+
+      <div class="spend-actions">
+        <button class="spend-add out" onclick="openAddSpend('expense')"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Expense</button>
+        <button class="spend-add in" onclick="openAddSpend('income')"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Income</button>
+      </div>
+    </section>
+    <section class="page" id="page-debts" role="tabpanel" aria-label="Debts">
+      <div class="page-hdr">
+        <h1 class="page-ttl">Debts</h1>
+        <div style="display:flex;gap:6px"><button class="sort-btn" onclick="openAllDebtsExport()" aria-label="Share a summary of all debts"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg><span>Share</span></button>
+        <button class="sort-btn" id="debtSortBtn" onclick="cycleDebtSort()" aria-label="Sort debts"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg><span id="debtSortLbl">Amount</span></button>
+        <button class="add-btn" onclick="openAddDebt()" data-testid="add-debt-btn"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Debt</button></div>
+      </div>
+      <div class="debt-summary">
+        <div class="debt-sum-card"><div class="debt-sum-lbl">Owed to Me</div><div class="debt-sum-val green" id="debtOwedTotal">-</div><div class="debt-sum-sub" id="debtOwedInterest"></div></div>
+        <div class="debt-sum-card"><div class="debt-sum-lbl">I Owe</div><div class="debt-sum-val red" id="debtIOweTotal">-</div><div class="debt-sum-sub" id="debtIOweInterest"></div></div>
+        <div class="debt-sum-card"><div class="debt-sum-lbl">Net Position</div><div class="debt-sum-val accent" id="debtNet">-</div><div class="debt-sum-sub" id="debtNetSub"></div></div>
+      </div>
+      <div id="debtInsightsStrip" style="display:none;padding:0 12px 8px"><div class="insights" id="debtInsights" style="padding:0"></div></div>
+      <div id="debtOverdueBanner" style="display:none;margin:0 12px 8px;background:var(--red-bg);border:1px solid rgba(255,77,106,.25);border-radius:11px;padding:10px 13px;align-items:center;gap:8px">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.25"/><line x1="12" y1="7.25" x2="12" y2="13"/><circle cx="12" cy="16.9" r="1.15" fill="var(--red)" stroke="none"/></svg>
+        <span id="debtOverdueTxt" style="font-size:11px;font-weight:700;color:var(--red)"></span>
+      </div>
+      <div class="search-row">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="debtSearch" type="search" placeholder="Search people / notes…" oninput="onDebtSearch()" aria-label="Search debts" data-testid="debt-search"/>
+        </div>
+      </div>
+      <div class="debt-tabs">
+        <button class="d-tab active grn" id="dTabOwed" onclick="setDebtTab('owed')">Owed to Me</button>
+        <button class="d-tab" id="dTabIOwe" onclick="setDebtTab('iowe')">I Owe</button>
+      </div>
+      <div class="debt-list" id="debtList"></div>
+      <div style="height:8px"></div>
+    </section>
+
+    <!-- PLAN -->
+    <section class="page" id="page-plan" role="tabpanel" aria-label="Plan">
+      <div class="page-hdr">
+        <h1 class="page-ttl">Plan</h1>
+        <button class="add-btn" onclick="openAddGoal()" data-testid="add-goal-btn"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Goal</button>
+      </div>
+      <div class="plan-top-stats">
+        <div class="plan-stat"><div class="plan-stat-lbl">Total Target</div><div class="plan-stat-val accent" id="planTarget">-</div></div>
+        <div class="plan-stat"><div class="plan-stat-lbl">Saved</div><div class="plan-stat-val green" id="planSaved">-</div></div>
+        <div class="plan-stat"><div class="plan-stat-lbl">Remaining</div><div class="plan-stat-val text2" id="planRemain">-</div></div>
+      </div>
+      <div class="chart-card">
+        <div class="sec-title" style="margin-bottom:8px">NET WORTH TREND</div>
+        <div class="mini-chart" id="pnlChartWrap" style="height:110px;margin:0">
+          <div class="chart-vline" id="pnlChartVLine"></div>
+          <canvas id="pnlChart" height="110" role="img" aria-label="Net worth trend over time"></canvas>
+          <div class="chart-tooltip" id="pnlChartTooltip"></div>
+        </div>
+      </div>
+      <div class="search-row">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="goalSearch" type="search" placeholder="Search goals…" oninput="onGoalSearch()" aria-label="Search goals"/>
+        </div>
+        <button class="sort-btn" id="goalSortBtn" onclick="cycleGoalSort()" aria-label="Change sort order">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+          <span id="goalSortLbl">Progress</span>
+        </button>
+      </div>
+      <div class="goals-list" id="goalsList"></div>
+      <!-- ── HABIT TRACKER ── -->
+      <div class="habit-card">
+        <div class="habit-hdr">
+          <div class="sec-title">HABIT TRACKER</div>
+          <div class="habit-nav">
+            <button class="habit-navbtn" onclick="habitMonthStep(-1)" aria-label="Previous month"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+            <span class="habit-month" id="habitMonthLbl">-</span>
+            <button class="habit-navbtn" id="habitNextBtn" onclick="habitMonthStep(1)" aria-label="Next month"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+            <button class="habit-navbtn" onclick="openHabitCalendar()" aria-label="Calendar view" title="Calendar view"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></button><button class="add-btn habit-add" style="font-size:11px;padding:6px 11px" onclick="openAddHabit()" data-testid="add-habit-btn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
+          </div>
+        </div>
+        <div id="habitHeadStats"></div>
+        <div id="habitChart" class="habit-chart"></div>
+        <div class="habit-scroll"><div class="habit-grid" id="habitBody"></div></div>
+        <div class="hb-hint" id="habitHint" hidden>Hold a habit name to drag it into a new order</div>
+        <div class="habit-summary" id="habitSummary"></div>
+      </div>
+      <div class="recur-card" style="margin-top:8px">
+        <div class="recur-hdr">
+          <div class="sec-title">RECURRING</div>
+          <button class="add-btn" style="font-size:11px;padding:6px 11px" onclick="openAddRecur()" data-testid="add-recur-btn"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
+        </div>
+        <div id="recurList"><div class="empty-state" style="padding:16px"><p>Nothing repeating yet</p></div></div>
+      </div>
+      <div style="height:8px"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings" role="tabpanel" aria-label="Settings">
+      <div class="page-hdr"><h1 class="page-ttl">Settings</h1></div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <div class="settings-sec-lbl">APPEARANCE</div>
+          <div class="theme-seg" role="group" aria-label="Theme">
+            <button class="theme-opt" id="themeOptAuto" onclick="setTheme('auto')"><span class="tsw" style="background:linear-gradient(135deg,#fff 50%,#1a1a1a 50%);display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20z" fill="#f5a623" stroke="none"/></svg></span><span class="tlabel">Auto</span></button>
+            <button class="theme-opt" id="themeOptDark" onclick="setTheme('dark')"><span class="tsw" style="background:#1a1a1a;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span><span class="tlabel">Dark</span></button>
+            <button class="theme-opt" id="themeOptLight" onclick="setTheme('light')"><span class="tsw" style="background:#fff;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span><span class="tlabel">Light</span></button>
+          </div>
+          <button class="s-item" onclick="toggleSetting('reduceMotion')" style="margin-top:8px">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Reduce Motion</span><span class="s-item-sub">Minimise animations</span></span>
+            <span class="toggle" id="tog-reduceMotion" role="switch" aria-checked="false"></span>
+          </button>
+          <button class="s-item" onclick="toggleSetting('haptics')">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Haptic Feedback</span><span class="s-item-sub">Vibration on actions</span></span>
+            <span class="toggle" id="tog-haptics" role="switch" aria-checked="true"></span>
+          </button>
+          <div class="s-item s-item-static" id="hapticStrengthRow">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h3l2-6 4 12 3-9 2 5h6"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Vibration Strength</span><span class="s-item-sub">Phones differ, pick one and feel it</span>
+              <span class="seg-3" id="hapticSeg" role="group" aria-label="Vibration strength"></span></span>
+          </div>
+          <button class="s-item" onclick="openFontSettings()">
+            <span class="s-item-ico" style="color:var(--accent)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </span>
+            <span class="s-item-info"><span class="s-item-name">Fonts</span>
+              <span class="s-item-sub" id="fontSettingsSub">Poppins</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="openCurrencyPicker()">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 2.5-5 2-5 5h5"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Currency</span><span class="s-item-sub" id="currencySub">NPR</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-sec-lbl">DISPLAY</div>
+          <button class="s-item" onclick="toggleSetting('hideBalance')">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Hide Balance</span><span class="s-item-sub">Blur amounts for privacy</span></span>
+            <span class="toggle" id="tog-hideBalance" role="switch" aria-checked="false"></span>
+          </button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-sec-lbl">FOLIO</div>
+          <button class="s-item" onclick="openAI()">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Folio</span><span class="s-item-sub" id="aiStatusSub">Ask about your money</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="toggleAiPref('bubble')">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v.01M11 12h1v4h1"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Floating Bubble</span><span class="s-item-sub">Drag it anywhere, it sticks to the nearest edge</span></span>
+            <span class="s-item-right"><span class="toggle" id="tog-aiBubble" role="switch" aria-checked="true"><span class="toggle-knob"></span></span></span>
+          </button>
+          <button class="s-item" onclick="toggleAiPref('header')">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Header Button</span><span class="s-item-sub">The sparkle beside search</span></span>
+            <span class="s-item-right"><span class="toggle" id="tog-aiHeader" role="switch" aria-checked="true"><span class="toggle-knob"></span></span></span>
+          </button>
+          <div class="s-item s-item-static">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Answer Speed</span><span class="s-item-sub">How fast replies unroll on screen</span>
+              <span class="seg-3" id="aiSpeedSeg" role="group" aria-label="Answer speed"></span></span>
+          </div>
+          <div class="settings-sec-lbl">SECURITY</div>
+          <button class="s-item" onclick="onAppLockToggleClick()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">App Lock (PIN)</span><span class="s-item-sub" id="appLockSub">Off. Anyone can open the app</span></span>
+            <span class="toggle" id="tog-appLock" role="switch" aria-checked="false"></span>
+          </button>
+          <button class="s-item" id="changePinRow" onclick="startPinSetup(true)" style="display:none">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Change PIN</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <div id="autoLockRow" style="display:none;margin-top:6px">
+            <label class="form-lbl" style="margin:6px 2px 6px">LOCK AFTER LEAVING THE APP</label>
+            <div class="custom-select-wrap" id="autoLockWrap"></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-sec-lbl">APP</div>
+          <button class="s-item" id="installItem" onclick="installApp()" style="display:none">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Install App</span><span class="s-item-sub">Add Paisafolio to your home screen</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="rerunTour()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.25"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.25.85c0 1.8-2.65 2.6-2.65 2.6v1"/><circle cx="12" cy="17.1" r="1.15" fill="currentColor" stroke="none"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Replay Welcome Tour</span><span class="s-item-sub">See the quick intro again</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="toggleShortcutsHelp()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Keyboard Shortcuts</span><span class="s-item-sub">View shortcuts for faster navigation</span></span>
+            <span class="s-item-right"><span class="s-badge">?</span></span>
+          </button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-sec-lbl">DATA</div>
+          <button class="s-item" id="adminSettingsRow" style="display:none" onclick="openAdminPage()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Admin</span><span class="s-item-sub">Providers, people and data, on its own page</span></span>
+          </button>
+          <button class="s-item" onclick="openBackups()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Backups</span><span class="s-item-sub" id="backupsSub">Automatic copies you can restore</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="exportData()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Export Data</span><span class="s-item-sub">Download as JSON backup</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="importData()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Import Data</span><span class="s-item-sub">Restore from JSON backup</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="copyBuildInfo()">
+            <span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.25"/><line x1="12" y1="11.2" x2="12" y2="16.75"/><circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">App Version</span><span class="s-item-sub" id="buildStamp">-</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+          </button>
+          <button class="s-item" onclick="clearAllData()">
+            <span class="s-item-ico" style="color:var(--red)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name" style="color:var(--red)">Clear All Data</span><span class="s-item-sub">Reset everything (irreversible)</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+        </div>
+
+
+        <div class="settings-section" id="settingsAccountSection" style="display:none">
+          <div class="settings-sec-lbl">ACCOUNT &amp; SYNC</div>
+          <div class="acct-info-card" id="settingsAcctCard" onclick="openAuthOrAccount()" style="cursor:pointer">
+            <div class="acct-avatar-lg" id="settingsAcctAvatar">?</div>
+            <div style="flex:1;min-width:0">
+              <div class="acct-email" id="settingsAcctEmail">-</div>
+              <div class="acct-plan" id="settingsSyncSub">Synced, <span id="syncCenterTime">never</span></div>
+            </div>
+            <button onclick="event.stopPropagation();manualSync()" class="acct-sync-btn" id="settingsSyncBtn" aria-label="Sync now">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+          </div>
+          <button class="s-item" id="verifySettingsRow" style="display:none" onclick="resendVerifyEmail(this)">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Verify your email</span><span class="s-item-sub" id="verifySettingsSub">Not verified yet. Tap to send the link again.</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="signOut()">
+            <span class="s-item-ico" style="color:var(--red)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name" style="color:var(--red)">Sign Out</span><span class="s-item-sub">Your local data stays safe on this device</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+        </div>
+        <div class="settings-section" id="settingsSignInSection">
+          <div class="settings-sec-lbl">ACCOUNT</div>
+          <button class="s-item" onclick="openAuthModal()">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Sign In / Create Account</span><span class="s-item-sub">Sync your data across devices</span></span>
+            <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+        </div>
+        <div class="settings-section">
+          <div class="settings-sec-lbl">PRICE SOURCES</div>
+          <div class="s-item" style="cursor:default"><span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="s-item-info"><span class="s-item-name">Crypto · CoinGecko API</span><span class="s-item-sub">Live crypto prices &amp; logos</span></span><span class="s-item-right"><span class="s-badge">Free</span></span></div>
+          <div class="s-item" style="cursor:default"><span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><span class="s-item-info"><span class="s-item-name">FX · open.er-api.com</span><span class="s-item-sub">Live exchange rates</span></span><span class="s-item-right"><span class="s-badge">Free</span></span></div>
+          <div class="s-item" style="cursor:default"><span class="s-item-ico"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span><span class="s-item-info"><span class="s-item-name">Metals · CoinGecko (XAU/XAG)</span><span class="s-item-sub">Gold &amp; silver live prices</span></span><span class="s-item-right"><span class="s-badge">Free</span></span></div>
+          <button class="s-item" onclick="refreshAll()" data-testid="refresh-btn"><span class="s-item-ico" style="color:var(--accent)"><svg id="refreshIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span><span class="s-item-info"><span class="s-item-name">Refresh Prices Now</span><span class="s-item-sub" id="lastUpdated">Never</span></span></button>
+        </div>
+
+        <div class="about-card">
+          <div class="about-logo"><img src="icon.svg" width="68" height="68" style="border-radius:18px;display:block" alt="Paisafolio"/></div>
+          <div class="about-name">Paisafolio</div>
+          <div class="about-ver">v4.0</div>
+          <div class="about-tag">Your private net-worth tracker for crypto, stocks, gold, liquidity &amp; property, works offline, syncs when you're ready.</div>
+        </div>
+        <div style="height:6px"></div>
+      </div>
+    </section>
+    <!-- ANALYTICS -->
+    <section class="page" id="page-analytics" role="tabpanel" aria-label="Reports">
+      <div class="page-hdr">
+        <h1 class="page-ttl">Reports</h1>
+        <div style="display:flex;gap:6px">
+          <button class="sort-btn" onclick="exportTransactionsCSV()" aria-label="Export transactions CSV"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Txns</span></button>
+          <button class="add-btn" onclick="exportHoldingsCSV()" data-testid="export-csv"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+        </div>
+      </div>
+      <div class="an-stats" id="anStats"></div>
+      <div class="chart-card"><div class="sec-title" style="margin-bottom:10px">INVESTED vs CURRENT BY CATEGORY</div><div style="height:170px"><canvas id="catBarChart" role="img" aria-label="Invested vs current value by category"></canvas></div></div>
+      <div class="an-row-2"><div class="sec-title" style="margin-bottom:7px">CATEGORY BREAKDOWN</div><div style="position:relative"><div class="assets-table-wrap" id="catTableWrap" style="margin:0"></div><div class="table-scroll-fade" id="catTableFade"></div></div></div>
+      <div class="chart-card" id="pnlSplitCard">
+        <div class="sec-title" style="margin-bottom:10px">REALISED vs UNREALISED</div>
+        <div id="pnlSplitBody"></div>
+      </div>
+      <div class="chart-card" id="ageingCard">
+        <div class="alloc-hdr" style="margin-bottom:10px">
+          <div class="sec-title">RECEIVABLES AGEING</div>
+          <div class="seg" id="ageingSeg">
+            <button class="on" id="ageSegOwed" onclick="setAgeingType('owed')">Owed to me</button>
+            <button id="ageSegIOwe" onclick="setAgeingType('iowe')">I owe</button>
+          </div>
+        </div>
+        <div id="ageingBody"></div>
+      </div>
+      <div class="chart-card" id="rebalanceCard">
+        <div class="alloc-hdr" style="margin-bottom:10px">
+          <div class="sec-title">ALLOCATION vs TARGET</div>
+          <button class="seg-edit-btn" id="allocEditBtn" onclick="openAllocTargets()">Set targets</button>
+        </div>
+        <div id="rebalanceBody"></div>
+      </div>
+      <div class="chart-card"><div class="sec-title" style="margin-bottom:10px">PORTFOLIO MIX OVER TIME</div><div style="height:190px"><canvas id="compositionChart" role="img" aria-label="Portfolio composition by category over time"></canvas></div><div class="chart-note" id="compositionNote">What you put into each category, at cost, over time.</div></div>
+      <div class="chart-card"><div class="sec-title" style="margin-bottom:10px">LENDING OVER TIME</div><div style="height:180px"><canvas id="debtTimeChart" role="img" aria-label="Money owed to you and money you owe, over time"></canvas></div><div class="chart-note" id="debtTimeNote">Principal outstanding, from lend and repayment dates.</div></div>
+      <div class="an-charts-2col">
+        <div class="chart-card" id="assetBarCard"><div class="sec-title" style="margin-bottom:10px">ASSET RETURNS (%)</div><div style="height:180px"><canvas id="assetBarChart" role="img" aria-label="Asset returns percentage"></canvas></div><div class="chart-note" id="assetBarNote" hidden></div></div>
+        <div class="chart-card" id="treemapCard" style="display:none">
+          <div class="sec-title" style="margin-bottom:4px">COMPOSITION</div>
+          <div class="tm-note" id="treemapNote"></div>
+          <div class="treemap" id="treemap"></div>
+          <div class="tm-legend"><span><i class="up"></i>gaining</span><span><i class="dn"></i>losing</span><span><i class="na"></i>no live price</span></div>
+        </div>
+        <div class="chart-card" id="hindsightCard" style="display:none">
+          <div class="sec-head" style="margin-bottom:8px">
+            <div class="sec-title">SELLING, IN HINDSIGHT</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="link-btn" onclick="exportHindsightCSV()">Export</button>
+              <button class="hs-refresh" id="hsRefresh" onclick="refreshHindsight()" aria-label="Refresh prices"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg></button>
+            </div>
+          </div>
+          <div class="hs-hero">
+            <div class="hs-net" id="hsNet">-</div>
+            <div class="hs-net-lbl" id="hsNetLbl"></div>
+            <div class="hs-split">
+              <div><div class="hs-split-l">SAVED BY SELLING</div><div class="hs-split-v" id="hsSaved" style="color:var(--green)">-</div></div>
+              <div><div class="hs-split-l">PROFIT MISSED</div><div class="hs-split-v" id="hsMissed" style="color:var(--red)">-</div></div>
+            </div>
+            <div class="hs-count" id="hsCount"></div>
+            <div class="hs-verdict" id="hsVerdict"></div>
+          </div>
+          <div class="pnl-filter-row" id="hsFilterRow"></div>
+          <div id="hsList"></div>
+          <button class="hs-more" id="hsMore" style="display:none" onclick="toggleHsAll()"></button>
+          <div class="hs-asof" id="hsAsOf"></div>
+          <details class="hs-note">
+            <summary>What this does and does not count</summary>
+            <p>Each row is <b>(what you sold it for &minus; what it is worth now) &times; how many</b>. Green means the price fell after you sold, so selling saved you that much. Red means it rose, and that is profit you would have had by holding.</p>
+            <p>Three things it cannot know, so read it as one input and not a verdict:</p>
+            <p>It does not know what you did with the money. Selling at what looks like a loss here was still the right call if you put the proceeds somewhere that did better.</p>
+            <p>It does not subtract broker commission, DP charges or capital gains tax, so what actually reached your account was less than the sale price.</p>
+            <p>It does not adjust for bonus shares, rights or splits. If a holding went through one after you sold, one unit no longer means what it meant then, and that row is not comparable.</p>
+          </details>
+        </div>
+        <div class="chart-card" id="incomeCard" style="display:none">
+          <div class="sec-title" style="margin-bottom:10px">INVESTMENT INCOME</div>
+          <div class="inc-tiles">
+            <div><div class="inc-l">ALL TIME</div><div class="inc-v" id="incomeTotal">-</div></div>
+            <div><div class="inc-l">MONTHLY AVERAGE</div><div class="inc-v" id="incomeAvg">-</div></div>
+          </div>
+          <div class="inc-since" id="incomeSince"></div>
+          <div style="height:150px;margin:10px 0 12px"><canvas id="incomeChart" role="img" aria-label="Income by month"></canvas></div>
+          <div class="sec-title" style="margin-bottom:8px">TOP SOURCES</div>
+          <div class="inc-sources" id="incomeSources"></div>
+        </div>
+        <div class="chart-card"><div class="sec-title" style="margin-bottom:10px">MONTHLY INVESTED</div><div style="height:180px"><canvas id="monthlyChart" role="img" aria-label="Monthly invested amounts"></canvas></div></div>
+      </div>
+      <div class="chart-card forecast-card">
+        <div class="alloc-hdr" style="margin-bottom:2px">
+          <div class="sec-title">NET WORTH FORECAST</div>
+          <div class="seg" role="group" aria-label="Forecast horizon">
+            <button class="on" data-fc="6" onclick="setForecastRange(6,this)">6M</button>
+            <button data-fc="12" onclick="setForecastRange(12,this)">1Y</button>
+            <button data-fc="36" onclick="setForecastRange(36,this)">3Y</button>
+            <button data-fc="60" onclick="setForecastRange(60,this)">5Y</button>
+          </div>
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);margin-bottom:8px" id="forecastNote">Based on your recent net worth trend.</div>
+        <div style="height:190px"><canvas id="forecastChart" role="img" aria-label="Net worth forecast projection"></canvas></div>
+        <div class="forecast-stats" id="forecastStats"></div>
+      </div>
+      <div id="anEmpty" style="display:none"></div>
+      <div style="height:8px"></div>
+    </section>
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bnav" role="tablist" aria-label="Primary">
+    <span class="nav-ind" id="navInd" aria-hidden="true"></span>
+    <button class="nav-item active" id="nav-dash" onclick="goPage('dash')" role="tab" aria-selected="true" data-testid="nav-dash"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Home</span></button>
+    <button class="nav-item" id="nav-assets" onclick="goPage('assets')" role="tab" aria-selected="false" data-testid="nav-assets"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg><span>Assets</span></button>
+    <button class="nav-item" id="nav-spend" onclick="goPage('spend')" role="tab" aria-selected="false" data-testid="nav-spend"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span>Spendings</span></button>
+    <button class="nav-item" id="nav-debts" onclick="goPage('debts')" role="tab" aria-selected="false" data-testid="nav-debts"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Debts</span></button>
+    <button class="nav-item" id="nav-plan" onclick="goPage('plan')" role="tab" aria-selected="false" data-testid="nav-plan"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg><span>Plan</span></button>
+    <button class="nav-item" id="nav-analytics" onclick="goPage('analytics')" role="tab" aria-selected="false" data-testid="nav-analytics"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Reports</span></button>
+    <button class="nav-item" id="nav-settings" onclick="goPage('settings')" role="tab" aria-selected="false" data-testid="nav-settings"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M21 12h-2M5 12H3M12 3V1M12 23v-2"/></svg><span>Settings</span></button>
+  </nav>
+
+<!-- ADD/EDIT SPEND -->
+<div class="modal-overlay" id="spendModal" role="dialog" aria-modal="true" aria-label="Add spending entry" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('spendModal')">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title" id="spendModalTitle">Add Expense</div><button class="modal-close" onclick="closeModal('spendModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="seg-2" role="group" aria-label="Entry type">
+        <button class="seg-2-btn on" id="spendKindExpense" onclick="setSpendKind('expense')">Expense</button>
+        <button class="seg-2-btn" id="spendKindIncome" onclick="setSpendKind('income')">Income</button>
+      </div>
+      <div class="form-row"><label class="form-lbl" for="spendAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input spend-amt-input" id="spendAmount" type="number" step="any" inputmode="decimal" placeholder="0.00"/><div class="ccy-sel-wrap" id="spendAmountCcyWrap"></div></div></div>
+      <div class="form-row"><label class="form-lbl" id="spendNoteLbl" for="spendNote">WHAT FOR </label><input class="form-input" id="spendNote" placeholder="Khaja at Bhatbhateni, Pathao ride…" oninput="onSpendNoteInput()" autocomplete="off"/></div>
+      <div class="form-row"><label class="form-lbl">CATEGORY <span class="cat-ai-tag" id="spendCatAi" hidden>reading…</span></label><div class="custom-select-wrap" id="spendCatWrap"></div></div>
+      <div class="form-row"><label class="form-lbl" id="spendAccountLbl">PAID FROM</label><div class="custom-select-wrap" id="spendAccountWrap"></div></div>
+      <div class="form-row"><label class="form-lbl" for="spendDate">DATE</label><input class="form-input" id="spendDate" type="date"/></div>
+      <button class="submit-btn" onclick="saveSpend()">Save</button>
+      <button class="danger-btn" id="spendDeleteBtn" style="display:none" onclick="deleteSpend()">Delete entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- BUDGET -->
+<div class="modal-overlay" id="budgetModal" role="dialog" aria-modal="true" aria-label="Monthly budget" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('budgetModal')">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title">Monthly Budget</div><button class="modal-close" onclick="closeModal('budgetModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="seg-2" role="group" aria-label="Budget scope">
+        <button class="seg-2-btn on" id="budgetScopeDefault" onclick="setBudgetScope('default')">Every month</button>
+        <button class="seg-2-btn" id="budgetScopeMonth" onclick="setBudgetScope('month')">This month</button>
+      </div>
+      <div class="budget-scope-hint" id="budgetScopeHint"></div>
+      <div id="budgetFields"></div>
+      <button class="ghost-btn" onclick="seedBudgetFromLastMonth()">Fill from last month</button>
+      <div class="budget-total-row"><span>Total</span><b id="budgetModalTotal">-</b></div>
+      <div class="budget-vs-income" id="budgetVsIncome"></div>
+      <div class="budget-legend" id="budgetLegend"></div>
+      <button class="submit-btn" onclick="saveBudget()">Save budget</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="backupsModal" role="dialog" aria-modal="true" aria-label="Backups" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('backupsModal')">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Backups</div><button class="modal-close" onclick="closeModal('backupsModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="bk-note">Copies of everything except this device’s own settings, kept on this device. Restoring one replaces what is here now, and takes a copy first so it can be undone.</div>
+      <div class="s-item s-item-static">
+        <span class="s-item-info"><span class="s-item-name">Automatic backups</span><span class="s-item-sub" id="bkAutoSub">-</span></span>
+        <span class="toggle" id="bkAutoToggle" role="switch" tabindex="0" aria-checked="true" onclick="toggleAutoBackup()"><span class="toggle-knob"></span></span>
+      </div>
+      <div id="bkFreqRow"><div class="form-lbl" style="margin-top:10px">HOW OFTEN</div>
+        <div class="seg-3" role="group" aria-label="Backup frequency">
+          <button class="seg-3-btn" id="bkFreqDaily" onclick="setBackupFreq('daily')">Daily</button>
+          <button class="seg-3-btn" id="bkFreqWeekly" onclick="setBackupFreq('weekly')">Weekly</button>
+          <button class="seg-3-btn" id="bkFreqMonthly" onclick="setBackupFreq('monthly')">Monthly</button>
+        </div></div>
+      <button class="submit-btn" style="margin-top:12px" onclick="backupNow()">Back up now</button>
+      <div id="bkProgress" hidden></div>
+      <div class="bk-hdr"><span>HISTORY</span><button class="link-btn" id="bkClearAll" onclick="confirmClearBackups()">Delete all</button></div>
+      <div id="bkList"></div>
+    </div>
+  </div>
+</div>
+<!-- AI ASSISTANT -->
+<div class="modal-overlay ai-overlay" id="aiModal" role="dialog" aria-modal="true" aria-label="Assistant" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('aiModal')">
+  <div class="modal-sheet ai-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr">
+      <div class="modal-title">Folio</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="link-btn" id="aiClearBtn" style="display:none" onclick="clearAI()">Clear</button>
+        <button class="modal-close" onclick="closeModal('aiModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div class="ai-thread" id="aiThread" aria-live="polite" onclick="finishAiReveal()"></div>
+    <div class="ai-composer">
+      <textarea id="aiInput" rows="1" placeholder="Ask about your money…" oninput="autoGrowAI()" onkeydown="onAIKey(event)" aria-label="Your question"></textarea>
+      <button class="ai-send" id="aiSendBtn" onclick="sendAI()" aria-label="Send"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+    </div>
+  </div>
+</div>
+<!-- CURRENCY PICKER -->
+<div class="modal-overlay" id="currencyModal" role="dialog" aria-modal="true" aria-label="Currency" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('currencyModal')">
+  <div class="modal-sheet tall-sheet">
+    <div class="modal-hdr"><div class="modal-title">Currency</div><button class="modal-close" onclick="closeModal('currencyModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="seg-2 curr-mode" role="group" aria-label="What this list changes">
+      <button class="seg-2-btn on" id="currModeDisplay" onclick="setCurrMode('display')">Shown in</button>
+      <button class="seg-2-btn" id="currModeBase" onclick="setCurrMode('base')">Stored in</button>
+    </div>
+    <div class="curr-mode-hint" id="currModeHint">What every figure in the app is shown in. Your saved amounts do not change.</div>
+    <div class="curr-search-row">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="currSearch" type="text" placeholder="Search currency" oninput="renderCurrList()" autocomplete="off" aria-label="Search currency"/>
+    </div>
+    <div class="curr-list" id="currList" role="listbox"></div>
+  </div>
+</div>
+
+<!-- CUSTOM RATE -->
+<div class="modal-overlay" id="rateModal" role="dialog" aria-modal="true" aria-label="Exchange rate" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('rateModal')">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title" id="rateTitle">Exchange Rate</div><button class="modal-close" onclick="closeModal('rateModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="rate-live" id="rateLive"></div>
+      <div class="form-row"><label class="form-lbl" id="rateLbl">YOUR RATE</label>
+        <input class="form-input spend-amt-input" id="rateInput" type="number" step="any" inputmode="decimal" placeholder="0.00" oninput="onRateInput()"/>
+        <div class="form-hint" id="rateHint"></div>
+      </div>
+      <button class="submit-btn" onclick="saveCustomRate()">Use this rate</button>
+      <button class="ghost-btn" style="margin-top:10px;margin-bottom:0" onclick="clearCustomRate()">Back to the live rate</button>
+    </div>
+  </div>
+</div>
+<!-- SYNC CENTER -->
+<div class="modal-overlay" id="syncCenterModal" role="dialog" aria-modal="true" aria-label="Sync Center" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('syncCenterModal')">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Sync Center</div><button class="modal-close" onclick="closeModal('syncCenterModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="sheet-section-lbl">SYNC</div>
+      <div class="acct-plan" id="syncCenterStatusLine" style="margin-bottom:10px">Cloud sync enabled</div>
+      <div id="syncCenterBody"></div>
+
+      <button class="s-item" id="syncCenterSyncBtn" onclick="manualSyncFromCenter()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Sync Now</span><span class="s-item-sub" id="acctLastSync">Last synced: never</span></span>
+        <span class="s-item-right" id="syncCenterPendingPillWrap"><span class="s-badge" id="syncCenterPendingPill" style="display:none"></span></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE EMAIL / PASSWORD -->
+<div class="modal-overlay" id="credModal" role="dialog" aria-modal="true" aria-label="Account security" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('credModal')">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title" id="credTitle">Change Email</div><button class="modal-close" onclick="closeModal('credModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="cred-note" id="credNote"></div>
+      <div class="form-row"><label class="form-lbl" id="credNewLbl">NEW EMAIL</label><input class="form-input" id="credNew" type="email" autocomplete="off" placeholder="you@example.com"/></div>
+      <div class="form-row" id="credConfirmRow" style="display:none"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="credConfirm" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
+      <div class="form-row" id="credPassRow"><label class="form-lbl">CURRENT PASSWORD</label><input class="form-input" id="credPass" type="password" autocomplete="current-password" placeholder="To prove it is you"/></div>
+      <div class="form-hint" id="credError" style="color:var(--red);display:none"></div>
+      <button class="submit-btn" id="credSubmit" onclick="submitCredChange()">Save</button>
+    </div>
+  </div>
+</div>
+<!-- HABIT CALENDAR -->
+<div class="modal-overlay" id="habitCalModal" role="dialog" aria-modal="true" aria-label="Habit calendar" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('habitCalModal')">
+  <div class="modal-sheet tall-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr">
+      <div class="modal-title">Calendar</div>
+      <button class="modal-close" onclick="closeModal('habitCalModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="hcal-bar">
+      <button class="habit-navbtn" onclick="hcalSwap(-1)" aria-label="Previous month"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <span class="hcal-month" id="hcalMonthLbl">-</span>
+      <button class="habit-navbtn" id="hcalNextBtn" onclick="hcalSwap(1)" aria-label="Next month"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+    </div>
+    <div class="hcal-filter" id="hcalFilter" role="group" aria-label="Which habit to show"></div>
+    <div class="modal-body">
+      <div id="hcalGrid"></div>
+      <div id="hcalLegend"></div>
+      <div id="hcalDay"></div>
+    </div>
+  </div>
+</div>
+<!-- SET A NEW PASSWORD (arrived via the emailed reset link) -->
+<div class="modal-overlay" id="recoveryModal" role="dialog" aria-modal="true" aria-label="Set a new password" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title">Set a New Password</div></div>
+    <div class="modal-body">
+      <div class="cred-note" id="recoveryNote">You opened a password reset link, so you are signed in for the moment. Choose the password you will use from now on.</div>
+      <div class="form-row"><label class="form-lbl">NEW PASSWORD</label><input class="form-input" id="recoveryNew" type="password" autocomplete="new-password" placeholder="At least 8 characters"/></div>
+      <div class="form-row"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="recoveryConfirm" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
+      <div class="form-hint" id="recoveryError" style="color:var(--red);display:none"></div>
+      <button class="submit-btn" id="recoverySubmit" onclick="submitRecovery()">Set password</button>
+      <button class="link-btn" style="width:100%;margin-top:10px" onclick="skipRecovery()">Skip, keep the old one</button>
+    </div>
+  </div>
+</div>
+<!-- ASSISTANT BUBBLE -->
+<button class="ai-bubble" id="aiBubble" aria-label="Ask Folio" title="Ask Folio">
+  <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 16l.7 1.8L21.5 18.5l-1.8.7L19 21l-.7-1.8L16.5 18.5l1.8-.7L19 16z"/></svg>
+</button>
+<!-- COMMAND PALETTE -->
+<div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Search everything" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closePalette()">
+  <div class="cmdk-box">
+    <div class="cmdk-input-row">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="cmdkInput" type="text" placeholder="Search assets, debts, goals, actions…" oninput="renderPalette()" autocomplete="off"/>
+    </div>
+    <div class="cmdk-results" id="cmdkResults"></div>
+    <div class="cmdk-hint"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+  </div>
+</div>
+
+<!-- KEYBOARD SHORTCUTS HELP -->
+<div class="cmdk shortcuts-help" id="shortcutsHelp" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" aria-hidden="true" onclick="if(event.target===this)toggleShortcutsHelp()">
+  <div class="cmdk-box shortcuts-box">
+    <div class="modal-hdr" style="padding:14px 16px 10px"><div class="modal-title">Keyboard Shortcuts</div><button class="modal-close" onclick="toggleShortcutsHelp()" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="shortcuts-grid">
+      <div class="shortcuts-col">
+        <div class="sc-grp-lbl">Navigate</div>
+        <div class="sc-row"><span>Dashboard</span><kbd>1</kbd></div>
+        <div class="sc-row"><span>Assets</span><kbd>2</kbd></div>
+        <div class="sc-row"><span>Debts</span><kbd>3</kbd></div>
+        <div class="sc-row"><span>Plan</span><kbd>4</kbd></div>
+        <div class="sc-row"><span>Reports</span><kbd>5</kbd></div>
+        <div class="sc-row"><span>Settings</span><kbd>6</kbd></div>
+      </div>
+      <div class="shortcuts-col">
+        <div class="sc-grp-lbl">Actions</div>
+        <div class="sc-row"><span>Command palette</span><kbd>⌘</kbd><kbd>K</kbd></div>
+        <div class="sc-row"><span>Search everything</span><kbd>⌘</kbd><kbd>F</kbd></div>
+        <div class="sc-row"><span>Search this page</span><kbd>/</kbd></div>
+        <div class="sc-row"><span>Add new item</span><kbd>N</kbd></div>
+        <div class="sc-row"><span>Refresh everything</span><kbd>R</kbd></div>
+        <div class="sc-row"><span>Toggle theme</span><kbd>T</kbd></div>
+        <div class="sc-row"><span>Close / back</span><kbd>esc</kbd></div>
+        <div class="sc-row"><span>Show this menu</span><kbd>?</kbd></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="undo-toast-stack" id="undoToastStack" aria-live="polite"></div>
+<div class="sr-only" id="srAnnounce" role="status" aria-live="polite"></div>
+<canvas id="confetti"></canvas>
+
+<!-- ADD ASSET MODAL -->
+<div class="modal-overlay" id="addAssetModal" role="dialog" aria-modal="true" aria-labelledby="addAssetTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="addAssetTitle">Add Asset</div><button class="modal-close" onclick="closeModal('addAssetModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl">ASSET TYPE</label><div class="asset-type-row" id="assetTypeRow"></div></div>
+      <div id="cryptoSearchRow" class="form-row" style="display:none">
+        <label class="form-lbl" for="cryptoSearch">SEARCH COIN</label>
+        <div class="coin-search-wrap"><input class="form-input" id="cryptoSearch" placeholder="Bitcoin, ETH, Solana…" oninput="onCryptoSearch()" autocomplete="off"/><div class="search-spinner" id="cryptoSpinner"></div><div id="cryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="form-hint green" id="cryptoPriceHint" style="display:none"></div>
+      </div>
+
+      <div id="commodityRow" class="form-row" style="display:none">
+        <label class="form-lbl">COMMODITY</label><div id="commoditySelectWrap" class="custom-select-wrap"></div>
+        <div style="margin-top:8px"><label class="form-lbl">UNIT</label><div id="commodityUnitWrap" class="custom-select-wrap"></div></div>
+        <div class="form-hint green" id="commodityPriceHint" style="margin-top:6px;display:none"></div>
+      </div>
+      <div id="stockRow" class="form-row" style="display:none">
+        <label class="form-lbl" for="stockSearch">SEARCH STOCK</label>
+        <div class="coin-search-wrap"><input class="form-input" id="stockSearch" autocomplete="off" placeholder="NABIL, NTC, AAPL…" oninput="onStockSearch()" autocomplete="off"/><div id="stockSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="form-hint green" id="stockHint" style="display:none"></div>
+        <div class="s-item s-item-static" id="nepseRow" style="padding-left:0;padding-right:0;display:none">
+          <span class="s-item-info"><span class="s-item-name">Listed on NEPSE</span><span class="s-item-sub">Takes its price from the exchange instead of one you type</span></span>
+          <span class="toggle" id="nepseToggle" role="switch" tabindex="0" aria-checked="false" onclick="toggleNepse()"><span class="toggle-knob"></span></span>
+        </div>
+      </div>
+      <div id="propertyIconRow" class="form-row" style="display:none"><label class="form-lbl">PROPERTY TYPE</label><div class="asset-type-row" id="propertyTypeRow"></div></div>
+      <div class="form-row" id="assetNameRow" style="display:none"><label class="form-lbl" for="assetName">NAME</label><div class="coin-search-wrap"><input class="form-input" id="assetName" autocomplete="off" placeholder="Asset name…" oninput="onAssetNameInput()"/><div id="assetNameSuggest" class="coin-suggestions" style="display:none"></div></div></div>
+      <div id="liquidityFields" style="display:none">
+        <div class="form-row"><label class="form-lbl" for="liquidityName">ACCOUNT / LABEL</label><div class="coin-search-wrap"><input class="form-input" id="liquidityName" autocomplete="off" placeholder="e.g. NMB Bank Savings, Cash in Hand…" oninput="onLiquidityNameInput()"/><div id="liquidityNameSuggest" class="coin-suggestions" style="display:none"></div></div><div class="form-hint" id="liquidityNameHint" style="display:none"></div></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityValue">VALUE</label><div class="input-ccy-group"><input class="form-input" id="liquidityValue" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="liqValueCcyWrap"></div></div></div>
+        <div class="form-row"><label class="form-lbl">TYPE</label><div id="liquidityTypeWrap" class="custom-select-wrap"></div></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityInterest">INTEREST RATE % (optional)</label><input class="form-input" id="liquidityInterest" type="number" placeholder="e.g. 7.5 for FD" step="0.1" inputmode="decimal"/></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityMaturity">MATURITY DATE <span style="font-size:9px;color:var(--text3);font-weight:500">(optional, when FD/bond matures)</span></label><input class="form-input" id="liquidityMaturity" type="date"/></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityNotes">NOTES (optional)</label><input class="form-input" id="liquidityNotes" placeholder="Bank, account number, etc."/></div>
+      </div>
+      <div id="qtyPriceFields">
+        <div class="ledger-locked" id="assetLedgerLock" hidden>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Quantity and cost are worked out from this holding’s transactions. Use <b>Record Buy</b> or <b>Record Sell</b>, or correct an entry in its transaction history.</span>
+        </div>
+        <div class="form-row-2" id="qtyPriceRow">
+          <div id="qtyWrapper"><label class="form-lbl" id="qtyLabel" for="assetQty">QUANTITY</label><input class="form-input" id="assetQty" type="number" placeholder="0" step="any" inputmode="decimal" oninput="autoFillBuyPriceFromLive();autoFillBuyPriceFromCurrent();updateBuyPriceHint()"/></div>
+          <div><label class="form-lbl" id="buyPriceLblRow" for="assetBuyPrice"><span id="buyPriceLbl">TOTAL BUY PRICE</span></label><div class="input-ccy-group"><input class="form-input" id="assetBuyPrice" type="number" placeholder="0.00" step="any" inputmode="decimal" oninput="updateBuyPriceHint()"/><div class="ccy-sel-wrap" id="buyPriceCcyWrap"></div></div><div id="priceModeSeg" class="seg-control" style="display:none;margin-top:6px;float:right"><button type="button" class="seg-btn" id="priceModeSegUnit" onclick="setPriceEntryMode(true)">PRICE / UNIT</button><button type="button" class="seg-btn" id="priceModeSegTotal" onclick="setPriceEntryMode(false)">TOTAL PRICE</button></div><div id="buyPriceHint" style="display:none;font-size:10px;color:var(--text3);margin-top:5px;clear:both;text-align:right"></div></div>
+        </div>
+        <div class="form-row" id="currentPriceRow" style="display:none"><label class="form-lbl" for="assetCurrentPrice">CURRENT PRICE / UNIT <span style="font-size:9px;color:var(--text3);font-weight:500">update anytime to track value</span></label><div class="input-ccy-group"><input class="form-input" id="assetCurrentPrice" type="number" placeholder="Today's price per unit" step="any" inputmode="decimal" oninput="autoFillBuyPriceFromCurrent()"/><div class="ccy-sel-wrap" id="currentPriceCcyWrap"></div></div></div>
+        <div class="form-row" id="assetDateRow"><label class="form-lbl" for="assetDate">DATE PURCHASED</label><input class="form-input" id="assetDate" type="date"/></div>
+        <div class="form-row"><label class="form-lbl" for="assetNotes">NOTES (optional)</label><input class="form-input" id="assetNotes" placeholder="Broker, exchange, remarks…"/></div>
+      </div>
+      <button class="submit-btn" id="saveAssetBtn" onclick="saveAsset()" data-testid="save-asset">Add Asset</button>
+      <button class="delete-btn" id="deleteAssetBtn" style="display:none" onclick="deleteAsset()">Delete Asset</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD DEBT MODAL -->
+
+<div class="modal-overlay" id="debtDetailModal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr">
+      <div class="modal-title" id="debtDetailTitle">Debt</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="icon-btn" id="debtDetailShareBtn" onclick="openDebtExportPicker(viewingDebtId)" aria-label="Share this debt" style="background:var(--surface2);border:none;border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>
+        <button class="icon-btn" id="debtDetailEditBtn" onclick="openDebtDetailEdit()" aria-label="Edit" style="background:var(--surface2);border:none;border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
+        <button class="modal-close" onclick="closeModal('debtDetailModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="debtDetailBody"></div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="addDebtModal" role="dialog" aria-modal="true" aria-labelledby="addDebtTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="addDebtTitle">Add Debt</div><button class="modal-close" onclick="closeModal('addDebtModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl">TYPE</label>
+        <div class="debt-type-row">
+          <button class="dtype-btn active grn" id="dtypeOwed" onclick="setDebtType('owed')"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 17 17 7"/><polyline points="7 7 17 7 17 17"/></svg><span>Owed to Me</span></button>
+          <button class="dtype-btn" id="dtypeIOwe" onclick="setDebtType('iowe')"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 7 7 17"/><polyline points="17 17 7 17 7 7"/></svg><span>I Owe</span></button>
+        </div>
+      </div>
+      <div class="form-row"><label class="form-lbl" for="debtName">PERSON / ENTITY</label><div class="coin-search-wrap"><input class="form-input" id="debtName" placeholder="Name…" autocomplete="off" oninput="onDebtNameInput()"/><div class="coin-suggestions" id="debtNameSuggest" style="display:none"></div></div></div>
+      <div class="ledger-locked" id="debtLedgerLock" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span id="debtLedgerLockTxt">The amount is the total of the entries in this debt’s history.</span>
+      </div>
+      <div class="form-row"><label class="form-lbl" for="debtAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="debtAmount" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="debtAmountCcyWrap"></div></div></div>
+      <div class="form-row"><label class="form-lbl" for="debtNote">REASON / NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtNote" placeholder="Loan, product, service…"/></div>
+      <div class="form-row"><label class="form-lbl" for="debtLentDate">LENT / BORROWED ON</label>
+        <div class="freq-row" style="margin-bottom:6px">
+          <button class="freq-btn active" id="lentQkToday" onclick="setLentDate(0)">Today</button>
+          <button class="freq-btn" id="lentQkYest" onclick="setLentDate(1)">Yesterday</button>
+          <button class="freq-btn" id="lentQkWeek" onclick="setLentDate(7)">1 Week Ago</button>
+          <button class="freq-btn" id="lentQkMonth" onclick="setLentDate(30)">1 Month Ago</button>
+        </div>
+        <input class="form-input" id="debtLentDate" type="date" onchange="syncLentQuickBtns()"/>
+      </div>
+      <div class="interest-section" style="padding:11px 13px;margin-bottom:11px"><div class="interest-toggle-row"><div><div style="font-size:12px;font-weight:600;color:var(--text)">Due Date</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Set a repayment deadline</div></div><div class="toggle" id="dueDateToggle" onclick="toggleDueDate()" role="switch" aria-checked="false" tabindex="0"></div></div><div id="dueDateField" style="display:none;margin-top:10px"><div class="freq-row" style="margin-bottom:6px"><button class="freq-btn" id="dueQkTomorrow" onclick="setDueDate(1)">Tomorrow</button><button class="freq-btn active" id="dueQk1Week" onclick="setDueDate(7)">1 Week</button><button class="freq-btn" id="dueQk1Month" onclick="setDueDate(30)">1 Month</button></div><input class="form-input" id="debtDue" type="date" onchange="syncDueQuickBtns()"/></div></div>
+      <div class="interest-section">
+        <div class="interest-toggle-row" id="interestToggleRow">
+          <div><div style="font-size:12px;font-weight:600;color:var(--text)">Interest / Charge</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Add interest rate to this debt</div></div>
+          <div class="toggle" id="interestToggle" onclick="toggleInterestSection()" role="switch" aria-checked="false" tabindex="0"></div>
+        </div>
+        <div id="accruedBox" class="accrued-box">
+          <div class="accrued-box-row">
+            <span class="accrued-box-label">Accrued Interest</span>
+            <span style="font-size:9px;color:var(--text3)" id="accruedBoxDays"></span>
+          </div>
+          <div class="accrued-box-val" id="accruedBoxVal">Rs.0.00</div>
+          <div class="accrued-box-sub" id="accruedBoxSub"></div>
+          <div class="accrued-box-total">
+            <span class="accrued-box-total-lbl">PRINCIPAL + INTEREST</span>
+            <span class="accrued-box-total-val" id="accruedBoxTotal">-</span>
+          </div>
+        </div>
+        <div id="interestFields" style="display:none;margin-top:12px">
+          <div class="form-row" style="margin-bottom:8px"><label class="form-lbl">CHARGE TYPE</label><div class="int-type-row"><button class="int-type-btn active" id="intTypeFlat" onclick="setIntType('flat')">Flat Amount</button><button class="int-type-btn" id="intTypePct" onclick="setIntType('pct')">Percentage %</button></div></div>
+          <div id="intFlatFields"><div class="form-row" style="margin-bottom:8px"><label class="form-lbl" for="intFlatAmount">CHARGE AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="intFlatAmount" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="intFlatAmountCcyWrap"></div></div></div><div class="form-row" style="margin-bottom:8px"><label class="form-lbl">PER</label><div class="freq-row"><button class="freq-btn" id="intFlatFreqDay" onclick="setIntFlatFreq('day')">Day</button><button class="freq-btn" id="intFlatFreqWeek" onclick="setIntFlatFreq('week')">Week</button><button class="freq-btn active" id="intFlatFreqMonth" onclick="setIntFlatFreq('month')">Month</button><button class="freq-btn" id="intFlatFreqYear" onclick="setIntFlatFreq('year')">Year</button></div></div></div>
+          <div id="intPctFields" style="display:none">
+            <div class="form-row" style="margin-bottom:8px"><label class="form-lbl" for="intRate">RATE %</label><input class="form-input" id="intRate" type="number" placeholder="e.g. 12" step="0.1" inputmode="decimal"/></div>
+            <div class="form-row" style="margin-bottom:8px"><label class="form-lbl">PER</label><div class="freq-row"><button class="freq-btn active" id="intFreqDay" onclick="setIntFreq('day')">Day</button><button class="freq-btn" id="intFreqWeek" onclick="setIntFreq('week')">Week</button><button class="freq-btn" id="intFreqMonth" onclick="setIntFreq('month')">Month</button><button class="freq-btn" id="intFreqYear" onclick="setIntFreq('year')">Year</button></div></div>
+            <div class="interest-section" style="margin-bottom:0">
+              <div class="interest-toggle-row">
+                <div><div style="font-size:12px;font-weight:600;color:var(--text)">Compound Interest</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Interest is added to the principal each period. Off = simple interest.</div></div>
+                <div class="toggle" id="compoundToggle" onclick="toggleCompound()" role="switch" aria-checked="false" tabindex="0"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:8px;margin-bottom:0"><label class="form-lbl">INTEREST STARTS FROM</label><div class="freq-row"><button class="freq-btn active" id="chargeFromLend" onclick="setChargeFrom('lend')">Lend Date</button><button class="freq-btn" id="chargeFromDue" onclick="setChargeFrom('due')">Due Date</button></div><div style="font-size:10px;color:var(--text3);margin-top:5px" id="chargeFromHint">Interest accrues from the day you lent / borrowed the money.</div></div>
+        </div>
+      </div>
+      <button class="submit-btn" id="saveDebtBtn" onclick="saveDebt()" data-testid="save-debt">Add Debt</button>
+      <button class="delete-btn" id="deleteDebtBtn" style="display:none" onclick="deleteDebt()">Delete Debt</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD GOAL MODAL -->
+<!-- HABIT MODAL -->
+<div class="modal-overlay" id="habitModal" role="dialog" aria-modal="true" aria-labelledby="habitModalTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><div class="modal-title" id="habitModalTitle">New Habit</div><button class="modal-close" onclick="closeModal('habitModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl" for="habitNameInput">HABIT NAME</label><input class="form-input" id="habitNameInput" placeholder="Read 20 min, Gym, No sugar…" maxlength="40" autocomplete="off"/><div class="auth-field-err" id="habitNameErr"></div></div>
+      <div class="form-row"><label class="form-lbl">COLOUR</label><div class="hb-color-row" id="habitColorRow"></div></div>
+      <div class="form-row"><label class="form-lbl" for="habitGoalInput">MONTHLY GOAL (times this month)</label><input class="form-input" id="habitGoalInput" type="number" min="1" max="31" value="31" inputmode="numeric"/><div class="form-hint">How many days this month you're aiming to hit it. Drives the progress bar.</div></div>
+      <button class="submit-btn" onclick="saveHabit()">Save Habit</button>
+      <button class="delete-btn" id="habitDeleteBtn" style="display:none" onclick="deleteHabit()">Delete Habit</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addGoalModal" role="dialog" aria-modal="true" aria-labelledby="addGoalTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="addGoalTitle">Add Goal</div><button class="modal-close" onclick="closeModal('addGoalModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl">ICON</label><div class="icon-grid" id="goalIconGrid"></div></div>
+      <div class="form-row"><label class="form-lbl" for="goalName">GOAL NAME</label><input class="form-input" id="goalName" placeholder="Emergency Fund, New Car…"/></div>
+      <div class="form-row-2"><div><label class="form-lbl" for="goalTarget">TARGET</label><div class="input-ccy-group"><input class="form-input" id="goalTarget" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalTargetCcyWrap"></div></div></div><div><label class="form-lbl" for="goalSaved">SAVED</label><div class="input-ccy-group"><input class="form-input" id="goalSaved" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalSavedCcyWrap"></div></div></div></div>
+      <div class="form-row" style="margin-top:-4px" id="goalPresetsRow"><div class="contribute-presets"><span style="font-size:10px;color:var(--text3);align-self:center;margin-right:2px">Quick add:</span><button type="button" class="preset-btn" onclick="presetContribute(1000)">+1K</button><button type="button" class="preset-btn" onclick="presetContribute(5000)">+5K</button><button type="button" class="preset-btn" onclick="presetContribute(10000)">+10K</button><button type="button" class="preset-btn" onclick="presetContribute(50000)">+50K</button></div></div>
+      <div class="interest-section" style="margin-bottom:14px">
+        <div class="interest-toggle-row">
+          <div><div style="font-size:12px;font-weight:600;color:var(--text)">Link to a savings account</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Saved amount auto-tracks that account's balance</div></div>
+          <div class="toggle" id="goalLinkToggle" onclick="toggleGoalLink()" role="switch" aria-checked="false" tabindex="0"></div>
+        </div>
+        <div id="goalLinkPicker" style="display:none;margin-top:10px">
+          <div id="goalLinkAssetList" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div class="form-hint" id="goalLinkHint" style="margin-top:6px"></div>
+        </div>
+      </div>
+      <div class="goal-date-quick" id="goalDateQuick"><span class="gdq-lbl">Reach it in:</span><button type="button" class="freq-btn" id="goalQk3m" onclick="setGoalDate(3)">3 Months</button><button type="button" class="freq-btn" id="goalQk6m" onclick="setGoalDate(6)">6 Months</button><button type="button" class="freq-btn" id="goalQk1y" onclick="setGoalDate(12)">1 Year</button><button type="button" class="freq-btn" id="goalQk2y" onclick="setGoalDate(24)">2 Years</button></div>
+      <div class="form-row-2"><div><label class="form-lbl" for="goalDate">TARGET DATE</label><input class="form-input" id="goalDate" type="date" oninput="renderGoalProjection();syncGoalQuickBtns()"/></div><div><label class="form-lbl" for="goalMonthly">PER MONTH</label><div class="input-ccy-group"><input class="form-input" id="goalMonthly" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalMonthlyCcyWrap"></div></div></div></div>
+      <div class="goal-proj" id="goalProjection" style="display:none">
+        <div class="gp-head"><span class="gp-status" id="gpStatus"></span><span class="gp-verdict" id="gpVerdict"></span></div>
+        <div class="gp-line" id="gpLine"></div>
+        <div class="gp-chart"><canvas id="goalProjChart" role="img" aria-label="Savings trajectory"></canvas></div>
+        <div class="gp-stats" id="gpStats"></div>
+      </div>
+      <div class="form-row"><label class="form-lbl">COLOR THEME</label><div class="color-grid" id="goalColorGrid"></div></div>
+      <button class="submit-btn" id="saveGoalBtn" onclick="saveGoal()" data-testid="save-goal">Add Goal</button>
+      <button class="delete-btn" id="deleteGoalBtn" style="display:none" onclick="deleteGoal()">Delete Goal</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD RECURRING MODAL -->
+<div class="modal-overlay" id="addRecurModal" role="dialog" aria-modal="true" aria-labelledby="addRecurTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="addRecurTitle">Recurring Investment</div><button class="modal-close" onclick="closeModal('addRecurModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-lbl">WHAT REPEATS</label>
+        <div class="seg-2" id="recurKindSeg" role="tablist">
+          <button class="seg-2-btn on" id="recurKindInvest" role="tab" aria-selected="true" onclick="setRecurKind('invest')">Investment</button>
+          <button class="seg-2-btn" id="recurKindBill" role="tab" aria-selected="false" onclick="setRecurKind('bill')">Bill</button>
+        </div>
+      </div>
+      <div class="form-row"><label class="form-lbl" for="recurName">NAME</label><input class="form-input" id="recurName" placeholder="Monthly SIP, Weekly BTC DCA…"/></div>
+      <div class="form-row-2"><div><label class="form-lbl" for="recurAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="recurAmount" type="number" placeholder="0" inputmode="decimal"/><div class="ccy-sel-wrap" id="recurAmountCcyWrap"></div></div></div><div><label class="form-lbl">FREQUENCY</label><div class="custom-select-wrap" id="recurFreqWrap"></div></div></div>
+      <div class="form-row" id="recurCatRow"><label class="form-lbl">ASSET TYPE</label><div class="custom-select-wrap" id="recurCatWrap"></div></div>
+      <div class="form-row" id="recurSpendCatRow" style="display:none"><label class="form-lbl">SPENDING CATEGORY</label><div class="custom-select-wrap" id="recurSpendCatWrap"></div></div>
+      <div class="form-row" id="recurAccountRow" style="display:none"><label class="form-lbl">PAY FROM</label><div class="custom-select-wrap" id="recurAccountWrap"></div></div>
+      <div class="form-row" id="recurCryptoRow" style="display:none">
+        <label class="form-lbl">COIN TO BUY (optional)</label>
+        <div class="coin-search-wrap"><input class="form-input" id="recurCryptoSearch" placeholder="Leave blank to just log a cash contribution" oninput="onRecurCryptoSearch()" autocomplete="off"/><div id="recurCryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="form-hint" id="recurCryptoHint" style="display:none;margin-top:4px"></div>
+      </div>
+      <div class="form-row"><label class="form-lbl" for="recurStart">START DATE</label><input class="form-input" id="recurStart" type="date"/></div>
+      <div class="interest-section" id="recurActiveRow" style="display:none">
+        <div class="interest-toggle-row">
+          <div><div style="font-size:12px;font-weight:600;color:var(--text)">Active</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Pause without deleting</div></div>
+          <div class="toggle on" id="recurActiveToggle" onclick="toggleRecurActive()" role="switch" aria-checked="true" tabindex="0"></div>
+        </div>
+      </div>
+      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;margin:2px 2px 12px" id="recurHintInvest">Runs automatically when due, picks up next time you open the app. If a coin is set, it buys at that day's live price. Otherwise (stocks, commodities, property, etc. have no live feed here) it's logged as a cash contribution into a Liquidity entry with this name, so the money is still tracked.</div>
+      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;margin:2px 2px 12px;display:none" id="recurHintBill">Rent, internet, a subscription, anything that leaves on a schedule. Each cycle it records an expense in the category you pick, so it lands in the month's spending and against your budget without you typing it again. Pick an account and the money comes out of that balance too.</div>
+      <button class="submit-btn" onclick="saveRecur()" data-testid="save-recur" id="saveRecurBtn">Add Recurring</button>
+      <button class="ctx-cancel" id="deleteRecurBtn" style="display:none;color:var(--red);margin-top:8px" onclick="deleteRecur()">Delete Recurring</button>
+    </div>
+  </div>
+</div>
+
+<!-- ASSET DETAIL MODAL -->
+<div class="modal-overlay" id="assetDetailModal" role="dialog" aria-modal="true" aria-label="Asset detail" aria-hidden="true">
+  <div class="modal-sheet" style="max-height:92vh"><div class="modal-handle" data-drag></div><div id="assetDetailContent"></div></div>
+</div>
+
+<!-- ASSET CONTEXT MENU (long-press / right-click) -->
+<div class="modal-overlay ctx-overlay" id="assetCtxModal" role="dialog" aria-modal="true" aria-label="Asset actions" aria-hidden="true">
+  <div class="modal-sheet ctx-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="ctx-header" id="ctxHeader"></div>
+    <div class="ctx-list" id="ctxList"></div>
+    <button class="ctx-cancel" onclick="closeModal('assetCtxModal')">Cancel</button>
+  </div>
+</div>
+
+<!-- ALL TRANSACTIONS LEDGER -->
+<!-- GLOBAL SEARCH -->
+<div class="modal-overlay" id="globalSearchModal" role="dialog" aria-modal="true" aria-labelledby="globalSearchTitle" aria-hidden="true">
+  <div class="modal-sheet" style="max-height:92vh">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="globalSearchTitle">Search</div><button class="modal-close" onclick="closeModal('globalSearchModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" style="padding-top:0">
+      <div class="search-row" style="margin:0 0 10px">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="globalSearchInput" type="search" placeholder="Search assets, debts, goals, transactions, notes…" oninput="onGlobalSearch()" aria-label="Search everything"/>
+        </div>
+      </div>
+      <div id="globalSearchResults"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ledgerModal" role="dialog" aria-modal="true" aria-labelledby="ledgerTitle" aria-hidden="true">
+  <div class="modal-sheet" style="max-height:92vh">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="ledgerTitle">All Transactions</div><button class="modal-close" onclick="closeModal('ledgerModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" style="padding-top:0">
+      <div class="search-row" style="margin:0 0 8px">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="ledgerSearch" type="search" placeholder="Search transactions…" oninput="renderLedger()" aria-label="Search transactions"/>
+        </div>
+      </div>
+      <div class="ledger-filter-row" id="ledgerFilterRow">
+        <button class="ledger-pill active" data-f="all" onclick="setLedgerFilter('all')">All</button>
+        <button class="ledger-pill" data-f="buy" onclick="setLedgerFilter('buy')">Buys</button>
+        <button class="ledger-pill" data-f="sell" onclick="setLedgerFilter('sell')">Sells</button>
+        <button class="ledger-pill" data-f="crypto" onclick="setLedgerFilter('crypto')">Crypto</button>
+        <button class="ledger-pill" data-f="stock" onclick="setLedgerFilter('stock')">Stocks</button>
+        <button class="ledger-pill" data-f="commodity" onclick="setLedgerFilter('commodity')">Commodity</button>
+        <button class="ledger-pill" data-f="liquidity" onclick="setLedgerFilter('liquidity')">Liquidity</button>
+      </div>
+      <div class="ledger-summary" id="ledgerSummary"></div>
+      <div id="ledgerList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TRANSACTION -->
+<div class="modal-overlay" id="editTxModal" role="dialog" aria-modal="true" aria-labelledby="editTxTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="editTxTitle">Edit Transaction</div><button class="modal-close" onclick="closeModal('editTxModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row" style="margin-bottom:11px"><span id="editTxTypeBadge" class="atype-chip" style="font-size:11px;padding:5px 10px"></span></div>
+      <div class="form-row-2" id="editTxQtyPriceRow">
+        <div id="editTxQtyCol"><label class="form-lbl" id="editTxQtyLbl">QUANTITY</label><input class="form-input" id="editTxQty" type="number" step="any" inputmode="decimal" placeholder="0" oninput="onEditTxQtyChange()"/></div>
+        <div><label class="form-lbl" id="editTxPriceLbl">BUY PRICE</label><div class="input-ccy-group"><input class="form-input" id="editTxPrice" type="number" step="any" inputmode="decimal" placeholder="0.00"/><div class="ccy-sel-wrap" id="editTxPriceCcyWrap"></div></div><div id="editTxPriceModeSeg" class="seg-control" style="margin-top:6px;float:right"><button type="button" class="seg-btn active" id="editTxPriceModeSegUnit" onclick="setEditTxPriceEntryMode(true)">PRICE / UNIT</button><button type="button" class="seg-btn" id="editTxPriceModeSegTotal" onclick="setEditTxPriceEntryMode(false)">TOTAL PRICE</button></div><div style="clear:both"></div><div class="etx-live" id="editTxLiveRow" style="display:none"><span class="etx-live-lbl" id="editTxLiveLbl"></span><button type="button" class="etx-live-btn" onclick="useLiveEditTxPrice()">Use live price</button></div></div>
+      </div>
+      <div class="form-row" id="editTxUnitRow" style="display:none"><label class="form-lbl">UNIT</label><div id="editTxUnitWrap" class="custom-select-wrap"></div></div>
+      <div class="form-row"><label class="form-lbl" for="editTxDate">DATE</label><input class="form-input" id="editTxDate" type="date"/></div>
+      <div class="form-row" id="editTxNotesRow"><label class="form-lbl" for="editTxNotes">NOTES</label><input class="form-input" id="editTxNotes" placeholder="Optional note"/></div>
+      <div class="form-hint" id="editTxHint" style="margin-bottom:10px"></div>
+      <button class="submit-btn" onclick="saveEditTx()">Save Changes</button>
+      <button class="ctx-cancel" style="margin-top:8px;color:var(--red)" onclick="deleteEditTx()">Delete This Transaction</button>
+    </div>
+  </div>
+</div>
+
+<!-- ASSET EDIT PICKER (top pencil icon) -->
+<div class="modal-overlay" id="assetEditPickerModal" role="dialog" aria-modal="true" aria-labelledby="assetEditPickerTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="assetEditPickerTitle">Edit</div><button class="modal-close" onclick="closeModal('assetEditPickerModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" style="padding-top:0">
+      <div class="settings-sec-lbl" style="margin:10px 2px 8px">TRANSACTIONS</div>
+      <div id="assetEditPickerTxList"></div>
+      <button class="ctx-cancel" id="deleteAllTxBtn" style="margin-top:12px;color:var(--red)" onclick="deleteAllPickerTx()">Delete All Transactions</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+<!-- AUTH MODAL -->
+<div class="auth-overlay" id="authModal" role="dialog" aria-modal="true" aria-label="Sign in or create account" aria-hidden="true" onclick="if(event.target===this&&!authRequired)closeAuthModal()">
+  <div class="auth-card">
+    <div class="auth-logo"><img src="icon.svg" width="58" height="58" style="border-radius:16px;display:block" alt="Paisafolio"/></div>
+    <div class="auth-title">Paisafolio</div>
+    <div class="auth-sub" id="authSubText">Sign in to sync your data across devices</div>
+    <button class="auth-btn google" id="authGoogleBtn" type="button" onclick="signInWithGoogle()">
+      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.8-.4-4.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3c-7.7 0-14.4 4.4-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.3 0 10.2-2 13.9-5.3l-6.4-5.4C29.4 35.7 26.8 36.5 24 36.5c-5.3 0-9.7-3.6-11.3-8.4l-6.6 5.1C9.5 40.3 16.2 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.7l6.4 5.4C40.9 36.2 43.5 30.6 43.5 24c0-1.4-.1-2.8-.4-3.5z"/></svg>
+      <span>Continue with Google</span>
+    </button>
+    <div class="auth-divider" id="authDivider"><span>or</span></div>
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab active" id="authTabLogin" onclick="switchAuthTab('login')">Sign In</button>
+      <button class="auth-tab" id="authTabReg" onclick="switchAuthTab('register')">Create Account</button>
+    </div>
+    <!-- Login form -->
+    <div id="authLoginForm" class="auth-form">
+      <div>
+        <input class="auth-input" id="authLoginEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authLoginEmailErr',this)"/>
+        <div class="auth-field-err" id="authLoginEmailErr"></div>
+      </div>
+      <div>
+        <div class="auth-pw-wrap">
+          <input class="auth-input" id="authLoginPassword" type="password" placeholder="Password" autocomplete="current-password" oninput="clearFieldErr('authLoginPassErr',this)"/>
+          <button type="button" class="pw-eye" onclick="togglePw('authLoginPassword',this)" aria-label="Toggle password visibility" tabindex="-1">
+            <svg id="authLoginPwIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="auth-field-err" id="authLoginPassErr"></div>
+      </div>
+      <button class="auth-forgot" onclick="switchAuthTab('forgot')">Forgot password?</button>
+      <div class="auth-err" id="authLoginErr"></div>
+      <button class="auth-btn" id="authLoginBtn" onclick="doLogin()">Sign In</button>
+    </div>
+    <!-- Register form -->
+    <div id="authRegForm" class="auth-form" style="display:none">
+      <div>
+        <input class="auth-input" id="authRegName" type="text" placeholder="Full name" autocomplete="name" maxlength="60" oninput="clearFieldErr('authRegNameErr',this)"/>
+        <div class="auth-field-err" id="authRegNameErr"></div>
+      </div>
+      <div>
+        <input class="auth-input" id="authRegEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authRegEmailErr',this)"/>
+        <div class="auth-field-err" id="authRegEmailErr"></div>
+      </div>
+      <div>
+        <div class="auth-pw-wrap">
+          <input class="auth-input" id="authRegPassword" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password" oninput="onRegPasswordInput(this)"/>
+          <button type="button" class="pw-eye" onclick="togglePw('authRegPassword',this)" aria-label="Toggle password visibility" tabindex="-1">
+            <svg id="authRegPwIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="pw-strength" id="pwStrengthBars"><div class="pw-strength-bar" style="background:var(--border2)"></div><div class="pw-strength-bar" style="background:var(--border2)"></div><div class="pw-strength-bar" style="background:var(--border2)"></div><div class="pw-strength-bar" style="background:var(--border2)"></div></div>
+        <div class="pw-hint" id="pwStrengthHint"></div>
+        <div class="auth-field-err" id="authRegPassErr"></div>
+      </div>
+      <div>
+        <div class="auth-pw-wrap">
+          <input class="auth-input" id="authRegPassword2" type="password" placeholder="Confirm password" autocomplete="new-password" oninput="onConfirmPasswordInput(this)"/>
+          <button type="button" class="pw-eye" onclick="togglePw('authRegPassword2',this)" aria-label="Toggle confirm password visibility" tabindex="-1">
+            <svg id="authRegPw2Icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="auth-field-err" id="authRegPass2Err"></div>
+      </div>
+      <div class="auth-err" id="authRegErr"></div>
+      <button class="auth-btn" id="authRegBtn" onclick="doRegister()">Create Account</button>
+    </div>
+    <!-- Forgot password form -->
+    <div id="authForgotForm" class="auth-form" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;line-height:1.5">Enter your email and we'll send a password reset link if an account exists.</div>
+      <div>
+        <input class="auth-input" id="authForgotEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authForgotEmailErr',this)"/>
+        <div class="auth-field-err" id="authForgotEmailErr"></div>
+      </div>
+      <div class="auth-err" id="authForgotErr"></div>
+      <div class="auth-ok" id="authForgotOk"></div>
+      <button class="auth-btn" id="authForgotBtn" onclick="doForgot()">Send Reset Link</button>
+      <button class="auth-forgot" onclick="switchAuthTab('login')" style="text-align:center;align-self:center">← Back to Sign In</button>
+    </div>
+    <!-- Skip/close option -->
+    <div id="authSkipWrap" style="text-align:center;margin-top:14px">
+      <button style="background:none;border:none;font-family:var(--font);font-size:11px;color:var(--text3);cursor:pointer" onclick="closeAuthModal()">Continue without account</button>
+    </div>
+  </div>
+</div>
+
+<!-- EMAIL VERIFY MODAL -->
+<div class="verify-overlay" id="verifyModal" role="dialog" aria-modal="true" aria-label="Verify your email" aria-hidden="true">
+  <div class="verify-card">
+    <div class="verify-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+    </div>
+    <div class="verify-title">Check your inbox ✉️</div>
+    <div class="verify-sub">We've sent a verification link to</div>
+    <div class="verify-email-badge">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      <span id="verifyEmailDisplay">your@email.com</span>
+    </div>
+    <div class="verify-tip">
+      <b>What to do next:</b><br>
+      Open the email and click <b>"Confirm your email"</b>. It usually arrives within a minute, check your spam folder if it doesn't show up.
+    </div>
+    <button class="verify-signin-btn" onclick="closeVerifyModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Verified? Sign In Now
+    </button>
+    <button class="verify-resend" id="verifyResendBtn" onclick="resendVerification()">Didn't get it? Resend email</button>
+  </div>
+</div>
+
+<!-- ACCOUNT SHEET (shown when already logged in) -->
+<div class="modal-overlay" id="fontModal" role="dialog" aria-modal="true" aria-label="Fonts" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Fonts</div><button class="modal-close" onclick="closeModal('fontModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <p class="alloc-help">Pick a face for text, and another for figures if you want. Fonts download the first time you choose them and are then stored on this device.</p>
+      <div class="sheet-section-lbl" style="border-top:none;margin-top:0;padding-top:0">TEXT</div>
+      <div class="font-grid" id="fontTextOptions"></div>
+      <div class="sheet-section-lbl">NUMBERS</div>
+      <div class="font-grid" id="fontNumOptions"></div>
+      <button class="submit-btn" onclick="closeModal('fontModal')">Done</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="allocTargetsModal" role="dialog" aria-modal="true" aria-label="Allocation targets" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Allocation targets</div><button class="modal-close" onclick="closeModal('allocTargetsModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <p class="alloc-help">Choose how much of your portfolio you want in each category. Leave one at 0 to skip it.</p>
+      <div id="allocTargetRows"></div>
+      <div class="alloc-total-row"><span>Total</span><span id="allocTargetTotal">0%</span></div>
+      <div class="form-row" style="margin-top:10px">
+        <label class="form-lbl" for="allocCashInput">Cash you want to deploy (optional)</label>
+        <div class="input-ccy-group"><input class="form-input" id="allocCashInput" type="number" inputmode="decimal" min="0" placeholder="0" oninput="renderRebalance()"/><div class="ccy-sel-wrap" id="allocCashCcyWrap"></div></div>
+      </div>
+      <button class="submit-btn" onclick="closeModal('allocTargetsModal')">Done</button>
+      <button class="delete-btn" onclick="clearAllocTargets()">Clear all targets</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="accountModal" role="dialog" aria-modal="true" aria-label="Account" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Account</div><button class="modal-close" onclick="closeModal('accountModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="profile-card">
+        <div class="acct-avatar-lg" id="acctAvatarLg">?</div>
+        <div class="profile-ident">
+          <div class="profile-name" id="acctNameDisplay">-</div>
+          <div class="acct-email" id="acctEmailDisplay">-</div>
+        </div>
+        <button class="seg-edit-btn" id="acctEditNameBtn" onclick="startEditDisplayName()">Edit</button>
+      </div>
+      <div class="profile-edit" id="profileEditRow" style="display:none">
+        <input class="form-input" id="acctNameInput" maxlength="60" placeholder="Your name" aria-label="Display name"/>
+        <button class="seg-edit-btn on" onclick="saveDisplayName()">Save</button>
+        <button class="seg-edit-btn" onclick="cancelEditDisplayName()">Cancel</button>
+      </div>
+      <div class="profile-stats" id="profileStats"></div>
+
+      <div class="sheet-section-lbl">ACCOUNT</div>
+      <button class="s-item" onclick="startEditDisplayName()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Display Name</span><span class="s-item-sub" id="profNameSub">-</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="openCircle()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 19a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M16 15.6a5.4 5.4 0 0 1 5.5 3.4"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Circle</span><span class="s-item-sub" id="profCircleSub">People you share with</span></span>
+        <span class="s-item-right"><span class="s-badge" id="circleReqBadge" hidden>0</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="profilePhotoAction()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8.5 6l1.2-2h4.6l1.2 2"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Profile Photo</span><span class="s-item-sub" id="profPhotoSub">-</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="openChangeUsername()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Username</span><span class="s-item-sub" id="profUserSub">-</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="openChangeEmail()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Email</span><span class="s-item-sub" id="profEmailSub">-</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="openChangePassword()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Password</span><span class="s-item-sub" id="profPassSub">Change your password</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+
+      <button class="s-item" id="profGoogleRow" onclick="toggleGoogleLink()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Google</span><span class="s-item-sub" id="profGoogleSub">-</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <div class="sheet-section-lbl">DATA</div>
+      <button class="s-item" onclick="openSyncCenter()">
+        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name">Sync Center</span><span class="s-item-sub" id="profSyncSub">-</span></span>
+        <span class="s-item-right"><span class="s-badge" id="profSyncBadge" style="display:none"></span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+      <button class="s-item" onclick="signOut()">
+        <span class="s-item-ico" style="color:var(--red)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+        <span class="s-item-info"><span class="s-item-name" style="color:var(--red)">Sign Out</span><span class="s-item-sub">You can still use the app offline</span></span>
+        <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- SYNC CONFIRM (login/sign-out/import conflicts) -->
+<div class="modal-overlay" id="syncConfirmModal" role="dialog" aria-modal="true" aria-label="Sync confirmation" aria-hidden="true">
+  <div class="modal-sheet" style="max-width:420px">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="syncConfirmTitle">Sync</div><button class="modal-close" onclick="syncConfirmRespond('cancel')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div id="syncConfirmBody"></div>
+      <div id="syncConfirmActions" style="display:flex;flex-direction:column;gap:8px;margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT DATA WIZARD -->
+<div class="modal-overlay" id="exportWizardModal" role="dialog" aria-modal="true" aria-label="Export data" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Export Data</div><button class="modal-close" onclick="closeModal('exportWizardModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" id="exportWizardBody"></div>
+  </div>
+</div>
+
+<!-- ASSET TX HISTORY EXPORT PICKER -->
+<div class="modal-overlay" id="assetExportModal" role="dialog" aria-modal="true" aria-label="Export as" aria-hidden="true">
+  <div class="modal-sheet" id="assetExportSheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Export As</div><button class="modal-close" onclick="closeModal('assetExportModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" id="assetExportBody"></div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="importWizardModal" role="dialog" aria-modal="true" aria-label="Import data" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Import Data</div><button class="modal-close" onclick="closeModal('importWizardModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" id="importWizardBody"></div>
+  </div>
+</div>
+
+<!-- GUIDED TOUR -->
+<div class="tour-overlay" id="tourOverlay" role="dialog" aria-modal="true" aria-label="Guided tour" aria-hidden="true">
+  <div class="tour-hole" id="tourHole" aria-hidden="true"></div>
+  <div class="tour-card" id="tourCard">
+    <div class="tour-count" id="tourCount"></div>
+    <div class="tour-title" id="tourTitle"></div>
+    <div class="tour-text" id="tourText"></div>
+    <button class="tour-show" id="tourShow" onclick="tourShowMe()">Show me</button>
+    <div class="tour-foot">
+      <div class="tour-dots" id="tourDots"></div>
+      <div class="tour-btns">
+        <button class="tour-btn" id="tourPrev" onclick="tourPrev()">Back</button>
+        <button class="tour-btn primary" id="tourNext" onclick="tourNext()">Next</button>
+      </div>
+    </div>
+    <button class="tour-skip" onclick="endTour()">Skip</button>
+  </div>
+</div>
+
+<!-- PAISAFOLIO CIRCLE -->
+<div class="modal-overlay" id="circleModal" role="dialog" aria-modal="true" aria-label="Your circle" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('circleModal')">
+  <div class="modal-sheet tall-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr">
+      <div class="modal-title">Circle</div>
+      <button class="modal-close" onclick="closeModal('circleModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body"><div id="circleBody"></div></div>
+  </div>
+</div>
+<div class="modal-overlay" id="circleFriendModal" role="dialog" aria-modal="true" aria-label="Someone in your circle" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('circleFriendModal')">
+  <div class="modal-sheet tall-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr">
+      <div class="modal-title" id="circleFriendTitle">Someone</div>
+      <button class="modal-close" onclick="closeModal('circleFriendModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body"><div id="circleFriendBody"></div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="photoModal" role="dialog" aria-modal="true" aria-label="Profile photo" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('photoModal')">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title">Profile Photo</div><button class="modal-close" onclick="closeModal('photoModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body"><div id="photoModalBody"></div></div>
+  </div>
+</div>
+
+<input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="onAvatarPicked(event)"/>
+<input type="file" id="importFileInput" accept=".json,application/json" style="display:none" onchange="doImport(event)"/>
+
+<script src="app.js"></script>
+</body>
+</html>

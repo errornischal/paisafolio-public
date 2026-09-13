@@ -1,0 +1,38 @@
+{
+  "name": "Paisafolio — Net Worth & Portfolio Tracker",
+  "short_name": "Paisafolio",
+  "description": "Track investments, debts & goals. Crypto, stocks, gold, liquidity & property. Local-first, no account needed.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait",
+  "background_color": "#0e0e0e",
+  "theme_color": "#0e0e0e",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": [
+    "finance",
+    "productivity",
+    "business"
+  ],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "version": "4.3.0"
+}

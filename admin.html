@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0e0e0e" id="metaTheme"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>Paisafolio Admin</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!-- A separate page on purpose. It shares nothing with the app itself: no
+     holdings, no charts, no currency, no sync. Keeping it inside index.html
+     meant every person who will never open it still downloaded it, and a
+     mistake in here could take the whole app down with it.
+
+     The hidden link in Settings is a convenience. The real check happens
+     twice: once below, and again in api/admin.js against the database on
+     every single call. Loading this URL directly gets you nothing. -->
+<header class="adm-top">
+  <a class="adm-back" href="index.html" aria-label="Back to Paisafolio">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+  </a>
+  <div class="adm-top-t"><b>Paisafolio</b><span>Admin</span></div>
+  <button class="adm-top-btn" id="admThemeBtn" aria-label="Switch theme"></button>
+  <button class="adm-top-btn" id="admReload" aria-label="Reload">
+    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+  </button>
+</header>
+
+<main class="adm-main">
+  <div class="adm-gate" id="admGate">
+    <div class="adm-gate-ico">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+    </div>
+    <h1 id="admGateTitle">Checking…</h1>
+    <p id="admGateMsg">One moment.</p>
+    <a class="admin-btn primary" id="admGateCta" href="index.html" hidden>Back to the app</a>
+  </div>
+
+  <div id="admPanel" hidden>
+    <div class="pnl-filter-row" id="adminTabs"></div>
+    <div id="adminBody"></div>
+  </div>
+</main>
+<div class="admin-msg" id="adminMsg"></div>
+
+<script src="sb-config.js"></script>
+<script src="vendor/supabase-js.umd.js" onerror="console.warn('supabase-js failed to load')"></script>
+<script src="admin.js"></script>
+</body>
+</html>

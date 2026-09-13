@@ -1,0 +1,12 @@
+# Local scratch
+node_modules/
+.vercel
+.env
+.env.local
+.DS_Store
+*.log
+
+# Note: sb-config.js is NOT ignored on purpose. Its two values are meant to
+# ship with the site (see the file itself for why), so a fork fills them in
+# and commits them. The secret one, service_role, is an environment variable
+# and never appears in any tracked file.
