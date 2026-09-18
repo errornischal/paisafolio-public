@@ -975,6 +975,25 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .coin-sug-sym{font-size:10px;color:var(--text3);margin-top:1px}
 
 .icon-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:10px}
+/* A row that says what is chosen and opens the choice, instead of every
+   option laid out before the sheet has even asked what the goal is. */
+.pick-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;
+  background:var(--bg3);border:1px solid var(--border2);border-radius:10px;cursor:pointer;
+  font-family:var(--font);color:inherit;text-align:left;transition:.16s}
+.pick-row:active{transform:scale(.99);border-color:var(--accent)}
+.pick-ico{width:36px;height:36px;border-radius:10px;flex:none;display:grid;place-items:center;
+  background:var(--accent-glow);color:var(--accent)}
+.pick-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pick-name{font-size:12.5px;font-weight:700;color:var(--text)}
+.pick-sub{font-size:10.5px;color:var(--text3);text-transform:capitalize}
+.pick-chev{color:var(--text3);flex:none}
+.ip-empty{text-align:center;font-size:12px;color:var(--text3);padding:22px 0}
+/* Every cash account you own, inside a sheet that still has a target date
+   and a projection below it. Four fit; the rest scroll. */
+.goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
+  overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px}
+.goal-link-list::-webkit-scrollbar{width:4px}
+.goal-link-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .icon-opt{width:100%;aspect-ratio:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.18s;color:var(--text2)}
 .icon-opt.sel{border-color:var(--accent);background:var(--accent-glow);color:var(--accent)}
 .icon-opt:active{transform:scale(.88)}
@@ -1350,22 +1369,21 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 @media(max-width:879px){.assets-table-wrap{scrollbar-width:thin}}
 table.atable{width:100%;border-collapse:collapse;font-size:12px}
 table.tx-history-table{min-width:640px}
-/* A cash account's history is Date, Type, Amount, Notes, four columns that
-   fit any phone. The 640px floor above exists for the eight-column version;
-   forcing it here made the table scroll sideways and stretched Date to fill
-   the slack, which is the wrong fix for a table that was never too wide. */
-table.tx-history-table.tx-narrow{min-width:0;width:100%;table-layout:fixed}
-table.tx-narrow th,table.tx-narrow td{white-space:normal;overflow:hidden;text-overflow:ellipsis}
-table.tx-narrow th:nth-child(1),table.tx-narrow td:nth-child(1){width:26%}
-table.tx-narrow th:nth-child(2),table.tx-narrow td:nth-child(2){width:24%}
-table.tx-narrow th:nth-child(3),table.tx-narrow td:nth-child(3){width:22%;text-align:right}
-/* Notes wraps rather than being clipped: the row can afford a second line,
-   and widening the column to fit it is what made the table scroll before. */
-table.tx-narrow th:nth-child(4),table.tx-narrow td:nth-child(4){width:18%;white-space:normal!important;word-break:break-word}
-table.tx-narrow th:nth-child(5),table.tx-narrow td:nth-child(5){width:10%;padding-left:0;padding-right:4px}
-table.tx-narrow .atype-chip{letter-spacing:.2px;padding:2px 4px;font-size:8px}
-table.tx-narrow td,table.tx-narrow th{padding-left:8px;padding-right:8px}
-table.tx-history-table td:nth-child(6){width:100%}
+/* Every history now sizes its columns to what is in them. A cash account's
+   is four columns, not eight, so it needs no 640px floor to look right; but
+   fixing its columns at a percentage of the sheet made a long account name
+   or a long note wrap and the row grow to two or three lines, while the
+   investment table beside it fitted everything on one. Auto layout, a lower
+   floor, and the notes column capped — the same treatment, everywhere. */
+table.tx-history-table.tx-narrow{min-width:0}
+table.tx-narrow .atype-chip{letter-spacing:.2px;padding:2px 5px;font-size:8.5px}
+table.tx-narrow td,table.tx-narrow th{padding-left:9px;padding-right:9px}
+/* A remark can be a sentence. It gets a fixed share of the row and an
+   ellipsis, with the whole of it on the title, rather than setting the
+   height of every row it appears in. */
+.tx-note-cell{font-size:10px;color:var(--text3);font-weight:500}
+.tx-note{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(min-width:560px){.tx-note{max-width:240px}}
 /* The summary describes the holding; it is not a row of column totals, so it
    is neither laid out like one nor kept inside the table. Sitting in a tfoot
    it took the table's scrolling width and pushed its last figures past the
@@ -1381,7 +1399,7 @@ table.tx-history-table td:nth-child(6){width:100%}
 /* One line that scrolls, rather than five cells wrapping onto two rows at a
    different width on every screen. Each figure keeps its own width and the
    order stays the order. */
-.tx-summary-grid{display:flex;gap:24px;align-items:flex-start;
+.tx-summary-grid{display:flex;gap:24px;align-items:flex-start;justify-content:space-between;
   padding:0 13px;width:max-content;min-width:100%}
 .tx-sum-cell{flex:none}
 .tx-summary-lbl{display:block;font-size:8.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:3px;text-align:left}
@@ -2611,9 +2629,6 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
 .tm-link{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--accent);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .treemap{position:relative;width:100%;aspect-ratio:1.5;border-radius:10px;overflow:hidden;background:var(--border)}
-/* Showing every holding puts twice as many tiles in the box, so the box
-   gets taller rather than halving each one. */
-.treemap.tm-tall{aspect-ratio:1.05}
 .tm-tile{position:absolute;border:1px solid var(--card);border-radius:4px;overflow:hidden;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-start;
   padding:0;min-width:0;min-height:0;gap:1px;font-family:var(--font);cursor:pointer;
@@ -2622,16 +2637,43 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
 .tm-tile.tm-rest{border-style:dashed;border-color:var(--border)}
 .tm-name{font-size:9.5px;font-weight:700;color:var(--text);line-height:1.15;padding:0 6px;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A tile with room for one line spends it on the name. Smaller type buys
+   several more holdings their label rather than leaving them blank. */
+.tm-name-sm{font-size:8px;font-weight:700;padding:0 4px;letter-spacing:-.1px}
 .tm-val{font-size:9px;font-weight:800;color:var(--text);line-height:1.1;padding:0 6px;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tm-pct{font-size:8.5px;font-weight:700;line-height:1.1;padding:0 6px;font-variant-numeric:tabular-nums}
+/* The map answers "what matters in here" at a glance. It cannot answer
+   "what is that sliver" — at phone width a holding worth a fifth of a
+   percent gets a tile 11px across, and no type fits in 11px. The list is
+   the same data with every name readable, which is the question the map
+   is bad at. */
+.tm-list{display:flex;flex-direction:column;gap:1px;max-height:420px;overflow-y:auto;
+  overscroll-behavior:contain;scrollbar-width:thin;border-radius:10px}
+.tm-list::-webkit-scrollbar{width:4px}
+.tm-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.tm-row{position:relative;display:flex;align-items:center;gap:9px;width:100%;
+  padding:9px 11px;background:var(--card2);border:0;border-radius:7px;cursor:pointer;
+  font-family:var(--font);text-align:left;color:inherit;overflow:hidden}
+.tm-row:active{filter:brightness(1.2)}
+/* The share of the portfolio, drawn behind the row rather than as another
+   number to read. */
+.tm-row-bar{position:absolute;left:0;top:0;bottom:0;border-radius:7px 0 0 7px}
+.tm-row-nm{position:relative;flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tm-row-sh{position:relative;flex:none;font-size:10px;font-weight:700;color:var(--text3);
+  font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+.tm-row-val{position:relative;flex:none;font-size:12px;font-weight:800;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.tm-row-pct{position:relative;flex:none;font-size:10px;font-weight:700;
+  font-variant-numeric:tabular-nums;min-width:46px;text-align:right}
 .tm-legend{display:flex;gap:12px;margin-top:9px;flex-wrap:wrap}
 .tm-legend span{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--text3)}
 .tm-legend i{width:9px;height:9px;border-radius:3px;flex-shrink:0}
 .tm-legend i.up{background:rgba(91,142,125,.5)}
 .tm-legend i.dn{background:rgba(200,80,80,.5)}
 .tm-legend i.na{background:var(--card2)}
-@media(min-width:560px){.treemap{aspect-ratio:2.1}}
+
 
 /* ══ INVESTMENT INCOME ═══════════════════════════════════════════════ */
 .inc-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}

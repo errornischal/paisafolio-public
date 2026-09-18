@@ -747,16 +747,23 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="an-charts-2col">
         <div class="chart-card" id="assetBarCard"><div class="sec-title" style="margin-bottom:10px">ASSET RETURNS (%)</div><div style="height:180px"><canvas id="assetBarChart" role="img" aria-label="Asset returns percentage"></canvas></div><div class="chart-note" id="assetBarNote" hidden></div></div>
         <div class="chart-card" id="treemapCard" style="display:none">
-          <div class="sec-title" style="margin-bottom:4px">COMPOSITION</div>
+          <div class="sec-head" style="margin-bottom:4px">
+            <div class="sec-title">COMPOSITION</div>
+            <div class="view-seg" role="group" aria-label="Composition view">
+              <button id="tmSegMap" class="on" onclick="setTmView('map')" aria-label="Treemap"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="8" height="12" rx="1"/><rect x="13" y="3" width="8" height="7" rx="1"/><rect x="13" y="12" width="8" height="9" rx="1"/><rect x="3" y="17" width="8" height="4" rx="1"/></svg></button>
+              <button id="tmSegList" onclick="setTmView('list')" aria-label="List"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+            </div>
+          </div>
           <div class="tm-note" id="treemapNote"></div>
           <div class="treemap" id="treemap"></div>
-          <div class="tm-legend"><span><i class="up"></i>gaining</span><span><i class="dn"></i>losing</span><span><i class="na"></i>no live price</span></div>
+          <div class="tm-list" id="treemapList" hidden></div>
+          <div class="tm-legend" id="treemapLegend"><span><i class="up"></i>gaining</span><span><i class="dn"></i>losing</span><span><i class="na"></i>no live price</span></div>
         </div>
         <div class="chart-card" id="hindsightCard" style="display:none">
           <div class="sec-head" style="margin-bottom:8px">
             <div class="sec-title">SELLING, IN HINDSIGHT</div>
             <div style="display:flex;align-items:center;gap:8px">
-              <button class="link-btn" onclick="exportHindsightCSV()">Export</button>
+              <button class="tx-export-btn" onclick="exportHindsightCSV()" aria-label="Export as CSV"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
               <button class="hs-refresh" id="hsRefresh" onclick="refreshHindsight()" aria-label="Refresh prices"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg></button>
             </div>
           </div>
@@ -1234,12 +1241,23 @@ if (typeof window.isPendingSync !== 'function') {
     </div>
   </div>
 </div>
+<!-- ICON PICKER -->
+<div class="modal-overlay" id="iconPickerModal" role="dialog" aria-modal="true" aria-labelledby="iconPickerTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="iconPickerTitle">Choose an icon</div><button class="modal-close" onclick="closeModal('iconPickerModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <input class="form-input" id="iconPickerSearch" type="text" placeholder="Search icons…" autocomplete="off" oninput="renderIconPicker()" style="margin-bottom:11px"/>
+      <div class="icon-grid" id="iconPickerGrid"></div>
+      <div class="ip-empty" id="iconPickerEmpty" hidden>Nothing matches that.</div>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="addGoalModal" role="dialog" aria-modal="true" aria-labelledby="addGoalTitle" aria-hidden="true">
   <div class="modal-sheet">
     <div class="modal-handle" data-drag></div>
     <div class="modal-hdr"><div class="modal-title" id="addGoalTitle">Add Goal</div><button class="modal-close" onclick="closeModal('addGoalModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-body">
-      <div class="form-row"><label class="form-lbl">ICON</label><div class="icon-grid" id="goalIconGrid"></div></div>
       <div class="form-row"><label class="form-lbl" for="goalName">GOAL NAME</label><input class="form-input" id="goalName" placeholder="Emergency Fund, New Car…"/></div>
       <div class="form-row-2"><div><label class="form-lbl" for="goalTarget">TARGET</label><div class="input-ccy-group"><input class="form-input" id="goalTarget" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalTargetCcyWrap"></div></div></div><div><label class="form-lbl" for="goalSaved">SAVED</label><div class="input-ccy-group"><input class="form-input" id="goalSaved" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalSavedCcyWrap"></div></div></div></div>
       <div class="form-row" style="margin-top:-4px" id="goalPresetsRow"><div class="contribute-presets"><span style="font-size:10px;color:var(--text3);align-self:center;margin-right:2px">Quick add:</span><button type="button" class="preset-btn" onclick="presetContribute(1000)">+1K</button><button type="button" class="preset-btn" onclick="presetContribute(5000)">+5K</button><button type="button" class="preset-btn" onclick="presetContribute(10000)">+10K</button><button type="button" class="preset-btn" onclick="presetContribute(50000)">+50K</button></div></div>
@@ -1249,7 +1267,7 @@ if (typeof window.isPendingSync !== 'function') {
           <div class="toggle" id="goalLinkToggle" onclick="toggleGoalLink()" role="switch" aria-checked="false" tabindex="0"></div>
         </div>
         <div id="goalLinkPicker" style="display:none;margin-top:10px">
-          <div id="goalLinkAssetList" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div id="goalLinkAssetList" class="goal-link-list"></div>
           <div class="form-hint" id="goalLinkHint" style="margin-top:6px"></div>
         </div>
       </div>
@@ -1261,7 +1279,14 @@ if (typeof window.isPendingSync !== 'function') {
         <div class="gp-chart"><canvas id="goalProjChart" role="img" aria-label="Savings trajectory"></canvas></div>
         <div class="gp-stats" id="gpStats"></div>
       </div>
-      <div class="form-row"><label class="form-lbl">COLOR THEME</label><div class="color-grid" id="goalColorGrid"></div></div>
+      <div class="form-row"><label class="form-lbl">LOOK</label>
+        <button type="button" class="pick-row" id="goalIconRow" onclick="openGoalIconPicker()">
+          <span class="pick-ico" id="goalIconPreview"></span>
+          <span class="pick-txt"><span class="pick-name">Icon</span><span class="pick-sub" id="goalIconName">Choose one</span></span>
+          <svg class="pick-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div class="color-grid" id="goalColorGrid" style="margin-top:9px"></div>
+      </div>
       <button class="submit-btn" id="saveGoalBtn" onclick="saveGoal()" data-testid="save-goal">Add Goal</button>
       <button class="delete-btn" id="deleteGoalBtn" style="display:none" onclick="deleteGoal()">Delete Goal</button>
     </div>

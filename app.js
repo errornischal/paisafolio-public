@@ -1811,12 +1811,21 @@ function toggleAssetGroup(cat){
   assetGroups[cat]=willOpen;
   state.settings.assetGroups=assetGroups;saveState();haptic('tap');
 }
+// Opening one group slides it open; opening all of them rebuilt the whole
+// list, so every group arrived already open with nothing left to animate.
+// Same class flip as a single toggle, applied to each group at once, and the
+// CSS transition does the rest.
 function setAllAssetGroups(open){
-  const cats=[...document.querySelectorAll('.ag-group')].map(g=>g.dataset.cat);
-  if(!cats.length)return;
+  const groups=[...document.querySelectorAll('.ag-group')];
+  if(!groups.length)return;
   if(!assetGroups)assetGroups={};
-  cats.forEach(c=>{assetGroups[c]=open;});
-  state.settings.assetGroups=assetGroups;saveState();haptic('tap');renderAssets();
+  groups.forEach(g=>{
+    g.classList.toggle('open',open);
+    const hd=g.querySelector('.ag-head');
+    if(hd)hd.setAttribute('aria-expanded',open?'true':'false');
+    if(g.dataset.cat)assetGroups[g.dataset.cat]=open;
+  });
+  state.settings.assetGroups=assetGroups;saveState();haptic('tap');
 }
 let goalQuery='',goalSort='progress';
 const GOAL_SORTS=['progress','target','saved','deadline','name'];
@@ -4420,7 +4429,7 @@ let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0
     // simply the wrong signal. Cash colours by direction: in green, out red.
     const chipCol=isInc?'var(--accent)':isCash?(isSell?'var(--red)':'var(--green)'):(isSell?'var(--green)':'var(--blue)');
     const chipBg=isInc?'var(--accent-glow)':isCash?(isSell?'var(--red-bg)':'var(--green-bg)'):(isSell?'var(--green-bg)':'var(--blue-bg)');
-    return `<tr style="cursor:pointer" onclick="openEditTx('${t.id}')"><td>${formatDate(t.date)}</td><td><span class="atype-chip" style="color:${chipCol};background:${chipBg}">${txTypeLabel(t)}</span></td>${qtyCell}${unitCell}${perCell}<td style="font-weight:800;color:${isInc?'var(--accent)':isSell?sellColor:'var(--text)'}">${fmt(t.amount)}${realizedSub}</td><td style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${t.notes?esc(t.notes):''}">${t.notes?esc(t.notes):'<span class="muted">-</span>'}</td><td style="text-align:center"><button class="tx-edit-btn" onclick="event.stopPropagation();openEditTx('${t.id}')" aria-label="Edit transaction"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button></td></tr>`;}).join('');
+    return `<tr style="cursor:pointer" onclick="openEditTx('${t.id}')"><td>${formatDate(t.date)}</td><td><span class="atype-chip" style="color:${chipCol};background:${chipBg}">${txTypeLabel(t)}</span></td>${qtyCell}${unitCell}${perCell}<td style="font-weight:800;color:${isInc?'var(--accent)':isSell?sellColor:'var(--text)'}">${fmt(t.amount)}${realizedSub}</td><td class="tx-note-cell" title="${t.notes?esc(t.notes):''}">${t.notes?`<span class="tx-note">${esc(t.notes)}</span>`:'<span class="muted">-</span>'}</td><td style="text-align:center"><button class="tx-edit-btn" onclick="event.stopPropagation();openEditTx('${t.id}')" aria-label="Edit transaction"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button></td></tr>`;}).join('');
   // Holding Now uses the asset's own maintained qty (authoritative, kept in sync by recalcAssetFromTransactions/save logic)
   // rather than re-deriving via date sort here, since same-day transactions have no reliable time order to sort by.
   const netQty=+((a.qty||0).toFixed(6));
@@ -7146,7 +7155,42 @@ function nepseKnows(sym){
   return !!(k&&nepsePrices[k]);
 }
 // ════════ GOAL ICONS/COLORS ════════
-function renderGoalIconGrid(){el('goalIconGrid').innerHTML=ICON_KEYS.map(k=>`<button class="icon-opt ${k===selectedGoalIcon?'sel':''}" onclick="setGoalIcon('${k}')" aria-label="${k}">${svgIcon(k,16)}</button>`).join('');}
+// ════════ ICON PICKER ════════
+// Twenty-nine icons laid out across the top of a sheet made choosing one the
+// first thing the sheet asked, ahead of what the goal even is, and cost four
+// rows of height on every open. One row says what is chosen; the choosing
+// happens in a sheet of its own, with a search, because a list this long is
+// faster to search than to scan.
+let _iconPickerPick=null,_iconPickerCur=null;
+function openIconPicker(current,onPick,title){
+  _iconPickerCur=current||null;
+  _iconPickerPick=typeof onPick==='function'?onPick:null;
+  const t=el('iconPickerTitle');if(t)t.textContent=title||'Choose an icon';
+  const q=el('iconPickerSearch');if(q)q.value='';
+  renderIconPicker();
+  openModal('iconPickerModal');
+}
+function renderIconPicker(){
+  const grid=el('iconPickerGrid');if(!grid)return;
+  const q=((el('iconPickerSearch')||{}).value||'').trim().toLowerCase();
+  const keys=q?ICON_KEYS.filter(k=>k.toLowerCase().includes(q)):ICON_KEYS;
+  grid.innerHTML=keys.map(k=>`<button type="button" class="icon-opt ${k===_iconPickerCur?'sel':''}" onclick="pickIcon('${jsAttr(k)}')" title="${esc(k)}" aria-label="${esc(k)}">${svgIcon(k,16)}</button>`).join('');
+  const empty=el('iconPickerEmpty');if(empty)empty.hidden=!!keys.length;
+}
+function pickIcon(k){
+  _iconPickerCur=k;
+  const fn=_iconPickerPick;
+  closeModal('iconPickerModal');
+  haptic('tap');
+  if(fn)fn(k);
+}
+function renderGoalIconGrid(){
+  const prev=el('goalIconPreview');
+  if(prev)prev.innerHTML=svgIcon(selectedGoalIcon||'target',18);
+  const nm=el('goalIconName');
+  if(nm)nm.textContent=selectedGoalIcon||'Choose one';
+}
+function openGoalIconPicker(){openIconPicker(selectedGoalIcon,setGoalIcon,'Goal icon');}
 function setGoalIcon(k){selectedGoalIcon=k;renderGoalIconGrid();}
 function renderGoalColors(){el('goalColorGrid').innerHTML=GOAL_COLORS.map(c=>`<button class="color-opt ${c.name===selGoalColor?'sel':''}" style="background:${c.hex}" onclick="selGoalColor='${c.name}';renderGoalColors()" aria-label="${c.name} color"></button>`).join('');}
 // ════════ INTEREST ════════
@@ -12698,6 +12742,31 @@ function treemapTint(pct){
 const TM_MIN_SHARE=0.012;
 let tmShowAll=false;
 function tmToggleAll(){tmShowAll=!tmShowAll;renderTreemap();haptic('tap');}
+// Two ways of asking the same question. The map shows what matters by making
+// it big, which is exactly why it cannot name a holding worth a fifth of a
+// percent: that tile is eleven pixels across. The list names every one.
+let tmView=(typeof localStorage!=='undefined'&&localStorage.getItem('pf_tm_view')==='list')?'list':'map';
+function setTmView(v){
+  tmView=v==='list'?'list':'map';
+  try{localStorage.setItem('pf_tm_view',tmView);}catch(e){}
+  renderTreemap();haptic('tap');
+}
+function renderTmList(items,total){
+  const host=el('treemapList');if(!host)return;
+  host.innerHTML=items.map(i=>{
+    const share=total>0?(i.value/total)*100:0;
+    const flat=i.pct!=null&&Math.abs(i.pct)<0.05;
+    const pctTxt=i.pct==null?'':(flat?'0.0%':(i.pct>=0?'+':'')+i.pct.toFixed(1)+'%');
+    const col=i.pct==null||flat?'var(--text3)':(i.pct>=0?'var(--green)':'var(--red)');
+    return `<button class="tm-row" onclick="openAssetDetail('${jsAttr(i.id)}')" title="${esc(i.name)} ${fmt(i.value)}">`
+      +`<span class="tm-row-bar" style="width:${Math.max(2,Math.min(100,share))}%;background:${treemapTint(i.pct)}"></span>`
+      +`<span class="tm-row-nm">${esc(i.name)}</span>`
+      +`<span class="tm-row-sh">${share<0.1?'<0.1':share.toFixed(1)}%</span>`
+      +`<span class="tm-row-val">${fmt(i.value)}</span>`
+      +`<span class="tm-row-pct" style="color:${col}">${pctTxt||'&middot;'}</span>`
+      +`</button>`;
+  }).join('');
+}
 function renderTreemap(){
   const host=el('treemap');if(!host)return;
   const items=(state.assets||[]).map(a=>({
@@ -12707,6 +12776,19 @@ function renderTreemap(){
   if(items.length<2){if(card)card.style.display='none';return;}
   if(card)card.style.display='';
   const total=items.reduce((s,i)=>s+i.value,0);
+  const segMap=el('tmSegMap'),segList=el('tmSegList'),listEl=el('treemapList'),legend=el('treemapLegend');
+  if(segMap)segMap.className=tmView==='map'?'on':'';
+  if(segList)segList.className=tmView==='list'?'on':'';
+  host.hidden=tmView!=='map';
+  if(listEl)listEl.hidden=tmView!=='list';
+  if(legend)legend.style.display=tmView==='map'?'':'none';
+  if(tmView==='list'){
+    renderTmList(items,total);
+    const n=el('treemapNote');
+    if(n)n.textContent=items.length+' holdings \u00b7 largest is '+stripParens(items[0].name)
+      +' at '+((items[0].value/total)*100).toFixed(0)+'%';
+    return;
+  }
   const small=tmShowAll?[]:items.filter(i=>i.value/total<TM_MIN_SHARE);
   const laid=items.filter(i=>small.indexOf(i)<0);
   if(small.length){
@@ -12714,43 +12796,56 @@ function renderTreemap(){
       value:small.reduce((s,i)=>s+i.value,0),pct:null});
     laid.sort((a,b)=>b.value-a.value);
   }
-  // Fifteen tiles in the same box as seven leaves each one half the height,
-  // so the map grows when it is showing everything.
-  host.classList.toggle('tm-tall',laid.length>10);
+  // A fixed box shared by nineteen tiles gives each one a ninth of the area
+  // seven would get, and a tile that small cannot carry its own name — which
+  // is the whole point of showing it. The box grows with the count instead,
+  // so every tile keeps roughly the area it needs to be readable, up to a
+  // height that still fits on a screen.
+  host.classList.remove('tm-tall');
+  host.style.aspectRatio='auto';
+  host.style.height=Math.round(Math.min(640,Math.max(230,150+laid.length*26)))+'px';
   const W=100,H=100;
   const tiles=squarify(laid,0,0,W,H,[]);
+  const boxW=host.clientWidth||360,boxH=parseFloat(host.style.height)||360;
   host.innerHTML=tiles.map(t=>{
     // A -0.04% move printed as − 0.0%, a minus sign in front of zero.
     const flat=t.pct!=null&&Math.abs(t.pct)<0.05;
     const pctTxt=t.pct==null?'':(flat?'0.0%':(t.pct>=0?'+':'')+t.pct.toFixed(1)+'%');
-    // Below roughly this size the name cannot be read, so show nothing rather
-    // than a clipped fragment of a word.
-    const showLabel=t.w>13&&t.h>9;
+    // What a tile can say depends on what it measures in real pixels, not in
+    // percent: the same 6% of a short box and a tall one are different tiles.
+    const pxW=t.w/100*boxW,pxH=t.h/100*boxH;
+    // A name in the small size needs about this much. Below it nothing fits,
+    // and a tile that small says what it is through its tooltip and its tap.
+    const showLabel=pxW>=34&&pxH>=14;
     // Every tile says what it is worth, that is what its size means. The
     // return is a second line where there is room for one, never a
     // replacement, so one tile does not read in percent while its
     // neighbours read in rupees.
-    const showVal=t.w>17&&t.h>11;
-    const showPct=pctTxt&&t.w>17&&t.h>24;
+    const showVal=pxW>=58&&pxH>=34;
+    const showPct=pctTxt&&pxW>=58&&pxH>=54;
+    const small=showLabel&&!showVal;
     const rest=t.id==='__rest';
     const act=rest?' onclick="tmToggleAll()"':` onclick="openAssetDetail('${t.id}')"`;
     const label=rest?t.name+', tap to show':esc(t.name);
     return `<button class="tm-tile${rest?' tm-rest':''}"${act} `+
       `style="left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;`+
       `background:${treemapTint(t.pct)}" title="${label} ${fmt(t.value)}${pctTxt?' ('+pctTxt+')':''}">`+
-      (showLabel?`<span class="tm-name">${esc(t.name)}</span>`:'')+
+      (showLabel?`<span class="tm-name${small?' tm-name-sm':''}">${esc(t.name)}</span>`:'')+
       (showVal?`<span class="tm-val">${fmt(t.value)}</span>`:'')+
       (showPct?`<span class="tm-pct" style="color:${flat?'var(--text3)':t.pct>=0?'var(--green)':'var(--red)'}">${pctTxt}</span>`:'')+
       `</button>`;
   }).join('');
   const drawn=tiles.filter(t=>t.id!=='__rest').length;
+  const unnamed=tiles.filter(t=>t.id!=='__rest'
+    &&!(t.w/100*boxW>=34&&t.h/100*boxH>=14)).length;
   const note=el('treemapNote');
   const head=items.length+' holdings · largest is '+esc(stripParens(items[0].name))+
     ' at '+((items[0].value/total)*100).toFixed(0)+'%';
   note.innerHTML=head+(small.length
     ? ' · '+small.length+' smallest grouped <button class="tm-link" onclick="tmToggleAll()">Show all</button>'
     : (tmShowAll&&drawn>1&&items.some(i=>i.value/total<TM_MIN_SHARE)
-       ? ' · all '+drawn+' shown <button class="tm-link" onclick="tmToggleAll()">Group smallest</button>'
+       ? ' · all '+drawn+' shown'+(unnamed?', '+unnamed+' too small to label':'')
+         +' <button class="tm-link" onclick="tmToggleAll()">Group smallest</button>'
        : ''));
 }
 
