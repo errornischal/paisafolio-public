@@ -2687,7 +2687,63 @@ function csCandlesFromSeries(series,bucketMs){
   if(cur)out.push(cur);
   return out;
 }
-function trackPnLHistory(){const nw=calcNetWorth(),today=todayStr();if(!state.pnlHistory)state.pnlHistory=[];const last=state.pnlHistory[state.pnlHistory.length-1];if(last&&last.date===today)last.netWorth=nw;else{state.pnlHistory.push({date:today,netWorth:nw});if(state.pnlHistory.length>365)state.pnlHistory=state.pnlHistory.slice(-365);}}
+// One figure a day was enough to draw a net-worth line and nothing else.
+// Day-by-day profit needs to know what each holding was worth, not just what
+// everything together came to: without that, "how did crypto do on Tuesday"
+// has no answer, and neither does "how did this one coin do".
+//
+// So each snapshot now carries a value per holding as well. Rounded to whole
+// rupees and only for holdings actually worth something, which keeps a year
+// of thirty holdings around a hundred kilobytes rather than a megabyte.
+//
+// There is no server taking these. A snapshot happens when the app is open,
+// so a day it is never opened has no reading, and the series says so rather
+// than inventing one.
+function assetValueSnapshot(){
+  const m={};
+  (state.assets||[]).forEach(a=>{
+    if(!a||!a.id)return;
+    const v=Math.round(num(getAssetCurrentValue(a)));
+    if(v)m[a.id]=v;
+  });
+  return m;
+}
+const PNL_HIST_DAYS=365;
+// ── Today, in more detail than once ──
+// A day is the finest the daily series goes, which makes the 1D view a single
+// segment between yesterday and now. Prices move during the day, so a reading
+// is also kept every couple of hours, for the last two days only.
+//
+// It fills while the app is open and not otherwise. Nothing here runs on a
+// server: hours you are not looking are hours nobody recorded, and the chart
+// simply has no point for them rather than a point somebody made up. Closing
+// that gap would need a scheduled job holding your prices, which is a
+// different app from this one.
+const INTRADAY_SLOT_MS=2*3600*1000;
+const INTRADAY_KEEP_MS=48*3600*1000;
+function trackIntraday(){
+  if(!state.intraday||!Array.isArray(state.intraday))state.intraday=[];
+  const now=Date.now();
+  const slot=Math.floor(now/INTRADAY_SLOT_MS)*INTRADAY_SLOT_MS;
+  const nw=Math.round(calcNetWorth());
+  const last=state.intraday[state.intraday.length-1];
+  if(last&&last.t===slot)last.v=nw;
+  else state.intraday.push({t:slot,v:nw});
+  const floor=now-INTRADAY_KEEP_MS;
+  state.intraday=state.intraday.filter(x=>x&&x.t>=floor);
+}
+function trackPnLHistory(){
+  const nw=calcNetWorth(),today=todayStr();
+  if(!state.pnlHistory)state.pnlHistory=[];
+  const av=assetValueSnapshot();
+  const last=state.pnlHistory[state.pnlHistory.length-1];
+  if(last&&last.date===today){last.netWorth=nw;last.assets=av;}
+  else{
+    state.pnlHistory.push({date:today,netWorth:nw,assets:av});
+    if(state.pnlHistory.length>PNL_HIST_DAYS)state.pnlHistory=state.pnlHistory.slice(-PNL_HIST_DAYS);
+  }
+  trackIntraday();
+}
 // ════════ PRICING ════════
 function getAssetCurrentPrice(a){
   if(a.coinId&&livePrices[a.coinId]){
@@ -3070,7 +3126,12 @@ function buildNetWorthSeries(){
   const days = Math.max(1, Math.round((end - start) / DAY) + 1);
   // Cap the point count: a five-year ledger should not push 1800 points into a
   // chart that is 84px tall.
-  const step = Math.max(1, Math.ceil(days / 120));
+  // One point per day. The step used to be set by how LONG the whole ledger
+  // is, so a five-year history was sampled every fifteen days and the 1W pill
+  // then had nothing inside its window to draw. How coarse to draw is a
+  // question about the range being LOOKED at, and it is answered after the
+  // filter instead, in nwStepForRange().
+  const step = Math.max(1, Math.ceil(days / 2200));
 
   const out = [];
   let running = 0, ei = 0;
@@ -3103,6 +3164,299 @@ function buildNetWorthSeries(){
 
   _nwSeriesCache = out; _nwSeriesSig = sig;
   return out;
+}
+// ════════ DAILY PROFIT AND LOSS ════════
+// What a day made or lost, which is not the same as what changed hands.
+// Paying Rs.10,000 into an account raises its value by Rs.10,000 and earns
+// nothing; selling a coin lowers the holding's value by the proceeds and
+// earns nothing at the moment of sale. So a day's profit is the change in
+// what the holdings are worth MINUS the money that moved in or out of them:
+//
+//   pnl(day) = value(day) - value(day-1) - (bought - sold)
+//
+// Interest and dividends are deliberately not treated as money moving in:
+// they raise the value and they are genuinely earnings.
+//
+// Every figure comes from a snapshot that was actually taken. A day the app
+// was never opened has no reading and gets no bar and no square, rather than
+// a number worked out from a guess.
+function pnlScopeAssets(scope){
+  const all=state.assets||[];
+  if(!scope||scope==='all')return all;
+  if(scope.indexOf('asset:')===0){const id=scope.slice(6);return all.filter(a=>a&&a.id===id);}
+  return all.filter(a=>a&&a.category===scope);
+}
+function pnlScopeLabel(scope){
+  if(!scope||scope==='all')return 'Everything';
+  if(scope.indexOf('asset:')===0){
+    const a=(state.assets||[]).find(x=>x&&x.id===scope.slice(6));
+    return a?stripParens(a.name):'Holding';
+  }
+  return catLabel(scope);
+}
+// Money in and out of a set of holdings, by day. A sale takes its proceeds
+// out; a purchase puts its cost in; income is left out because it is profit.
+function pnlFlowsByDay(ids){
+  const flows={};
+  (state.transactions||[]).forEach(t=>{
+    if(!t||t.transfer)return;
+    if(t.txType==='income')return;
+    if(!ids.has(t.assetId))return;
+    const k=nwDayKey(t.date);if(!k)return;
+    flows[k]=(flows[k]||0)+(t.txType==='sell'?-num(t.amount):num(t.amount));
+  });
+  return flows;
+}
+// [{date, pnl, value}] for every day two consecutive readings exist for,
+// oldest first. Days without a reading are simply absent.
+function dailyPnlSeries(scope){
+  const list=pnlScopeAssets(scope);
+  if(!list.length)return [];
+  const ids=new Set(list.map(a=>a.id));
+  const hist=(state.pnlHistory||[]).filter(p=>p&&nwDayKey(p.date)&&p.assets)
+    .slice().sort((a,b)=>a.date<b.date?-1:1);
+  if(hist.length<2)return [];
+  const flows=pnlFlowsByDay(ids);
+  const valOf=p=>{let v=0;ids.forEach(id=>{v+=num(p.assets[id]);});return v;};
+  const out=[];
+  for(let i=1;i<hist.length;i++){
+    const k=nwDayKey(hist[i].date);
+    const v=valOf(hist[i]),prev=valOf(hist[i-1]);
+    out.push({date:k,pnl:v-prev-num(flows[k]),value:v});
+  }
+  return out;
+}
+// A month of it, keyed by day, for the calendar.
+function pnlByDayMap(series){
+  const m=new Map();
+  (series||[]).forEach(p=>{if(p&&p.date)m.set(p.date,p);});
+  return m;
+}
+// A calendar square is about forty pixels across. The figure inside drops the
+// currency symbol, since the card above already says what currency this is,
+// and shortens hard: +1,247 reads as +1.2K while +6.68 stays +6.68.
+function pnlCellNum(v){
+  if(state.settings.hideBalance)return '••';
+  const a=Math.abs(num(v)*getCurrRate(currentCurrency.code));
+  if(LAKH_CRORE_CCY.has(currentCurrency.code)){
+    if(a>=1e7)return (a/1e7).toFixed(1)+'Cr';
+    if(a>=1e5)return (a/1e5).toFixed(1)+'L';
+  }else if(a>=1e6)return (a/1e6).toFixed(1)+'M';
+  if(a>=1e3)return (a/1e3).toFixed(1)+'K';
+  return a<10?a.toFixed(2):a.toFixed(0);
+}
+// ── The card itself ──
+// One component, three scopes. The dashboard opens it on everything, the
+// scope chips narrow it to one kind of holding, and an asset's own sheet
+// opens it on that holding alone. Two ways to read the same numbers: a month
+// at a glance, or a bar per day across the range the page is already set to.
+let pnlCalView='cal';        // 'cal' | 'bar'
+let pnlCalScope='all';
+let pnlCalMonth=null;        // its own anchor, browsing here moves nothing else
+let pnlCalPicked=null;
+let pnlCalHost=null;         // which card is on screen: 'dash' or an asset id
+function pnlCalAnchor(){
+  if(!pnlCalMonth){const n=new Date();pnlCalMonth=new Date(n.getFullYear(),n.getMonth(),1);}
+  return pnlCalMonth;
+}
+function setPnlCalView(v){
+  pnlCalView=v==='bar'?'bar':'cal';
+  try{localStorage.setItem('pf_pnlcal_view',pnlCalView);}catch(e){}
+  haptic('tap');renderPnlCal();
+}
+function setPnlCalScope(sc){pnlCalScope=sc;pnlCalPicked=null;haptic('tap');renderPnlCal();}
+function shiftPnlCal(delta){
+  const a=pnlCalAnchor();
+  pnlCalMonth=new Date(a.getFullYear(),a.getMonth()+delta,1);
+  pnlCalPicked=null;haptic('tap');renderPnlCal();
+}
+function pickPnlDay(key){
+  pnlCalPicked=(pnlCalPicked===key)?null:key;
+  haptic('tap');renderPnlCal();
+}
+// The range pills the page already shows decide how far the bars go back, so
+// the two never disagree about what "this month" means.
+function pnlRangeDays(){
+  const r=currentPnlRange||'1M';
+  return {'1D':2,'1W':7,'1M':30,'3M':90,'6M':180,'1Y':365,'5Y':1825,'ALL':100000,'all':100000}[r]
+    ||{'1d':2,'1w':7,'1m':30,'3m':90,'6m':180,'1y':365,'5y':1825}[String(r).toLowerCase()]||30;
+}
+// The card is one element that moves: the dashboard shows it for everything,
+// an asset's sheet moves it inside and scopes it to that holding. Moving the
+// node rather than keeping two of them means one set of ids, one renderer,
+// and no chance of the two drifting apart.
+// Back to the dashboard. Called before an asset sheet rebuilds its markup,
+// because that rebuild replaces everything inside it — including this card,
+// if it were still there — and the card would be gone for good.
+function parkPnlCal(){
+  const card=el('pnlCalCard'),home=el('pnlCalHome');
+  if(!card||!home)return;
+  if(card.parentElement!==home)home.appendChild(card);
+  card.classList.remove('ad-pnl-cal');
+  if(pnlCalHost!=='dash'){pnlCalHost='dash';pnlCalScope='all';pnlCalPicked=null;}
+}
+function mountPnlCal(where,assetId){
+  const card=el('pnlCalCard');if(!card)return;
+  if(where==='asset'){
+    const slot=el('adPnlCalSlot');
+    if(!slot){card.hidden=true;return;}
+    if(card.parentElement!==slot)slot.appendChild(card);
+    card.classList.add('ad-pnl-cal');
+    if(pnlCalHost!==assetId){pnlCalHost=assetId;pnlCalPicked=null;}
+    pnlCalScope='asset:'+assetId;
+  }else{
+    // A dashboard redraw while the sheet is open must not take the card
+    // out from under it.
+    const m=el('assetDetailModal');
+    if(m&&m.classList.contains('open')&&card.closest('#adPnlCalSlot'))return;
+    parkPnlCal();
+  }
+  card.hidden=!(state.assets||[]).length;
+  if(!card.hidden)renderPnlCal();
+}
+function renderPnlCal(){
+  const card=el('pnlCalCard');if(!card||card.hidden)return;
+  const scope=pnlCalScope;
+  const series=dailyPnlSeries(scope);
+  const byDay=pnlByDayMap(series);
+
+  // Scope chips: everything, then each kind of holding that actually exists.
+  const chips=el('pnlCalScopes');
+  if(chips){
+    const cats=CAT_ORDER.filter(c=>(state.assets||[]).some(a=>a&&a.category===c));
+    chips.innerHTML=`<button class="pnl-scope${scope==='all'?' on':''}" onclick="setPnlCalScope('all')">Everything</button>`
+      +cats.map(c=>`<button class="pnl-scope${scope===c?' on':''}" style="--sc:${CAT_COLORS[c]||'var(--accent)'}" onclick="setPnlCalScope('${esc(c)}')">${esc(catLabel(c))}</button>`).join('');
+    chips.hidden=pnlCalHost!=='dash';
+  }
+
+  const segCal=el('pnlCalSegCal'),segBar=el('pnlCalSegBar');
+  if(segCal)segCal.className=pnlCalView==='cal'?'on':'';
+  if(segBar)segBar.className=pnlCalView==='bar'?'on':'';
+
+  // The headline: the picked day, or the most recent one there is a reading for.
+  const latest=series.length?series[series.length-1]:null;
+  const shown=(pnlCalPicked&&byDay.get(pnlCalPicked))||latest;
+  const dEl=el('pnlCalDate'),vEl=el('pnlCalVal');
+  if(dEl)dEl.textContent=shown?formatDate(shown.date):'—';
+  if(vEl){
+    vEl.textContent=shown?((shown.pnl>=0?'+':'−')+fmt(Math.abs(shown.pnl))):'—';
+    vEl.style.color=!shown?'var(--text3)':shown.pnl>0?'var(--green)':shown.pnl<0?'var(--red)':'var(--text)';
+  }
+
+  const calWrap=el('pnlCalGridWrap'),barWrap=el('pnlCalBarWrap');
+  if(calWrap)calWrap.hidden=pnlCalView!=='cal';
+  if(barWrap)barWrap.hidden=pnlCalView!=='bar';
+
+  const empty=el('pnlCalEmpty');
+  if(!series.length){
+    if(empty){empty.hidden=false;
+      empty.textContent=(state.pnlHistory||[]).length<2
+        ? 'Two days of readings and this fills in. A reading is taken whenever you open the app.'
+        : 'Nothing recorded yet for '+pnlScopeLabel(scope)+'.';}
+    if(calWrap)calWrap.hidden=true;
+    if(barWrap)barWrap.hidden=true;
+    return;
+  }
+  if(empty)empty.hidden=true;
+
+  if(pnlCalView==='cal')renderPnlCalGrid(byDay);
+  else renderPnlCalBars(series);
+}
+function renderPnlCalGrid(byDay){
+  const grid=el('pnlCalGrid');if(!grid)return;
+  const a=pnlCalAnchor(),y=a.getFullYear(),m=a.getMonth();
+  const dim=new Date(y,m+1,0).getDate();
+  const lead=new Date(y,m,1).getDay();
+  const todayKey=todayStr();
+  const lbl=el('pnlCalMonth');
+  if(lbl)lbl.textContent=y+'-'+String(m+1).padStart(2,'0');
+  const nx=el('pnlCalNext');
+  if(nx){const now=new Date();const future=y>now.getFullYear()||(y===now.getFullYear()&&m>=now.getMonth());
+    nx.disabled=future;nx.style.opacity=future?'.3':'';}
+
+  // The biggest move in the month sets the scale, so a quiet month is not
+  // painted the same as a violent one.
+  let peak=0;
+  for(let d=1;d<=dim;d++){const p=byDay.get(dayKey(new Date(y,m,d)));if(p)peak=Math.max(peak,Math.abs(p.pnl));}
+
+  const DOW=['S','M','T','W','T','F','S'];
+  let html='<div class="hcal-dow">'+DOW.map(d=>`<span>${d}</span>`).join('')+'</div><div class="hcal-days">';
+  for(let i=0;i<lead;i++)html+='<div class="hcal-pad"></div>';
+  let up=0,down=0,sum=0;
+  for(let d=1;d<=dim;d++){
+    const key=dayKey(new Date(y,m,d));
+    const p=byDay.get(key);
+    let cls='hcal-day pnl-day',style='';
+    if(p){
+      sum+=p.pnl;
+      if(p.pnl>0)up++;else if(p.pnl<0)down++;
+      const mag=peak>0?Math.min(1,Math.abs(p.pnl)/peak):0;
+      if(Math.abs(p.pnl)>=0.005){
+        cls+=' has '+(p.pnl>0?'up':'dn');
+        style=`--fill:${(0.22+mag*0.78).toFixed(2)}`;
+      }else cls+=' flat';
+    }else cls+=' nodata';
+    if(key===todayKey)cls+=' today';
+    if(pnlCalPicked===key)cls+=' picked';
+    const amt=p?((p.pnl>=0?'+':'−')+pnlCellNum(p.pnl)):'';
+    const label=p?(key+' '+(p.pnl>=0?'up ':'down ')+fmt(Math.abs(p.pnl))):(key+', no reading');
+    html+=`<button type="button" class="${cls}" style="${style}" data-key="${key}" ${p?'':'disabled'}
+      onclick="pickPnlDay('${key}')" aria-label="${esc(label)}">
+      <span class="hcal-n">${d}</span>
+      ${p?`<span class="pnl-d-amt">${esc(amt)}</span>`:''}
+    </button>`;
+  }
+  html+='</div>';
+  grid.innerHTML=html;
+
+  const foot=el('pnlCalFoot');
+  if(foot){
+    const col=sum>0?'var(--green)':sum<0?'var(--red)':'var(--text)';
+    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>this month</span></div>`
+      +`<div class="pnl-foot-cell"><b style="color:var(--green)">${up}</b><span>up ${up===1?'day':'days'}</span></div>`
+      +`<div class="pnl-foot-cell"><b style="color:var(--red)">${down}</b><span>down ${down===1?'day':'days'}</span></div>`;
+  }
+}
+let pnlCalChart=null;
+function renderPnlCalBars(series){
+  const c=el('pnlCalBarChart');if(!c||!window.Chart)return;
+  const days=pnlRangeDays();
+  const pts=series.slice(-Math.max(2,days));
+  if(pnlCalChart){try{pnlCalChart.destroy();}catch(e){}pnlCalChart=null;}
+  const css=getComputedStyle(document.documentElement);
+  const green=css.getPropertyValue('--green').trim()||'#16d6a4';
+  const red=css.getPropertyValue('--red').trim()||'#ff5b75';
+  const grid=css.getPropertyValue('--border').trim()||'#262626';
+  const text3=css.getPropertyValue('--text3').trim()||'#888';
+  pnlCalChart=new Chart(c.getContext('2d'),{
+    type:'bar',
+    data:{labels:pts.map(p=>p.date),
+      datasets:[{data:pts.map(p=>p.pnl),
+        backgroundColor:pts.map(p=>p.pnl>=0?green:red),
+        borderRadius:3,borderSkipped:false,barPercentage:.72,categoryPercentage:.9}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:260},
+      plugins:{legend:{display:false},tooltip:{displayColors:false,
+        callbacks:{title:it=>formatDate(it[0].label),
+          label:it=>(it.raw>=0?'+':'−')+fmt(Math.abs(it.raw))}}},
+      scales:{
+        x:{grid:{display:false},border:{display:false},
+          ticks:{color:text3,font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:4,
+            callback:function(v,i){const d=this.getLabelForValue(v);return String(d).slice(5);}}},
+        y:{grid:{color:grid},border:{display:false},
+          ticks:{color:text3,font:{size:9},maxTicksLimit:5,
+            callback:v=>compactNum(num(v)*getCurrRate(currentCurrency.code))}}}}
+  });
+  const foot=el('pnlCalFoot');
+  if(foot){
+    const sum=pts.reduce((t,p)=>t+p.pnl,0);
+    const up=pts.filter(p=>p.pnl>0).length,down=pts.filter(p=>p.pnl<0).length;
+    const best=pts.reduce((b,p)=>!b||p.pnl>b.pnl?p:b,null);
+    const col=sum>0?'var(--green)':sum<0?'var(--red)':'var(--text)';
+    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>over ${plural(pts.length,'day')}</span></div>`
+      +`<div class="pnl-foot-cell"><b style="color:var(--green)">${up}</b><span>up</span></div>`
+      +`<div class="pnl-foot-cell"><b style="color:var(--red)">${down}</b><span>down</span></div>`
+      +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best day</span></div>`:'');
+  }
 }
 // The same colours the donut and category table already use, in one place so
 // every report that splits by category agrees.
@@ -3368,13 +3722,44 @@ function buildDebtAgeing(type){
            overdueCount: overdue.length,
            noDueCount: rows.filter(r => !r.hasDue).length };
 }
+// How far apart the points should be, per range. A week reads day by day; a
+// year every fifth day, which is fifty-odd points rather than three hundred
+// and sixty-five crammed into a chart 84px tall.
+const NW_STEP_DAYS={'1d':1,'7d':1,'30d':2,'3m':3,'6m':4,'ytd':4,'1y':5,'5y':10};
+function nwStepForRange(range,count){
+  const fixed=NW_STEP_DAYS[range];
+  if(fixed)return fixed;
+  // "All" and a custom window have no fixed answer, so aim for a readable
+  // number of points whatever the span turns out to be.
+  return Math.max(1,Math.ceil(count/120));
+}
+// Keep every nth point, and always the last one: the right-hand end of the
+// line is today, and dropping it to keep the spacing even would be drawing
+// the chart short of the number printed above it.
+function sampleEveryNth(arr,n){
+  if(n<=1||arr.length<=2)return arr;
+  const out=[];
+  for(let i=0;i<arr.length;i+=n)out.push(arr[i]);
+  if(out[out.length-1]!==arr[arr.length-1])out.push(arr[arr.length-1]);
+  return out;
+}
 function getFilteredHistory(){
+  // Today is the one range a daily series cannot draw: it has two points in
+  // it at best. The two-hourly readings are what that view is for.
+  if(currentPnlRange==='1d'){
+    const floor=Date.now()-26*3600*1000;
+    const intra=(state.intraday||[]).filter(x=>x&&x.t>=floor);
+    if(intra.length>=2)return intra.map(x=>({date:new Date(x.t).toISOString(),netWorth:num(x.v),estimated:false,intraday:true}));
+  }
   const hist = buildNetWorthSeries();
   if (!hist.length) return [];
   const cut = rangeCutDate(currentPnlRange);
-  if (!cut) return hist;
-  const cutStr = ymdUTC(cut);
-  return hist.filter(p => p.date >= cutStr);
+  const win = cut ? hist.filter(p => p.date >= ymdUTC(cut)) : hist;
+  // A window with one point in it is not a line. Fall back to the last two
+  // readings there are, so a 1D view on an account recorded yesterday still
+  // draws something true rather than nothing.
+  const pts = win.length>=2 ? win : hist.slice(-2);
+  return sampleEveryNth(pts, nwStepForRange(currentPnlRange, pts.length));
 }
 function nwYesterday(){if(!state.pnlHistory||state.pnlHistory.length<2)return null;const today=todayStr();const prev=[...state.pnlHistory].reverse().find(p=>p.date!==today);return prev?num(prev.netWorth):null;}
 // ════════ COUNT-UP ════════
@@ -3458,6 +3843,7 @@ function renderDashboard(){
   animateNum('statIOwe',tiR);el('statIOweCount').textContent=plural(state.debts.filter(d=>d.type==='iowe').length,'person','people');
   const done=state.goals.filter(g=>(g.saved||0)>=(g.target||1)).length;el('statGoals').textContent=done+' / '+state.goals.length;
   renderNeedsAttention();renderMiniChart(nw);renderDonut(ta);renderBreakdown(ta,to,ti);renderRecentTx();renderTopMovers();renderInsights(ta,to,ti,nw,PL.pnl,PL.pct,best,worst);
+  mountPnlCal('dash');
 }
 function renderTopMovers(){const card=el('moversCard'),sc=el('moversScroll');if(!card)return;
   const seen=new Set(),items=[];state.assets.forEach(a=>{if(a.coinId&&livePrices[a.coinId]&&!seen.has(a.coinId)){seen.add(a.coinId);const lp=livePrices[a.coinId];items.push({id:a.coinId,sym:stripParens(a.ticker||a.name),img:a.coinImage||'',price:usdToNpr(lp.usd*(a.category==='commodity'?1:1)),chg:lp.change24h});}});
@@ -6627,7 +7013,7 @@ function openModal(id){const m=el(id);if(!m)return;lastFocus=document.activeElem
     // scrolls sideways was measured at zero and cached as having nowhere to
     // go. Measure again once it is actually on screen.
     try{ bindScrollHints(m); }catch(e){}},120);}
-function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();m.classList.remove('open');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
+function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();if(id==='assetDetailModal')parkPnlCal();m.classList.remove('open');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
 function swapModal(closeId,openId){
   // Replace one open modal with another without disturbing the browser history depth -
   // pressing back afterwards should return to whatever was open before the FIRST modal, not stack an extra entry.
@@ -7524,7 +7910,7 @@ function saveLiqTx(id){
   openAssetDetail(id);
 }
 
-function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)return;detailAssetId=id;txMode=null;txUnit=null;txCashChoice=null;liqMode=null;const cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),cp=getAssetCurrentPrice(a),pos=pnl===null||pnl>=0,txs=txsForAsset(a).slice().reverse(),type=ASSET_TYPES.find(t=>t.id===a.category)||ASSET_TYPES[5],img=a.coinImage||'';
+function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)return;parkPnlCal();detailAssetId=id;txMode=null;txUnit=null;txCashChoice=null;liqMode=null;const cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),cp=getAssetCurrentPrice(a),pos=pnl===null||pnl>=0,txs=txsForAsset(a).slice().reverse(),type=ASSET_TYPES.find(t=>t.id===a.category)||ASSET_TYPES[5],img=a.coinImage||'';
   // What the holding is up or down, next to the value it is a gain on. It sat
   // beside the unit price before, where it read as if the price had moved.
   const adPnl=(a.category!=='liquidity'&&pnl!==null)
@@ -7577,13 +7963,16 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
     ${a.category!=='liquidity'?`<div class="detail-stats"><div class="d-stat"><div class="d-stat-lbl">COST</div><div class="d-stat-val">${a.buyPrice?fmt((a.buyPrice||0)*assetUnits(a)):'-'}</div></div><div class="d-stat"><div class="d-stat-lbl">P&amp;L</div><div class="d-stat-val" style="color:${pos?'var(--green)':'var(--red)'}">${pnl!==null?(pos?'+':'')+fmt(pnl):'N/A'}</div></div><div class="d-stat"><div class="d-stat-lbl">RETURN</div><div class="d-stat-val" style="color:${pos?'var(--green)':'var(--red)'}">${pp!==null?(pos?'+':'')+pp.toFixed(2)+'%':'N/A'}</div></div></div>`:''}
     ${txUI}
     ${(a.qty||a.date)?`<div class="ad-facts">${a.qty?`<div class="ad-fact"><span class="ad-fact-lbl">Holding</span><span class="ad-fact-val">${esc(fmtQty(a.qty,a))} ${esc(a.unit||'units')}</span></div>`:''}${a.date?`<div class="ad-fact"><span class="ad-fact-lbl">Held since</span><span class="ad-fact-val">${esc(formatDate(a.date))}</span></div>`:''}</div>`:''}
-    ${txs.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 6px"><div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase">TRANSACTION HISTORY</div><div style="display:flex;align-items:center;gap:6px">${(a.commodityId&&(COMMODITIES.find(c=>c.id===a.commodityId)||COMMODITIES[0]).unitOptions.length>1)?`<div class="custom-select-wrap tx-hist-unit" id="txHistUnitWrap_${a.id}" style="width:auto;min-width:88px"></div>`:''}<button class="tx-export-btn" onclick="event.stopPropagation();openAssetExportPicker('${a.id}')" aria-label="Export transaction history"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button></div></div>${buildTxTable(txs,a)}`:''}</div>`;
+    ${txs.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 6px"><div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase">TRANSACTION HISTORY</div><div style="display:flex;align-items:center;gap:6px">${(a.commodityId&&(COMMODITIES.find(c=>c.id===a.commodityId)||COMMODITIES[0]).unitOptions.length>1)?`<div class="custom-select-wrap tx-hist-unit" id="txHistUnitWrap_${a.id}" style="width:auto;min-width:88px"></div>`:''}<button class="tx-export-btn" onclick="event.stopPropagation();openAssetExportPicker('${a.id}')" aria-label="Export transaction history"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button></div></div>${buildTxTable(txs,a)}`:''}<div id="adPnlCalSlot"></div></div>`;
   updateCurrLabels();if(a.category==='liquidity')bindLiqAmtCcy();openModal('assetDetailModal');
   if(hasChart){
     el('csRange').innerHTML=CS_TIMEFRAMES.map(t=>
       `<button class="pnl-pill ${t.k===CS_DEFAULT_TF?'active':''}" data-tf="${t.k}" onclick="loadCandles('${a.coinId}','${t.k}',this,'${a.id}')">${t.label}</button>`).join('');
     loadCandles(a.coinId,CS_DEFAULT_TF,null,a.id);
-  }}
+  }
+  // Day by day, for this holding on its own.
+  mountPnlCal('asset',a.id);
+}
 // The filter is a TIMEFRAME, how much time one candle covers, which is what
 // the control means in a trading app. The window you are looking at is a
 // separate thing, and that is what panning and pinching control.
@@ -10654,8 +11043,14 @@ function renderNeedsAttention(){
   const card=el('needsCard'), list=el('needsList'), title=el('needsTitle');
   if(!card||!list)return;
   const items=needsAttentionItems();
-  if(!items.length){card.style.display='none';list.innerHTML='';needsExpanded=false;return;}
+  // The insights strip below closes its top gap only when this card is really
+  // there to provide one. A CSS adjacency could not tell, since display:none
+  // leaves an element a sibling.
+  const pg=el('page-dash');
+  if(!items.length){card.style.display='none';list.innerHTML='';needsExpanded=false;
+    if(pg)pg.classList.remove('dash-has-needs');return;}
   card.style.display='';
+  if(pg)pg.classList.add('dash-has-needs');
   if(title)title.textContent=items.length===1?'Needs you':plural(items.length,'thing')+' need you';
   // "and 2 more" was a dead label on a card whose whole job is to be acted on.
   const show=needsExpanded?items:items.slice(0,3);
