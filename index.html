@@ -1213,6 +1213,21 @@ if (typeof window.isPendingSync !== 'function') {
   </div>
 </div>
 
+<div class="modal-overlay" id="debtEntryModal" role="dialog" aria-modal="true" aria-labelledby="debtEntryTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="debtEntryTitle">Edit Entry</div><button class="modal-close" onclick="closeModal('debtEntryModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl" for="debtEntryAmt">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="debtEntryAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="debtEntryAmtCcyWrap"></div></div></div>
+      <div class="form-row"><label class="form-lbl" for="debtEntryDate">DATE</label><input class="form-input" id="debtEntryDate" type="date"/></div>
+      <div class="form-row"><label class="form-lbl" for="debtEntryNote">NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtEntryNote" placeholder="Reason, reference…"/></div>
+      <div class="form-row"><label class="form-lbl" id="debtEntryAcctLbl">PAID FROM</label><div id="debtEntryAcctWrap" class="custom-select-wrap"></div><div class="form-hint" id="debtEntryAcctHint"></div></div>
+      <div class="form-hint" id="debtEntryHint" style="margin-bottom:12px"></div>
+      <button class="submit-btn" id="debtEntrySaveBtn" onclick="saveDebtEntry()">Save Changes</button>
+      <button class="delete-btn" id="debtEntryDeleteBtn" onclick="deleteDebtEntry()">Delete This Entry</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="addGoalModal" role="dialog" aria-modal="true" aria-labelledby="addGoalTitle" aria-hidden="true">
   <div class="modal-sheet">
     <div class="modal-handle" data-drag></div>

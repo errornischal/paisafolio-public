@@ -2075,6 +2075,7 @@ function loadState(){
   migrateDuplicateCommodityAssets();
   migrateTransactionAssetIds();
   migratePropertyTxQty();
+  migrateDebtLedgers();
   state.transactions.forEach(t=>{if(t.coinImage&&t.coinImage.startsWith('/api/coinimage?url=')){try{t.coinImage=decodeURIComponent(t.coinImage.replace('/api/coinimage?url=',''));}catch(e){}}});
   if(!state.pnlHistory)state.pnlHistory=[];if(!state.transactions)state.transactions=[];
   state.goals.forEach(g=>{if((g.target>0)&&(g.saved||0)>=g.target)completedGoals.add(g.id);});
@@ -4503,6 +4504,60 @@ function renderAssetsTable(target,assets){const tm={};ASSET_TYPES.forEach(t=>tm[
 
 // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 DEBT DETAIL & PAYMENTS \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 let viewingDebtId=null;
+// ════════ DEBT LEDGER ════════
+// A debt was one number you edited, plus a log you could only append to. A
+// lend recorded a month ago with the wrong figure could not be corrected;
+// the only way out was to change the debt's total, which then disagreed with
+// its own history. Every lend and every repayment is now an entry you open
+// and edit, the way a buy or a sell is on an asset, and the debt's amount is
+// the sum of its lends rather than a figure kept alongside them.
+function debtLedger(d){
+  if(!d)return [];
+  if(!Array.isArray(d.lendHistory)||!d.lendHistory.length){
+    d.lendHistory=[{id:uid(),amount:num(d.amount),note:d.note||null,
+      date:d.lentDate||(d.date?String(d.date).split('T')[0]:todayStr()),
+      account:null,linkId:null}];
+  }
+  return d.lendHistory;
+}
+function recalcDebtAmount(d){
+  if(!d||!Array.isArray(d.lendHistory)||!d.lendHistory.length)return;
+  d.amount=d.lendHistory.reduce((s,h)=>s+num(h&&h.amount),0);
+}
+// Every debt gets its opening entry, so there is nothing that can only be
+// edited as a total. Idempotent: a debt that already has one is left alone.
+function migrateDebtLedgers(){
+  (state.debts||[]).forEach(d=>{ if(d&&!(Array.isArray(d.lendHistory)&&d.lendHistory.length))debtLedger(d); });
+}
+// Lending hands money over, so it leaves the account; being repaid brings it
+// back. Borrowing is the mirror of both.
+function debtCashDir(isOwed,kind){
+  return kind==='pay' ? (isOwed?'in':'out') : (isOwed?'out':'in');
+}
+function debtLegNote(d,kind){
+  const owed=d&&d.type==='owed',who=(d&&d.name)||'someone';
+  if(kind==='pay')return owed?(who+' repaid'):('Repaid '+who);
+  return owed?('Lent to '+who):('Borrowed from '+who);
+}
+function applyDebtCash(d,entry,kind){
+  if(!d||!entry||!entry.account)return;
+  const acct=(state.assets||[]).find(x=>x.id===entry.account);if(!acct)return;
+  const dir=debtCashDir(d.type==='owed',kind),amt=num(entry.amount);
+  if(!amt)return;
+  if(!entry.linkId)entry.linkId=uid();
+  applyCashLegBalance(acct,amt,dir);
+  pushCashLeg(acct,amt,dir,entry.date||todayStr(),entry.linkId,debtLegNote(d,kind));
+}
+function reverseDebtCash(d,entry,kind){
+  if(!d||!entry||!entry.account||!entry.linkId)return;
+  const acct=(state.assets||[]).find(x=>x.id===entry.account);
+  const dir=debtCashDir(d.type==='owed',kind);
+  if(acct)applyCashLegBalance(acct,num(entry.amount),dir==='in'?'out':'in');
+  state.transactions=(state.transactions||[]).filter(t=>!(t.linkId===entry.linkId&&t.transfer));
+  // A stablecoin keeps its money in the quantity the leg carried, not in a
+  // balance, so removing the leg is only half of it until the replay runs.
+  if(acct&&isStablecoin(acct))recalcAssetFromTransactions(acct);
+}
 function openDebtDetail(id){
   const d=state.debts.find(x=>x.id===id);if(!d)return;
   viewingDebtId=id;
@@ -4522,22 +4577,26 @@ function renderDebtDetailBody(){
   const paidPct=d.amount>0?Math.min(100,(totalPaid/(d.amount+acc))*100):0;
 
   const statusColor=isOwed?'var(--green)':'var(--red)';
-  const lendHistory=d.lendHistory||[];
-  const lendRows=lendHistory.slice().reverse().map(h=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-size:13px;font-weight:600;color:${statusColor}">${isOwed?'Lent':'Borrowed'} ${fmt(h.amount)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${formatDate(h.date)}${h.note?'  ·  '+esc(h.note):''}</div>
-      </div>
-    </div>`).join('');
-  const payRows=payments.slice().reverse().map(p=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--green)">${isOwed?'Received':'Paid'} ${fmt(p.amount)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${formatDate(p.date)}${p.note?'  ·  '+esc(p.note):''}</div>
-      </div>
-      <button onclick="deleteDebtPayment('${d.id}','${p.id}')" style="background:none;border:none;cursor:pointer;color:var(--text3);padding:4px 8px;font-size:18px" title="Delete">×</button>
-    </div>`).join('');
+  const lendHistory=debtLedger(d);
+  // Which account the money moved through, said on the row, because a lend
+  // that came out of a bank account and one that came from outside money are
+  // different events and used to look identical.
+  const acctName=e=>{const a=e&&e.account?(state.assets||[]).find(x=>x.id===e.account):null;return a?a.name:null;};
+  const entryRow=(e,kind)=>{
+    const paying=kind==='pay';
+    const col=paying?'var(--green)':statusColor;
+    const word=paying?(isOwed?'Received':'Paid'):(isOwed?'Lent':'Borrowed');
+    const acct=acctName(e);
+    return `<button type="button" class="debt-entry" onclick="openDebtEntry('${jsAttr(d.id)}','${kind}','${jsAttr(e.id)}')">
+      <span class="debt-entry-main">
+        <span class="debt-entry-amt" style="color:${col}">${word} ${fmt(e.amount)}</span>
+        <span class="debt-entry-sub">${formatDate(e.date)}${acct?' · '+esc(acct):''}${e.note?' · '+esc(e.note):''}</span>
+      </span>
+      <svg class="debt-entry-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>`;
+  };
+  const lendRows=lendHistory.slice().reverse().map(h=>entryRow(h,'lend')).join('');
+  const payRows=payments.slice().reverse().map(p=>entryRow(p,'pay')).join('');
 
   el('debtDetailBody').innerHTML=`
     <div style="margin-bottom:16px">
@@ -4553,7 +4612,7 @@ function renderDebtDetailBody(){
       ${acc>0?`<div style="font-size:12px;color:var(--accent);margin-bottom:8px"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg> Interest accrued: ${fmt(acc)}</div>${accruedBasis(d)?`<div style="font-size:10.5px;color:var(--text3);margin:-4px 0 8px 16px">${esc(accruedBasis(d))}</div>`:''}`:''}
     </div>
 
-    ${lendHistory.length>1?`
+    ${lendHistory.length?`
     <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">${isOwed?'LEND':'BORROW'} HISTORY</div>
       <div>${lendRows}</div>
@@ -4572,6 +4631,8 @@ function renderDebtDetailBody(){
         </div>
       </div>
       <input class="form-input" id="debtAddNote" type="text" placeholder="Reason (optional)" style="margin-bottom:8px"/>
+      <label class="form-lbl" id="debtAddAcctLbl">${isOwed?'PAID FROM':'RECEIVED INTO'}</label>
+      <div id="debtAddAcctWrap" class="custom-select-wrap" style="margin-bottom:8px"></div>
       <button class="submit-btn" style="margin:0" onclick="recordDebtAddition()">
         ${isOwed?'Record New Lend':'Record New Borrow'}
       </button>
@@ -4590,6 +4651,8 @@ function renderDebtDetailBody(){
         </div>
       </div>
       <input class="form-input" id="debtPayNote" type="text" placeholder="Note (optional)" style="margin-bottom:8px"/>
+      <label class="form-lbl" id="debtPayAcctLbl">${isOwed?'RECEIVED INTO':'PAID FROM'}</label>
+      <div id="debtPayAcctWrap" class="custom-select-wrap" style="margin-bottom:8px"></div>
       <button class="submit-btn" style="margin:0;background:var(--green)" onclick="recordDebtPayment()">
         ${isOwed?'Record Payment Received':'Record Payment Made'}
       </button>
@@ -4599,6 +4662,30 @@ function renderDebtDetailBody(){
     <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">PAYMENT HISTORY</div>
     <div>${payRows}</div>`:'<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">No payments recorded yet</div>'}
   `;
+  buildDebtAcctSelect('debtAddAcctWrap','lend');
+  buildDebtAcctSelect('debtPayAcctWrap','pay');
+}
+// Where the money comes from, or lands. Same accounts the rest of the app
+// offers, plus the honest option of money that never touched one.
+// Null until something picks one, rather than CASH_NONE: that constant is
+// declared further down the file, and naming it here runs into its temporal
+// dead zone and throws on load. Null reads as "not a tracked account" too.
+let debtAddAcct=null,debtPayAcct=null;
+function debtAcctOptions(){
+  const opts=cashAccounts().map(a=>({value:a.id,label:a.name+' · '+fmt(a.value||0)}));
+  opts.push({value:CASH_NONE,label:'Not from a tracked account'});
+  return opts;
+}
+function buildDebtAcctSelect(wrapId,kind,current,onPick){
+  const wrap=el(wrapId);if(!wrap)return;
+  const opts=debtAcctOptions();
+  let cur=current!==undefined?current:(kind==='pay'?debtPayAcct:debtAddAcct);
+  if(!cur||!opts.some(o=>o.value===cur))cur=CASH_NONE;
+  if(current===undefined){ if(kind==='pay')debtPayAcct=cur; else debtAddAcct=cur; }
+  buildCustomSelect(wrapId,opts,cur,v=>{
+    if(onPick)onPick(v);
+    else if(kind==='pay')debtPayAcct=v; else debtAddAcct=v;
+  });
 }
 function recordDebtPayment(){
   const d=state.debts.find(x=>x.id===viewingDebtId);if(!d)return;
@@ -4609,9 +4696,19 @@ function recordDebtPayment(){
   const remaining=d.amount+acc-totalPaid;
   if(amt/rate>remaining+0.001){toast('Cannot exceed remaining '+fmt(remaining),'error');return;}
   if(!d.payments)d.payments=[];
-  d.payments.push({id:uid(),amount:amt/rate,date:el('debtPayDate').value||todayStr(),note:el('debtPayNote').value.trim()||null});
+  const payAcct=(debtPayAcct&&debtPayAcct!==CASH_NONE)?resolveCashAccount(debtPayAcct):null;
+  {const blk=cashLegBlocked(payAcct);if(blk){toast(blk,'error');return;}}
+  // Paying a debt you owe moves money you have to have.
+  if(payAcct&&debtCashDir(d.type==='owed','pay')==='out'){
+    const have=isStablecoin(payAcct)?getAssetCurrentValue(payAcct):num(payAcct.value);
+    if(have+1e-9<amt/rate){toast(payAcct.name+' only has '+fmt(have),'error');return;}
+  }
+  const payEntry={id:uid(),amount:amt/rate,date:el('debtPayDate').value||todayStr(),
+    note:el('debtPayNote').value.trim()||null,account:payAcct?payAcct.id:null,linkId:null};
+  d.payments.push(payEntry);
+  applyDebtCash(d,payEntry,'pay');
   saveState();renderAll();renderDebtDetailBody();
-  haptic('success');toast('Payment recorded','success');
+  haptic('success');toast('Payment recorded'+(payAcct?(debtCashDir(d.type==='owed','pay')==='in'?', into ':', from ')+payAcct.name:''),'success');
 }
 function recordDebtAddition(){
   const d=state.debts.find(x=>x.id===viewingDebtId);if(!d)return;
@@ -4621,11 +4718,115 @@ function recordDebtAddition(){
   const amtN=amt/rate;
   const dateVal=el('debtAddDate').value||todayStr();
   const noteVal=el('debtAddNote').value.trim();
-  if(!d.lendHistory)d.lendHistory=[{id:uid(),amount:d.amount,note:d.note||null,date:d.lentDate||(d.date?d.date.split('T')[0]:dateVal)}];
-  d.amount+=amtN;
-  d.lendHistory.push({id:uid(),amount:amtN,note:noteVal||null,date:dateVal});
+  debtLedger(d);
+  const addAcct=(debtAddAcct&&debtAddAcct!==CASH_NONE)?resolveCashAccount(debtAddAcct):null;
+  {const blk=cashLegBlocked(addAcct);if(blk){toast(blk,'error');return;}}
+  // Lending hands money over: the account has to actually have it.
+  if(addAcct&&debtCashDir(d.type==='owed','lend')==='out'){
+    const have=isStablecoin(addAcct)?getAssetCurrentValue(addAcct):num(addAcct.value);
+    if(have+1e-9<amtN){toast(addAcct.name+' only has '+fmt(have),'error');return;}
+  }
+  const lendEntry={id:uid(),amount:amtN,note:noteVal||null,date:dateVal,
+    account:addAcct?addAcct.id:null,linkId:null};
+  d.lendHistory.push(lendEntry);
+  applyDebtCash(d,lendEntry,'lend');
+  recalcDebtAmount(d);
   saveState();renderAll();renderDebtDetailBody();
   haptic('success');toast((d.type==='owed'?'Lend':'Borrow')+' recorded','success');
+}
+// ════════ EDITING ONE ENTRY ════════
+// Opening a lend or a repayment on its own, so a wrong figure is corrected
+// where it was entered. Editing the amount re-derives the debt's total, and
+// any cash the entry moved is put back before the new version moves it
+// again, so an edit that only changes a note leaves every balance alone.
+let editingDebtEntry=null;   // {debtId, kind, id}
+let debtEntryAcct=null;
+function debtEntryList(d,kind){ return kind==='pay'?(d.payments||[]):debtLedger(d); }
+function openDebtEntry(debtId,kind,entryId){
+  const d=(state.debts||[]).find(x=>x.id===debtId);if(!d)return;
+  const e=debtEntryList(d,kind).find(x=>x&&x.id===entryId);if(!e)return;
+  editingDebtEntry={debtId,kind,id:entryId};
+  const owed=d.type==='owed',paying=kind==='pay';
+  el('debtEntryTitle').textContent=paying?(owed?'Payment Received':'Payment Made'):(owed?'Money Lent':'Money Borrowed');
+  const dir=debtCashDir(owed,kind);
+  el('debtEntryAcctLbl').textContent=dir==='in'?'RECEIVED INTO':'PAID FROM';
+  el('debtEntryAcctHint').textContent=dir==='in'
+    ? 'Where this money landed. Change it and the balances follow.'
+    : 'Where this money came from. Change it and the balances follow.';
+  el('debtEntryHint').textContent=paying
+    ? 'Correcting this changes what is still outstanding.'
+    : 'The debt\u2019s total is the sum of its entries, so correcting this corrects the total.';
+  resetMoneyCcy(['debtEntryAmt']);
+  bindMoneyCcy('debtEntryAmt','debtEntryAmtCcyWrap');
+  setMoneyField('debtEntryAmt',num(e.amount));
+  el('debtEntryDate').value=e.date||todayStr();
+  el('debtEntryNote').value=e.note||'';
+  debtEntryAcct=e.account||CASH_NONE;
+  buildDebtAcctSelect('debtEntryAcctWrap',kind,debtEntryAcct,v=>{debtEntryAcct=v;});
+  // The only lend is what the debt IS. Deleting it would leave a debt of
+  // nothing; deleting the debt is the thing they actually want.
+  const solo=kind==='lend'&&debtLedger(d).length<2;
+  const del=el('debtEntryDeleteBtn');
+  del.style.display=solo?'none':'';
+  openModal('debtEntryModal');
+}
+function saveDebtEntry(){
+  if(!editingDebtEntry)return;
+  const {debtId,kind,id}=editingDebtEntry;
+  const d=(state.debts||[]).find(x=>x.id===debtId);if(!d)return;
+  const list=debtEntryList(d,kind);
+  const e=list.find(x=>x&&x.id===id);if(!e)return;
+  const amt=moneyBase('debtEntryAmt');
+  if(isNaN(amt)||amt<=0){toast('Enter an amount','error');return;}
+  const acct=(debtEntryAcct&&debtEntryAcct!==CASH_NONE)?resolveCashAccount(debtEntryAcct):null;
+  {const blk=cashLegBlocked(acct);if(blk){toast(blk,'error');return;}}
+  const dir=debtCashDir(d.type==='owed',kind);
+  // Put the old movement back first, so the check below and the new leg both
+  // measure against the balance as it would be without this entry.
+  reverseDebtCash(d,e,kind);
+  if(acct&&dir==='out'){
+    const have=isStablecoin(acct)?getAssetCurrentValue(acct):num(acct.value);
+    if(have+1e-9<amt){
+      applyDebtCash(d,e,kind);   // nothing changed
+      toast(acct.name+' only has '+fmt(have),'error');return;
+    }
+  }
+  e.amount=amt;
+  e.date=el('debtEntryDate').value||e.date||todayStr();
+  e.note=el('debtEntryNote').value.trim()||null;
+  e.account=acct?acct.id:null;
+  e.linkId=acct?(e.linkId||uid()):null;
+  applyDebtCash(d,e,kind);
+  if(kind==='lend')recalcDebtAmount(d);
+  editingDebtEntry=null;
+  saveState();closeModal('debtEntryModal');renderAll();renderDebtDetailBody();
+  haptic('success');toast('Entry updated','success');
+}
+async function deleteDebtEntry(){
+  if(!editingDebtEntry)return;
+  const {debtId,kind,id}=editingDebtEntry;
+  const d=(state.debts||[]).find(x=>x.id===debtId);if(!d)return;
+  const list=debtEntryList(d,kind);
+  const e=list.find(x=>x&&x.id===id);if(!e)return;
+  const acct=e.account?(state.assets||[]).find(a=>a.id===e.account):null;
+  const dir=debtCashDir(d.type==='owed',kind);
+  let msg=kind==='pay'
+    ? 'The outstanding balance on this debt will go back up by this amount.'
+    : 'This will come off the debt\u2019s total.';
+  if(acct&&!isStablecoin(acct)){
+    const after=num(acct.value)+(dir==='in'?-num(e.amount):num(e.amount));
+    msg+=' '+acct.name+' goes '+(after>=0?'back to ':'to ')+fmt(after)+'.';
+  }
+  if(!await askConfirm({title:'Delete entry?',message:msg,confirmText:'Delete'}))return;
+  withUndo('Entry deleted',['debts','assets','transactions'],()=>{
+    reverseDebtCash(d,e,kind);
+    if(kind==='pay')d.payments=(d.payments||[]).filter(p=>p.id!==id);
+    else {d.lendHistory=(d.lendHistory||[]).filter(h=>h.id!==id);recalcDebtAmount(d);}
+    saveState();
+  });
+  editingDebtEntry=null;
+  closeModal('debtEntryModal');renderAll();renderDebtDetailBody();
+  haptic('tap');
 }
 async function deleteDebtPayment(debtId,payId){
   if(!await askConfirm({title:'Delete payment?',message:'The outstanding balance on this debt will go back up by this amount.',confirmText:'Delete'}))return;
@@ -7868,13 +8069,19 @@ function drawCandles(canvas,ohlc,asset){mountCandleChart(canvas,ohlc,asset);}
 // says where the number comes from. Use Record Lend on the debt itself to
 // add to it, or correct the entry that is wrong.
 function syncDebtLock(d){
-  const lock=!!(d&&(d.lendHistory||[]).filter(h=>h&&num(h.amount)>0).length>1);
+  // Every debt keeps its history now, so the total is always the sum of its
+  // entries and is always corrected there rather than typed over here.
+  const entries=(d&&d.lendHistory||[]).filter(h=>h&&num(h.amount)>0);
+  const lock=!!(d&&entries.length);
   const note=el('debtLedgerLock');
   if(note){
     note.hidden=!lock;
     const txt=el('debtLedgerLockTxt');
-    if(txt&&lock)txt.textContent='This is the total of the '+(d.lendHistory.length)+' entries in the '
-      +((d.type==='owed')?'lend':'borrow')+' history. Add to it with Record '+((d.type==='owed')?'Lend':'Borrow')+', or correct the entry that is wrong.';
+    const word=(d&&d.type==='owed')?'lend':'borrow';
+    if(txt&&lock)txt.textContent=entries.length>1
+      ? 'This is the total of the '+entries.length+' entries in the '+word+' history. Add to it with Record '
+        +((d.type==='owed')?'Lend':'Borrow')+', or open the entry that is wrong.'
+      : 'This comes from the entry in the '+word+' history. Open it there to correct the amount, the date, or which account it moved through.';
   }
   const f=el('debtAmount');
   if(f){f.readOnly=lock;f.setAttribute('aria-readonly',lock?'true':'false');}

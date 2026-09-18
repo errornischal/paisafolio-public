@@ -550,6 +550,17 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .debt-sum-card{flex:1;background:var(--glass-card);backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);border:1px solid var(--glass-border);border-radius:11px;padding:11px;text-align:center;box-shadow:var(--glass-shadow)}
 .debt-sum-lbl{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 .debt-sum-sub{font-size:9px;color:var(--text3);margin-top:3px;min-height:12px}
+/* One lend or one repayment, opened on its own. A row, not a card: it sits
+   inside a section that already has a surface. */
+.debt-entry{display:flex;align-items:center;gap:10px;width:100%;padding:10px 2px;
+  background:none;border:0;border-bottom:1px solid var(--border);
+  font-family:var(--font);text-align:left;cursor:pointer;color:var(--text)}
+.debt-entry:last-child{border-bottom:0}
+.debt-entry:active{background:var(--glass-card-hi)}
+.debt-entry-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.debt-entry-amt{font-size:13px;font-weight:600}
+.debt-entry-sub{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.debt-entry-chev{color:var(--text3);flex-shrink:0}
 .debt-sum-val{font-size:15px;font-weight:800}
 .debt-list{padding:0 12px;display:flex;flex-direction:column;gap:7px}
 .debt-item{position:relative;background:var(--glass-card);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);border:1px solid var(--glass-border);border-radius:var(--radius);padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:.18s;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;box-shadow:var(--glass-shadow)}
