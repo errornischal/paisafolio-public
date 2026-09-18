@@ -10315,7 +10315,18 @@ function mergeImportedData(data){
     const byDate = new Map();
     data.pnlHistory.forEach(p=>{
       const d = safeDate(p && p.date), n = safeNum(p && p.netWorth);
-      if (d && n !== null) byDate.set(d, { date:d, netWorth:n });
+      if (d === null || n === null) return;
+      const pt = { date:d, netWorth:n };
+      // A day also carries what each holding was worth. Rebuilding the point
+      // from two fields threw that away, so restoring a backup kept the
+      // net-worth line and emptied every Daily P&L reading behind it.
+      const av = p && p.assets;
+      if (av && typeof av === 'object' && !Array.isArray(av)){
+        const clean = {};
+        Object.keys(av).forEach(k=>{ const v = safeNum(av[k]); if (v !== null) clean[k] = v; });
+        if (Object.keys(clean).length) pt.assets = clean;
+      }
+      byDate.set(d, pt);
     });
     (state.pnlHistory || []).forEach(p=>{ if (p && p.date) byDate.set(p.date, p); });
     state.pnlHistory = [...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-365);

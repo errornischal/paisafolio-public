@@ -647,7 +647,13 @@ async function pushToCloud(bypassWipeGuard = false) {
           user_id: uid,
           snapshot_date: today,
           net_worth: netWorth,
-          data: { pnlHistory: state.pnlHistory || [] },
+          // A day's per-holding values live on that day's own row. This used
+          // to write the WHOLE history into today's row on every sync, which
+          // nothing ever read back (the pull selects two columns and has
+          // never asked for `data`), so it was a growing write-only blob:
+          // harmless while it held one number per day, several hundred
+          // kilobytes per sync once each day carries a value per holding.
+          data: { assets: (((state.pnlHistory || []).find(x => x && x.date === today) || {}).assets) || {} },
         }, { onConflict: 'user_id,snapshot_date' });
       if (nwErr) throw nwErr;
     }
@@ -710,7 +716,7 @@ async function pullFromCloud(fromSignIn = false) {
       sbClient.from('transactions').select('*').eq('user_id', uid).is('deleted_at', null).order('occurred_at', { ascending: true }),
       sbClient.from('spends').select('*').eq('user_id', uid).is('deleted_at', null).order('occurred_at', { ascending: true }),
       sbClient.from('settings').select('*').eq('user_id', uid).single(),
-      sbClient.from('networth_history').select('snapshot_date, net_worth').eq('user_id', uid).order('snapshot_date', { ascending: true }),
+      sbClient.from('networth_history').select('snapshot_date, net_worth, data').eq('user_id', uid).order('snapshot_date', { ascending: true }),
     ]);
 
     for (const r of [assetsRes, debtsRes, goalsRes, recurRes, txRes, nwRes]) {
@@ -770,7 +776,15 @@ async function pullFromCloud(fromSignIn = false) {
         recurs: (recurRes.data || []).map(rowToRecur),
         transactions: (txRes.data || []).map(rowToTx).filter(t => t._k !== SPEND_MARK),
         spends: cloudSpends,
-        pnlHistory: (nwRes.data || []).map(r => ({ date: r.snapshot_date, netWorth: r.net_worth })),
+        // Carry each day's per-holding values across with it. Without them a
+        // new device gets the net-worth line and a Daily P&L card with
+        // nothing in it, for every day recorded before that device existed.
+        pnlHistory: (nwRes.data || []).map(r => {
+          const pt = { date: r.snapshot_date, netWorth: r.net_worth };
+          const av = r.data && r.data.assets;
+          if (av && typeof av === 'object' && Object.keys(av).length) pt.assets = av;
+          return pt;
+        }),
         settings: settingsRes.data ? { ...settingsRes.data.data } : state.settings,
         lastUpdated: new Date().toISOString(),
       };
