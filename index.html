@@ -382,7 +382,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="spend-stats">
         <div class="spend-stat"><div class="spend-stat-l">IN</div><div class="spend-stat-v" id="spendStatIn" style="color:var(--green)">-</div></div>
         <div class="spend-stat"><div class="spend-stat-l">OUT</div><div class="spend-stat-v" id="spendStatOut">-</div></div>
-        <div class="spend-stat"><div class="spend-stat-l">KEPT</div><div class="spend-stat-v" id="spendStatSaved">-</div><div class="spend-stat-s" id="spendSaveRate"></div></div>
+        <div class="spend-stat"><div class="spend-stat-l">KEPT<span class="spend-stat-s" id="spendSaveRate"></span></div><div class="spend-stat-v" id="spendStatSaved">-</div></div>
       </div>
 
       <div class="card">
@@ -440,7 +440,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="debt-summary">
         <div class="debt-sum-card"><div class="debt-sum-lbl">Owed to Me</div><div class="debt-sum-val green" id="debtOwedTotal">-</div><div class="debt-sum-sub" id="debtOwedInterest"></div></div>
         <div class="debt-sum-card"><div class="debt-sum-lbl">I Owe</div><div class="debt-sum-val red" id="debtIOweTotal">-</div><div class="debt-sum-sub" id="debtIOweInterest"></div></div>
-        <div class="debt-sum-card"><div class="debt-sum-lbl">Net Position</div><div class="debt-sum-val accent" id="debtNet">-</div><div class="debt-sum-sub" id="debtNetSub"></div></div>
+        <div class="debt-sum-card"><div class="debt-sum-lbl">Net Position</div><div class="debt-sum-val accent" id="debtNet">-</div></div>
       </div>
       <div id="debtInsightsStrip" style="display:none;padding:0 12px 8px"><div class="insights" id="debtInsights" style="padding:0"></div></div>
       <div id="debtOverdueBanner" style="display:none;margin:0 12px 8px;background:var(--red-bg);border:1px solid rgba(255,77,106,.25);border-radius:11px;padding:10px 13px;align-items:center;gap:8px">
@@ -1079,10 +1079,6 @@ if (typeof window.isPendingSync !== 'function') {
         <label class="form-lbl" for="stockSearch">SEARCH STOCK</label>
         <div class="coin-search-wrap"><input class="form-input" id="stockSearch" autocomplete="off" placeholder="NABIL, NTC, AAPL…" oninput="onStockSearch()" autocomplete="off"/><div id="stockSuggestions" class="coin-suggestions" style="display:none"></div></div>
         <div class="form-hint green" id="stockHint" style="display:none"></div>
-        <div class="s-item s-item-static" id="nepseRow" style="padding-left:0;padding-right:0;display:none">
-          <span class="s-item-info"><span class="s-item-name">Listed on NEPSE</span><span class="s-item-sub">Takes its price from the exchange instead of one you type</span></span>
-          <span class="toggle" id="nepseToggle" role="switch" tabindex="0" aria-checked="false" onclick="toggleNepse()"><span class="toggle-knob"></span></span>
-        </div>
       </div>
       <div id="propertyIconRow" class="form-row" style="display:none"><label class="form-lbl">PROPERTY TYPE</label><div class="asset-type-row" id="propertyTypeRow"></div></div>
       <div class="form-row" id="assetNameRow" style="display:none"><label class="form-lbl" for="assetName">NAME</label><div class="coin-search-wrap"><input class="form-input" id="assetName" autocomplete="off" placeholder="Asset name…" oninput="onAssetNameInput()"/><div id="assetNameSuggest" class="coin-suggestions" style="display:none"></div></div></div>

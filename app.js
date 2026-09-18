@@ -4707,7 +4707,7 @@ function renderDebtDetailBody(){
         <div class="dcard-sum">${fmt(totalLent)}${lendHistory.length>1?` &middot; ${lendHistory.length} entries`:''}</div>
       </div>
       <div class="dcard-bd">${lendRows||`<div class="dtx-empty">Nothing recorded yet</div>`}</div>
-      <div class="dcard-ft">${debtAddOpen?addForm:`<button type="button" class="ghost-btn" onclick="toggleDebtAddForm()">+ ${isOwed?'Lend more':'Borrow more'}</button>`}</div>
+      <div class="dcard-ft">${debtAddOpen?addForm:`<button type="button" class="ghost-btn ${debtCashDir(isOwed,'lend')==='in'?'gb-in':'gb-out'}" onclick="toggleDebtAddForm()">+ ${isOwed?'Lend more':'Borrow more'}</button>`}</div>
     </section>
 
     <section class="dcard">
@@ -4716,7 +4716,7 @@ function renderDebtDetailBody(){
         <div class="dcard-sum">${fmt(totalPaid)}${payments.length>1?` &middot; ${payments.length} entries`:''}</div>
       </div>
       <div class="dcard-bd">${payRows||`<div class="dtx-empty">${isOwed?'Nothing paid back yet':'You have not repaid any of this yet'}</div>`}</div>
-      <div class="dcard-ft">${debtPayOpen?payForm:`<button type="button" class="ghost-btn" onclick="toggleDebtPayForm()">+ ${isOwed?'Record a payment received':'Record a repayment'}</button>`}</div>
+      <div class="dcard-ft">${debtPayOpen?payForm:`<button type="button" class="ghost-btn ${debtCashDir(isOwed,'pay')==='in'?'gb-in':'gb-out'}" onclick="toggleDebtPayForm()">+ ${isOwed?'Record a payment received':'Record a repayment'}</button>`}</div>
     </section>
   `;
   buildDebtAcctSelect('debtAddAcctWrap','lend',undefined,undefined,debtCashDir(isOwed,'lend')==='in');
@@ -4892,12 +4892,9 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
   el('debtIOweTotal').textContent=fmt(ti);
   const net=to-ti;el('debtNet').textContent=fmt(Math.abs(net+accOwed-accIOwe));
   el('debtNet').className='debt-sum-val '+(net>=0?'green':'red');
-  const ownedIntEl=el('debtOwedInterest');const iOweIntEl=el('debtIOweInterest');const netSubEl=el('debtNetSub');
+  const ownedIntEl=el('debtOwedInterest');const iOweIntEl=el('debtIOweInterest');
   if(ownedIntEl)ownedIntEl.textContent=accOwed>0?`+${fmt(accOwed)} interest`:'';
   if(iOweIntEl)iOweIntEl.textContent=accIOwe>0?`+${fmt(accIOwe)} interest`:'';
-  // "you are owed more" only restated the colour of the figure right above
-  // it, which is already green for owed and red for owing.
-  if(netSubEl)netSubEl.textContent='';
   // Overdue banner
   const today=new Date();today.setHours(0,0,0,0);
   const overdueDebts=state.debts.filter(d=>d.due&&parseDay(d.due)<today);
@@ -6548,8 +6545,29 @@ function syncBodyScrollLock(){
     (el('cmdk')&&el('cmdk').classList.contains('open'));
   document.body.classList.toggle('modal-open',!!anyOpen);
 }
-let _historyDepth=0,_suppressHistoryPop=false;
-function pushModalHistory(){try{history.pushState({pfModal:true,depth:++_historyDepth},'');}catch(e){}}
+// ════════ SHEETS AND THE BACK BUTTON ════════
+// Every open sheet owns one history entry, so Back closes it instead of
+// leaving the app. Closing it by its own X winds that entry back off, and
+// that unwind arrives in popstate looking exactly like a real Back press.
+//
+// Two things went wrong with a plain counter. With two sheets stacked — an
+// entry opened from a debt — the unwind closed the debt behind it as well.
+// And a close followed by an open in the SAME tick (tapping a search result,
+// which closes search and opens what you tapped) let the new push land before
+// the old unwind resolved, so the count said one entry more than the history
+// actually held and the next close walked off the page entirely.
+//
+// Each entry now carries a token, and a close only unwinds when the entry on
+// top is still the one that sheet pushed. When it is not, the entry was
+// already consumed; the sheet just closes and a stale forward entry is left
+// for Back to spend harmlessly.
+let _suppressHistoryPop=false,_selfPop=false;
+let _modalHistIds=[];
+function pushModalHistory(){
+  const id='mh'+(Date.now().toString(36))+Math.random().toString(36).slice(2,7);
+  _modalHistIds.push(id);
+  try{history.pushState({pfModal:true,mhId:id},'');}catch(e){}
+}
 function anyOverlayOpen(){return modalStack.length>0||
   (el('shortcutsHelp')&&el('shortcutsHelp').classList.contains('open'))||
   (el('authModal')&&el('authModal').classList.contains('open'))||
@@ -6565,9 +6583,11 @@ function closeTopmostOverlay(){
   return false;
 }
 window.addEventListener('popstate',()=>{
+  // Our own unwind, from the close that pushed us here. Already accounted for.
+  if(_selfPop){_selfPop=false;return;}
   _suppressHistoryPop=true;
   const closed=closeTopmostOverlay();
-  if(closed&&_historyDepth>0)_historyDepth--;
+  if(closed)_modalHistIds.pop();
   setTimeout(()=>{_suppressHistoryPop=false;},50);
 });
 window.addEventListener('beforeunload',(e)=>{
@@ -6611,7 +6631,16 @@ function swapModal(closeId,openId){
     try{f.setAttribute('tabindex','-1');f.focus({preventScroll:true});}catch(e){}
     try{ bindScrollHints(om); }catch(e){}},120);
 }
-function popModalHistoryIfNeeded(){if(_suppressHistoryPop)return;if(_historyDepth>0){_historyDepth--;_suppressHistoryPop=true;try{history.back();}catch(e){}setTimeout(()=>{_suppressHistoryPop=false;},50);}}
+function popModalHistoryIfNeeded(){
+  if(_suppressHistoryPop)return;
+  const want=_modalHistIds.pop();
+  if(!want)return;
+  let cur=null;try{cur=history.state;}catch(e){}
+  if(!(cur&&cur.pfModal&&cur.mhId===want))return;
+  _selfPop=true;_suppressHistoryPop=true;
+  try{history.back();}catch(e){}
+  setTimeout(()=>{_suppressHistoryPop=false;_selfPop=false;},50);
+}
 function bindModalOverlays(){document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModal(o.id);}));}
 // ════════ CUSTOM SELECT ════════
 function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap)return;const c=options.find(o=>o.value===cur)||options[0];
@@ -7041,13 +7070,7 @@ function onStockSearch(){
   // Typing a symbol the exchange quotes says the same thing as picking it
   // from the list, so it counts the same. Set here rather than left to the
   // save, so what the sheet shows matches what it is about to record.
-  if(nepseKnows(raw)){selectedStockIsNepse=true;_nepseAuto=true;}
-  else if(_nepseAuto){
-    // It was this code that turned it on, for a symbol that is no longer
-    // what is typed. Something the user switched on themselves stays on.
-    selectedStockIsNepse=false;_nepseAuto=false;
-  }
-  syncNepseToggle();
+  selectedStockIsNepse=nepseKnows(raw);
   // Every symbol the exchange quoted today came back with the prices, so the
   // search can offer the market itself the way the coin search does, without
   // a second endpoint or a list baked into the app that would go stale. With
@@ -7085,7 +7108,7 @@ function onStockSearch(){
 // NEPSE switch on, because a share you chose from the NEPSE list is on NEPSE.
 function pickNepseStock(sym,name){
   selectedStockSym=sym;selectedStockName=name;
-  selectedStockIsNepse=true;_nepseAuto=true;syncNepseToggle();
+  selectedStockIsNepse=true;
   const inp=el('stockSearch');if(inp)inp.value=name;
   const box=el('stockSuggestions');if(box){box.style.display='none';box.innerHTML='';}
   // The price is already known, so the field it would be typed into is filled
@@ -7107,27 +7130,20 @@ function pickNepseStock(sym,name){
   haptic('tap');
 }
 function selectStock(sym,name,isNepse){selectedStockSym=sym;selectedStockName=name;el('stockSearch').value=name;el('stockSuggestions').style.display='none';el('stockHint').style.display='none';}
-function toggleNepse(){selectedStockIsNepse=!selectedStockIsNepse;_nepseAuto=false;const t=el('nepseToggle');if(t){t.className='toggle'+(selectedStockIsNepse?' on':'');t.setAttribute('aria-checked',selectedStockIsNepse?'true':'false');}haptic('tap');}
-function syncNepseToggle(){const t=el('nepseToggle');if(!t)return;t.className='toggle'+(selectedStockIsNepse?' on':'');t.setAttribute('aria-checked',selectedStockIsNepse?'true':'false');syncNepseRow();}
+// Whether a share is listed is a fact about the exchange, not a preference:
+// a symbol the feed quotes is listed, one it does not is not. Asking the
+// person to confirm it produced a switch that appeared only when the answer
+// was already no, on every name the feed had never heard of.
+function syncNepseToggle(){selectedStockIsNepse=nepseKnows(selectedStockSym)||nepseKnows((el('stockSearch')&&el('stockSearch').value||'').trim());}
 // Once every listed symbol is known, asking whether a share is listed is
 // asking a question the app can already answer: NTC is either in today's
 // prices or it is not. So the switch only appears when it is genuinely a
 // question, which is a symbol the exchange did not quote, or no prices to
 // check against because the feed is down. When it is recognised, the hint
 // above already says the price is live and there is nothing to decide.
-// Whether this code set the switch, or a person did. Only the first kind
-// gets turned back off when the symbol changes.
-let _nepseAuto=false;
 function nepseKnows(sym){
   const k=String(sym||'').trim().toUpperCase();
   return !!(k&&nepsePrices[k]);
-}
-function syncNepseRow(){
-  const row=el('nepseRow'); if(!row)return;
-  const typed=(el('stockSearch')&&el('stockSearch').value||'').trim();
-  const recognised=nepseKnows(selectedStockSym)||nepseKnows(typed);
-  // Nothing typed yet is not a question either.
-  row.style.display=(recognised||!typed)?'none':'';
 }
 // ════════ GOAL ICONS/COLORS ════════
 function renderGoalIconGrid(){el('goalIconGrid').innerHTML=ICON_KEYS.map(k=>`<button class="icon-opt ${k===selectedGoalIcon?'sel':''}" onclick="setGoalIcon('${k}')" aria-label="${k}">${svgIcon(k,16)}</button>`).join('');}
@@ -7211,14 +7227,14 @@ function syncLedgerLock(a){
 }
 function openAddAsset(){editingAssetId=null;el('addAssetTitle').textContent='Add Asset';el('saveAssetBtn').textContent='Add Asset';el('deleteAssetBtn').style.display='none';selectedAssetType=state.settings.lastAssetType||'crypto';selectedCoinId=null;selectedCoinName=null;selectedCoinImage=null;selectedCommodityId=state.settings.lastCommodityId||'gold';selectedCommodityUnit=state.settings.lastCommodityUnit||'gram';selectedLiquidityType=state.settings.lastLiquidityType||'savings';selectedStockSym=null;selectedStockName=null;selectedStockIsNepse=false;selectedPropertyType='house';
   el('cryptoSearch').value='';el('cryptoSuggestions').style.display='none';el('cryptoPriceHint').style.display='none';el('stockSearch').value='';el('stockSuggestions').style.display='none';el('stockHint').style.display='none';el('assetName').value='';el('assetQty').value='';el('assetBuyPrice').value='';el('assetDate').value=todayStr();el('assetNotes').value='';el('liquidityName').value='';el('liquidityValue').value='';el('liquidityInterest').value='';el('liquidityMaturity').value='';el('liquidityNotes').value='';el('assetCurrentPrice').value='';
-  syncLedgerLock(null);updateCurrLabels();renderAssetTypeRow();_nepseAuto=false;syncNepseToggle();isPricePerUnitMode=true;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);openModal('addAssetModal');}
+  syncLedgerLock(null);updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=true;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);openModal('addAssetModal');}
 function openEditAsset(id){const a=state.assets.find(x=>x.id===id);if(!a)return;editingAssetId=id;el('addAssetTitle').textContent='Edit Asset';el('saveAssetBtn').textContent='Save Changes';el('deleteAssetBtn').style.display='block';selectedAssetType=a.category;selectedCoinId=a.coinId||null;selectedCoinName=a.name;selectedCoinImage=a.coinImage||null;selectedCommodityId=a.commodityId||'gold';selectedCommodityUnit=a.unit||'gram';selectedStockSym=a.ticker||null;selectedStockName=a.name;selectedStockIsNepse=a.isNepse||false;selectedPropertyType=a.propertyType||'house';
   const liqLabelToVal={'Savings Account':'savings','Current Account':'current','Fixed Deposit (FD)':'fd','Cash in Hand':'cash','Digital Wallet':'digital','Other':'other'};selectedLiquidityType=liqLabelToVal[a.liquidityType]||'savings';
   el('cryptoSearch').value=a.coinId?a.name:'';el('stockSearch').value=a.category==='stock'?a.name:'';el('assetName').value=a.name;el('assetQty').value=a.qty||'';// For crypto/commodity: show total invested (buyPrice * qty); for others: show per-unit price
   const isTotalMode=(a.category==='crypto'||a.category==='commodity'||a.category==='property');el('assetBuyPrice').value=a.buyPrice?((isTotalMode?a.buyPrice*(a.qty||1):a.buyPrice)*getCurrRate(currentCurrency.code)).toFixed(2):'';el('assetDate').value=a.date||'';el('assetNotes').value=a.notes||'';el('assetCurrentPrice').value=a.currentPrice?(a.currentPrice*getCurrRate(currentCurrency.code)).toFixed(2):'';
   if(a.category==='liquidity'){el('liquidityName').value=a.name;el('liquidityValue').value=a.value?(a.value*getCurrRate(currentCurrency.code)).toFixed(2):'';el('liquidityInterest').value=a.interest||'';el('liquidityMaturity').value=a.maturity||'';el('liquidityNotes').value=a.notes||'';}
   if(a.coinId&&livePrices[a.coinId]){el('cryptoPriceHint').style.display='block';el('cryptoPriceHint').textContent='Live: '+fmt(usdToNpr(livePrices[a.coinId].usd))+' per unit';}
-  updateCurrLabels();renderAssetTypeRow();_nepseAuto=false;syncNepseToggle();isPricePerUnitMode=!isTotalMode;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);syncLedgerLock(a);swapModal('assetDetailModal','addAssetModal');}
+  updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=!isTotalMode;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);syncLedgerLock(a);swapModal('assetDetailModal','addAssetModal');}
 
 
 
@@ -7230,7 +7246,7 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
   for(const fid of ['assetQty','assetBuyPrice','liquidityValue']){const f=el(fid);if(f&&f.value!==''&&parseFloat(f.value)<0){toast('Negative values are not allowed','error');f.classList.add('input-error');setTimeout(()=>f.classList.remove('input-error'),700);return;}}
   if(selectedAssetType==='crypto'){if(!selectedCoinId){toast('Search and select a coin','error');return;}name=selectedCoinName;coinId=selectedCoinId;coinImage=selectedCoinImage;qty=parseFloat(el('assetQty').value)||null;const entered=parseFloat(el('assetBuyPrice').value)||null;if(!qty||!entered){toast('Enter quantity and buy price','error');return;}const totalCost=isPricePerUnitMode?entered*qty:entered;buyPriceNPR=(totalCost/bpRate)/qty;}
   else if(selectedAssetType==='commodity'){const comm=COMMODITIES.find(c=>c.id===selectedCommodityId)||COMMODITIES[0];name=comm.label;commodityId=selectedCommodityId;unit=selectedCommodityUnit;if(comm.coinGeckoId)coinId=comm.coinGeckoId;qty=parseFloat(el('assetQty').value)||null;const enteredC=parseFloat(el('assetBuyPrice').value)||null;const totalCostC=(enteredC&&qty&&isPricePerUnitMode)?enteredC*qty:enteredC;buyPriceNPR=(totalCostC&&qty)?(totalCostC/bpRate)/qty:null;if(!qty){toast('Enter quantity','error');return;}}
-  else if(selectedAssetType==='stock'){if(!selectedStockName&&!el('stockSearch').value.trim()){toast('Search and select a stock','error');return;}name=selectedStockName||el('stockSearch').value.trim();ticker=selectedStockSym||name;isNepse=selectedStockIsNepse||nepseKnows(ticker)||nepseKnows(name);qty=parseFloat(el('assetQty').value)||null;const bp=parseFloat(el('assetBuyPrice').value)||null;const bpPerUnit=(bp&&qty&&!isPricePerUnitMode)?bp/qty:bp;buyPriceNPR=bpPerUnit?bpPerUnit/bpRate:null;if(!qty){toast('Enter quantity of shares','error');return;}}
+  else if(selectedAssetType==='stock'){if(!selectedStockName&&!el('stockSearch').value.trim()){toast('Search and select a stock','error');return;}name=selectedStockName||el('stockSearch').value.trim();ticker=selectedStockSym||name;isNepse=nepseKnows(ticker)||nepseKnows(name)||(!Object.keys(nepsePrices).length&&!!(editingAssetId&&(state.assets.find(x=>x.id===editingAssetId)||{}).isNepse));qty=parseFloat(el('assetQty').value)||null;const bp=parseFloat(el('assetBuyPrice').value)||null;const bpPerUnit=(bp&&qty&&!isPricePerUnitMode)?bp/qty:bp;buyPriceNPR=bpPerUnit?bpPerUnit/bpRate:null;if(!qty){toast('Enter quantity of shares','error');return;}}
   else if(selectedAssetType==='liquidity'){name=el('liquidityName').value.trim();if(!name){toast('Enter account/label name','error');return;}const v=parseFloat(el('liquidityValue').value)||null;if(!v){toast('Enter value','error');return;}value=v/getCurrRate(liqValueEntryCcy||currentCurrency.code);const liqLabels={savings:'Savings Account',current:'Current Account',fd:'Fixed Deposit (FD)',cash:'Cash in Hand',digital:'Digital Wallet',other:'Other'};liquidityType=liqLabels[selectedLiquidityType]||'Savings Account';}
   else if(selectedAssetType==='property'){name=el('assetName').value.trim();if(!name){toast('Enter property name','error');return;}propertyType=selectedPropertyType;const bp=parseFloat(el('assetBuyPrice').value)||null;buyPriceNPR=bp?bp/bpRate:null;}
   else{name=el('assetName').value.trim();if(!name){toast('Enter a name','error');return;}qty=parseFloat(el('assetQty').value)||null;const bp=parseFloat(el('assetBuyPrice').value)||null;const bpPerUnit=(bp&&qty&&!isPricePerUnitMode)?bp/qty:bp;buyPriceNPR=bpPerUnit?bpPerUnit/bpRate:null;}
@@ -12155,7 +12171,9 @@ function renderSpend(){
   savedEl.textContent=(sum.saved>=0?'+':'−')+fmt(Math.abs(sum.saved));
   savedEl.style.color=sum.saved>=0?'var(--green)':'var(--red)';
   const rateEl=el('spendSaveRate');
-  rateEl.textContent=sum.income>0?Math.round((sum.saved/sum.income)*100)+'% of income kept':'';
+  rateEl.textContent=sum.income>0?Math.round((sum.saved/sum.income)*100)+'%':'';
+  rateEl.style.color=sum.saved>=0?'var(--green)':'var(--red)';
+  rateEl.title=sum.income>0?'of income kept':'';
 
   renderSpendDayChart(k,sum);
   // Whether there is a budget at all is decided here and now, never behind a
