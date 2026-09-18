@@ -699,6 +699,16 @@ if (typeof window.isPendingSync !== 'function') {
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
           </div>
+          <button class="s-item" onclick="openCircle()">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 19a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M16 15.6a5.4 5.4 0 0 1 5.5 3.4"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Circle</span><span class="s-item-sub" id="profCircleSub">People you share with</span></span>
+            <span class="s-item-right"><span class="s-badge" id="circleReqBadge" hidden>0</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
+          <button class="s-item" onclick="openSyncCenter()">
+            <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span>
+            <span class="s-item-info"><span class="s-item-name">Sync Center</span><span class="s-item-sub" id="profSyncSub">-</span></span>
+            <span class="s-item-right"><span class="s-badge" id="profSyncBadge" style="display:none"></span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </button>
           <button class="s-item" id="verifySettingsRow" style="display:none" onclick="resendVerifyEmail(this)">
             <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
             <span class="s-item-info"><span class="s-item-name">Verify your email</span><span class="s-item-sub" id="verifySettingsSub">Not verified yet. Tap to send the link again.</span></span>
@@ -1305,6 +1315,14 @@ if (typeof window.isPendingSync !== 'function') {
     </div>
   </div>
 </div>
+<!-- PHOTO -->
+<div class="modal-overlay photo-view" id="photoView" role="dialog" aria-modal="true" aria-label="Photo" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closePhotoView()">
+  <div class="photo-view-inner">
+    <img id="photoViewImg" alt="Photo"/>
+    <div class="photo-view-name" id="photoViewName"></div>
+    <button class="photo-view-x" onclick="closePhotoView()" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+</div>
 <!-- ICON PICKER -->
 <div class="modal-overlay" id="iconPickerModal" role="dialog" aria-modal="true" aria-labelledby="iconPickerTitle" aria-hidden="true">
   <div class="modal-sheet">
@@ -1644,25 +1662,14 @@ if (typeof window.isPendingSync !== 'function') {
           <div class="profile-name" id="acctNameDisplay">-</div>
           <div class="acct-email" id="acctEmailDisplay">-</div>
         </div>
-        <button class="seg-edit-btn" id="acctEditNameBtn" onclick="startEditDisplayName()">Edit</button>
-      </div>
-      <div class="profile-edit" id="profileEditRow" style="display:none">
-        <input class="form-input" id="acctNameInput" maxlength="60" placeholder="Your name" aria-label="Display name"/>
-        <button class="seg-edit-btn on" onclick="saveDisplayName()">Save</button>
-        <button class="seg-edit-btn" onclick="cancelEditDisplayName()">Cancel</button>
       </div>
       <div class="profile-stats" id="profileStats"></div>
 
-      <div class="sheet-section-lbl">ACCOUNT</div>
-      <button class="s-item" onclick="startEditDisplayName()">
+      <div class="sheet-section-lbl">WHO YOU ARE</div>
+      <button class="s-item" onclick="openChangeDisplayName()">
         <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
         <span class="s-item-info"><span class="s-item-name">Display Name</span><span class="s-item-sub" id="profNameSub">-</span></span>
         <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </button>
-      <button class="s-item" onclick="openCircle()">
-        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 19a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M16 15.6a5.4 5.4 0 0 1 5.5 3.4"/></svg></span>
-        <span class="s-item-info"><span class="s-item-name">Circle</span><span class="s-item-sub" id="profCircleSub">People you share with</span></span>
-        <span class="s-item-right"><span class="s-badge" id="circleReqBadge" hidden>0</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
       </button>
       <button class="s-item" onclick="profilePhotoAction()">
         <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8.5 6l1.2-2h4.6l1.2 2"/></svg></span>
@@ -1690,12 +1697,7 @@ if (typeof window.isPendingSync !== 'function') {
         <span class="s-item-info"><span class="s-item-name">Google</span><span class="s-item-sub" id="profGoogleSub">-</span></span>
         <span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
       </button>
-      <div class="sheet-section-lbl">DATA</div>
-      <button class="s-item" onclick="openSyncCenter()">
-        <span class="s-item-ico" style="color:var(--accent)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span>
-        <span class="s-item-info"><span class="s-item-name">Sync Center</span><span class="s-item-sub" id="profSyncSub">-</span></span>
-        <span class="s-item-right"><span class="s-badge" id="profSyncBadge" style="display:none"></span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
-      </button>
+      <div class="sheet-section-lbl">THIS ACCOUNT</div>
       <button class="s-item" onclick="signOut()">
         <span class="s-item-ico" style="color:var(--red)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
         <span class="s-item-info"><span class="s-item-name" style="color:var(--red)">Sign Out</span><span class="s-item-sub">You can still use the app offline</span></span>

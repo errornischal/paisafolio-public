@@ -1000,6 +1000,29 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .cat-mgr-tag{flex:none;font-size:8px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
   color:var(--accent);background:var(--accent-glow);border-radius:5px;padding:2px 5px}
 .cat-mgr-sub{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ══ PHOTO ═══════════════════════════════════════════════════════════
+   Not a sheet: a picture on a dark ground, the way every other app shows
+   one, so it does not read as another form to fill in. */
+.photo-view{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:24px}
+.photo-view .photo-view-inner{position:relative;max-width:min(520px,100%);width:100%;
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  transform:scale(.94);opacity:0;transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .2s}
+.photo-view.open .photo-view-inner{transform:scale(1);opacity:1}
+.photo-view img{max-width:100%;max-height:70vh;border-radius:18px;object-fit:contain;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);background:#111}
+.photo-view-name{font-size:13px;font-weight:700;color:#fff;text-align:center;
+  text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.photo-view-x{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;
+  width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;
+  background:rgba(255,255,255,.14);color:#fff;backdrop-filter:blur(6px)}
+.photo-view-x:active{transform:scale(.92)}
+.acct-avatar.has-photo[role=button],.acct-avatar-lg.has-photo[role=button]{cursor:zoom-in}
+/* Thirty days of a habit, as a strip rather than a sentence about today. */
+.circle-hb-strip{display:flex;gap:2px;margin-top:6px}
+.circle-hb-cell{flex:1;height:14px;border-radius:2px;background:var(--bg3);opacity:.55}
+.circle-hb-cell.on{opacity:1}
+
 /* Every cash account you own, inside a sheet that still has a target date
    and a projection below it. Four fit; the rest scroll. */
 .goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
@@ -1063,7 +1086,12 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* What one candle covers, so a range button cannot be read as a candle size. */
 .cs-meta{font-size:9px;color:var(--text3);text-align:center;margin-top:6px}
 .cs-range{display:flex;gap:5px;margin-top:8px;justify-content:center}
-.cs-loading{height:190px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+.cs-loading{min-height:190px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+/* The shape of a chart while the chart is on its way. Bars rather than a
+   grey slab, so what is coming is recognisable before it gets here, and
+   staggered so it reads as loading rather than as data. */
+.skel-chart{display:flex;align-items:flex-end;gap:4px;width:100%;padding:0 2px}
+.skel-bar{flex:1;border-radius:3px 3px 1px 1px;min-width:3px}
 
 .interest-section{background:var(--bg3);border:1px solid var(--border2);border-radius:11px;padding:13px;margin-bottom:11px}
 .accrued-box{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:11px 13px;margin-top:12px;display:none}
@@ -1853,7 +1881,7 @@ body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
 .circle-card-lbl{font-size:8.5px;font-weight:800;letter-spacing:1.2px;color:var(--text3);
   text-transform:uppercase;margin-bottom:6px}
 .circle-card-val{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1.1}
-.circle-spark{width:100%;height:40px;display:block;margin-top:8px;overflow:visible}
+.circle-spark{width:100%;height:54px;display:block;margin-top:10px;overflow:visible}
 .circle-goal{margin-top:9px}
 .circle-goal:first-of-type{margin-top:4px}
 .circle-goal-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;

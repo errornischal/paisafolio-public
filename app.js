@@ -213,14 +213,23 @@ function usernameProblem(v){
 }
 function openChangeUsername(){
   credMode='username';
-  el('credTitle').textContent=(state.settings.username?'Change Username':'Pick a Username');
+  const changing=!!state.settings.username;
+  el('credTitle').textContent=(changing?'Change Username':'Pick a Username');
   el('credNewLbl').textContent='USERNAME';
   el('credNew').type='text';
+  el('credNew').maxLength=24;
   el('credNew').placeholder='lowercase, 3-24 characters';
   el('credNew').value=state.settings.username||'';
   el('credConfirmRow').style.display='none';
-  const row=el('credPassRow');if(row)row.style.display='none';
-  el('credNote').textContent='This is how you appear to anyone you share a portfolio with, and how a friend finds you. Letters, numbers and underscores.';
+  // A handle is how people find you, so changing one you already have is a
+  // change to your identity, not a preference. It is checked the same way
+  // changing an email is: a phone left unlocked on a table should not be
+  // enough to take someone's handle and hand it to somebody else.
+  const needPw=changing&&hasPasswordLogin();
+  const row=el('credPassRow');if(row)row.style.display=needPw?'':'none';
+  el('credNote').textContent=needPw
+    ? 'This is how you appear to anyone you share a portfolio with. Your password is checked first, because the handle you give up becomes free for anyone to take.'
+    : 'This is how you appear to anyone you share a portfolio with, and how a friend finds you. Letters, numbers and underscores.';
   el('credPass').value='';el('credError').style.display='none';
   el('credSubmit').textContent='Save username';
   swapModal('accountModal','credModal');
@@ -232,6 +241,19 @@ async function saveUsername(){
   if(bad){credFail(bad);return;}
   if(next===(state.settings.username||'')){closeModal('credModal');return;}
   const btn=el('credSubmit');
+  const needPw=!!state.settings.username&&hasPasswordLogin();
+  if(needPw){
+    const pw=el('credPass').value||'';
+    if(!pw){credFail('Enter your password.');return;}
+    if(!sbClient||!supabaseUser){credFail('You are not signed in.');return;}
+    if(!navigator.onLine){credFail('You are offline. Changing a handle needs a connection.');return;}
+    btn.disabled=true;btn.textContent='Checking…';
+    try{
+      const {error}=await sbClient.auth.signInWithPassword({email:supabaseUser.email,password:pw});
+      if(error){credFail('That password is not right.');return;}
+    }catch(e){credFail('Could not check that password.');return;}
+    finally{btn.disabled=false;btn.textContent='Save username';}
+  }
   btn.disabled=true;btn.textContent='Checking…';
   // A name that could not be checked because the connection is down is not a
   // rejected name. Only a name the server actually refused is.
@@ -300,6 +322,7 @@ function openChangePassword(){
 }
 function credFail(msg){const e=el('credError');e.textContent=msg;e.style.display='';haptic('error');}
 async function submitCredChange(){
+  if(credMode==='name'){return saveDisplayNameFromSheet();}
   if(credMode==='username'){return saveUsername();}
   if(!sbClient||!supabaseUser){credFail('You are not signed in.');return;}
   if(!navigator.onLine){credFail('You are offline. This one needs a connection.');return;}
@@ -460,8 +483,26 @@ async function circleAdd(id){
   const already=circleStatus(id);
   const ok=await circleSay(id,'accepted');
   if(ok){haptic('success');toast(already==='incoming'?'You are connected':'Request sent','success');
-    circleState.found=null;const i=el('circleSearchInput');if(i)i.value='';}
+    circleState.found=null;const i=el('circleSearchInput');if(i)i.value='';
+    // Connecting and then showing them nothing is a connection that does
+    // nothing. Net worth is on from the start, and one tap turns it off.
+    await circleShareDefault(id);}
   renderCircle();
+}
+// Only ever sets the first scope, and only when no row exists: someone who
+// has turned everything off stays off.
+async function circleShareDefault(id){
+  if(!circleReady())return;
+  const row=circleState.shares.find(x=>x.owner_id===circleId()&&x.viewer_id===id);
+  if(row)return;
+  try{
+    const scopes=['networth'];
+    const {error}=await sbClient.from('portfolio_shares')
+      .upsert({owner_id:circleId(),viewer_id:id,scopes,updated_at:new Date().toISOString()},
+        {onConflict:'owner_id,viewer_id'});
+    if(error)throw error;
+    circleState.shares.push({owner_id:circleId(),viewer_id:id,scopes});
+  }catch(e){ /* sharing is a convenience; failing to preset it is not an error worth interrupting for */ }
 }
 async function circleDecline(id){
   const ok=await circleSay(id,'blocked');
@@ -559,9 +600,27 @@ function circleAvatar(id,size){
   const p=circlePerson(id);
   const cls=size==='lg'?'acct-avatar-lg':'acct-avatar';
   const letter=esc((circleName(id)||'?').trim()[0].toUpperCase()||'?');
-  return p.avatar_url
-    ? `<span class="${cls} has-photo"><img alt="" src="${esc(p.avatar_url)}"/></span>`
-    : `<span class="${cls}">${letter}</span>`;
+  if(!p.avatar_url)return `<span class="${cls}">${letter}</span>`;
+  // A 40px circle is an identifier, not a photograph. Tapping it shows the
+  // photograph.
+  return `<span class="${cls} has-photo" role="button" tabindex="0" title="View photo"
+    onclick="event.stopPropagation();openPhotoView('${jsAttr(p.avatar_url)}','${jsAttr(circleName(id))}')"><img alt="" src="${esc(p.avatar_url)}"/></span>`;
+}
+// ── Seeing a picture at the size it was taken ──
+function openPhotoView(url,who){
+  if(!url)return;
+  const ov=el('photoView');if(!ov)return;
+  const img=el('photoViewImg');
+  if(img){img.src=url;img.alt=who?(who+'\u2019s photo'):'Photo';}
+  const cap=el('photoViewName');if(cap)cap.textContent=who||'';
+  openModal('photoView');
+}
+function closePhotoView(){
+  closeModal('photoView');
+  const img=el('photoViewImg');
+  // Let the browser drop it rather than holding a full-size image behind a
+  // hidden overlay for the rest of the session.
+  setTimeout(()=>{if(img&&!el('photoView').classList.contains('open'))img.removeAttribute('src');},320);
 }
 // A div rather than a button: some of these rows carry Accept and Decline
 // inside them, and a button inside a button is neither valid nor reliable.
@@ -670,7 +729,7 @@ function renderCircleFriend(id,shared){
   if(!theirs.length){
     html+='<div class="empty-state" style="padding:18px"><p>'+esc(circleName(id))+' is not sharing anything with you yet.</p></div>';
   }else if(!shared){
-    html+='<div class="circle-meta" style="padding:12px 2px">Loading…</div>';
+    html+='<div class="circle-card">'+skelLines(2,{h:14,widths:['46%','72%']})+skelChart(54)+'</div>';
   }else{
     html+=circleSharedHtml(id,shared);
   }
@@ -699,9 +758,12 @@ function circleSharedHtml(id,d){
     const cur=CURRENCIES.find(c=>c.code===cc);
     const amount=last==null?'Not shared yet'
       :((cur?cur.sym:(cc?cc+' ':''))+Math.round(last).toLocaleString());
+    // The symbol in front of the figure already says which currency this is,
+    // so naming it again underneath was the same fact twice. It is only worth
+    // saying when there is no symbol to go on.
     html+='<div class="circle-card"><div class="circle-card-lbl">NET WORTH</div>'
       +'<div class="circle-card-val">'+amount+'</div>'
-      +'<div class="circle-meta">'+(cc?(cur?esc(cur.name)+' ('+esc(cc)+')':esc(cc)):'in their own currency')+'</div>'
+      +((last!=null&&!cur)?'<div class="circle-meta">'+(cc?esc(cc):'in their own currency')+'</div>':'')
       +(chg!=null?'<div class="circle-meta" style="margin-top:4px;color:'+(chg>=0?'var(--green)':'var(--red)')+'">'
         +(chg>=0?'+':'')+chg.toFixed(1)+'% over '+plural(rows.length,'day','days')+'</div>':'')
       +(rows.length?circleSpark(rows.map(r=>num(r.net_worth))):'')
@@ -727,9 +789,22 @@ function circleSharedHtml(id,d){
       let streak=0;const dd=new Date();dd.setHours(12,0,0,0);
       if(!log[dayKey(dd)])dd.setDate(dd.getDate()-1);
       while(log[dayKey(dd)]){streak++;dd.setDate(dd.getDate()-1);}
+      // Thirty squares instead of one word. "not today" says nothing about
+      // whether somebody has kept a habit for a month or has never started.
+      const col=esc(h.color||'#f5a623');
+      let strip='',done=0;
+      const d0=new Date();d0.setHours(12,0,0,0);
+      for(let i=29;i>=0;i--){
+        const dd=new Date(d0);dd.setDate(dd.getDate()-i);
+        const on=!!log[dayKey(dd)];
+        if(on)done++;
+        strip+=`<i class="circle-hb-cell${on?' on':''}" style="${on?'background:'+col:''}"></i>`;
+      }
       return `<div class="circle-goal"><div class="circle-goal-top">
-        <span><span class="hb-swatch" style="background:${esc(h.color||'#f5a623')};display:inline-block;margin-right:6px"></span>${esc(h.name||'Habit')}</span>
-        <span class="circle-meta">${streak?plural(streak,'day','days')+' running':'not today'}</span></div></div>`;
+        <span><span class="hb-swatch" style="background:${col};display:inline-block;margin-right:6px"></span>${esc(h.name||'Habit')}</span>
+        <span class="circle-meta">${streak?plural(streak,'day','days')+' running':'not today'}</span></div>
+        <div class="circle-hb-strip" title="${done} of the last 30 days">${strip}</div>
+        <div class="circle-meta" style="margin-top:3px">${done} of the last 30 days</div></div>`;
     }).join(''):'<div class="circle-meta">Nothing yet.</div>';
     html+='</div>';
   }
@@ -739,12 +814,37 @@ function circleSharedHtml(id,d){
 // belongs in a card about somebody else.
 function circleSpark(vals){
   if(!vals||vals.length<2)return '';
-  const w=260,h=40,lo=Math.min(...vals),hi=Math.max(...vals),rng=(hi-lo)||1;
-  const pts=vals.map((v,i)=>[(i/(vals.length-1))*w,h-((v-lo)/rng)*(h-6)-3]);
-  const dpath=pts.map((pt,i)=>(i?'L':'M')+pt[0].toFixed(1)+' '+pt[1].toFixed(1)).join(' ');
+  const w=260,h=54,lo=Math.min(...vals),hi=Math.max(...vals),rng=(hi-lo)||1;
+  const pts=vals.map((v,i)=>[(i/(vals.length-1))*w,h-((v-lo)/rng)*(h-10)-5]);
   const up=vals[vals.length-1]>=vals[0];
+  const col=up?'var(--green)':'var(--red)';
+  const gid='cs'+Math.random().toString(36).slice(2,8);
+  const d=smoothPath(pts);
+  const area=d+` L ${w} ${h} L 0 ${h} Z`;
   return `<svg class="circle-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`
-    +`<path d="${dpath}" fill="none" stroke="${up?'var(--green)':'var(--red)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    +`<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
+    +`<stop offset="0" stop-color="${up?'rgb(22,214,164)':'rgb(255,91,117)'}" stop-opacity=".26"/>`
+    +`<stop offset="1" stop-color="${up?'rgb(22,214,164)':'rgb(255,91,117)'}" stop-opacity="0"/>`
+    +`</linearGradient></defs>`
+    +`<path d="${area}" fill="url(#${gid})" stroke="none"/>`
+    +`<path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+// A Catmull-Rom curve through the points, written out as cubic beziers. The
+// dashboard's line is smoothed by its chart library; this one is drawn by
+// hand, and a row of straight segments beside it read as a different, cruder
+// chart of the same thing.
+function smoothPath(pts){
+  if(pts.length<2)return '';
+  if(pts.length===2)return `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)} L ${pts[1][0].toFixed(1)} ${pts[1][1].toFixed(1)}`;
+  let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||pts[i+1];
+    const t=0.2;
+    const c1=[p1[0]+(p2[0]-p0[0])*t,p1[1]+(p2[1]-p0[1])*t];
+    const c2=[p2[0]-(p3[0]-p1[0])*t,p2[1]-(p3[1]-p1[1])*t];
+    d+=` C ${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
 }
 
 // ════════ PROFILE PHOTO ════════
@@ -822,8 +922,16 @@ function paintAvatarInto(node,letter){
     const img=node.querySelector('img');
     if(img){if(img.src!==src)img.src=src;}
     else node.innerHTML='<img alt="" src="'+esc(src)+'"/>';
+    // Your own picture opens at its real size too, the same as anyone
+    // else's in your circle.
+    node.setAttribute('role','button');
+    node.setAttribute('tabindex','0');
+    node.setAttribute('title','View photo');
+    node.onclick=(e)=>{e.stopPropagation();openPhotoView(avatarSrc(),displayName());};
   }else{
     node.textContent=(letter||'?');
+    node.removeAttribute('role');node.removeAttribute('tabindex');node.removeAttribute('title');
+    node.onclick=null;
   }
 }
 // Google's picture is the default when there is one, not the only option:
@@ -929,25 +1037,32 @@ function renderProfile(){
       + (since && !isNaN(since) ? `<div class="profile-since">Member since ${since.toLocaleDateString('en', { month:'short', year:'numeric' })}</div>` : '');
   }
 }
-function startEditDisplayName(){
-  const row = el('profileEditRow'); if (!row) return;
-  el('acctNameInput').value = (state.settings.displayName || '').trim() || displayName();
-  row.style.display = 'flex';
-  el('acctEditNameBtn').style.display = 'none';
-  el('acctNameInput').focus();
-  el('acctNameInput').select();
+// The name used to be edited in place: an Edit button that swapped the
+// header for a text box and two more buttons, in a sheet where every other
+// field opens a sheet of its own. One field, two ways of editing it, and the
+// odd one out was the one people reach for first.
+function openChangeDisplayName(){
+  credMode='name';
+  el('credTitle').textContent='Display Name';
+  el('credNewLbl').textContent='NAME';
+  el('credNew').type='text';
+  el('credNew').maxLength=60;
+  el('credNew').placeholder='Your name';
+  el('credNew').value=(state.settings.displayName||'').trim()||displayName();
+  el('credConfirmRow').style.display='none';
+  const row=el('credPassRow');if(row)row.style.display='none';
+  el('credNote').textContent='What the app calls you, and what anyone in your circle sees. Leave it empty to go back to your email name.';
+  el('credPass').value='';el('credError').style.display='none';
+  el('credSubmit').textContent='Save name';
+  swapModal('accountModal','credModal');
 }
-function cancelEditDisplayName(){
-  const row = el('profileEditRow'); if (row) row.style.display = 'none';
-  if (el('acctEditNameBtn')) el('acctEditNameBtn').style.display = '';
-}
-function saveDisplayName(){
-  const v = (el('acctNameInput').value || '').trim().slice(0, 60);
-  state.settings.displayName = v || null;
+function saveDisplayNameFromSheet(){
+  const v=(el('credNew').value||'').trim().slice(0,60);
+  state.settings.displayName=v||null;
   saveState();
-  if (typeof schedulePush === 'function') schedulePush();
-  cancelEditDisplayName(); renderProfile(); haptic('success');
-  toast(v ? 'Name updated' : 'Name cleared', 'success');
+  if(typeof schedulePush==='function')schedulePush();
+  closeModal('credModal');renderProfile();haptic('success');
+  toast(v?'Name updated':'Name cleared','success');
 }
 
 function openAuthOrAccount() {
@@ -8057,6 +8172,33 @@ const CS_MAX_PAGES=20;
 // Holdings whose price history nothing upstream has. Silver and platinum use
 // ids this app invented for its metals feed, so every history endpoint 404s
 // on them; remembering that spares the next nine round trips.
+// ════════ WAITING ════════
+// A blank space says the app is broken; a spinner says wait without saying
+// what for. A skeleton says "a chart goes here, it is on its way", which is
+// the only honest thing to say while something is loading.
+//
+// The rule everywhere below: show a skeleton only where something really is
+// expected to arrive. Where it is already known that nothing will (a metal
+// with no price history), nothing is shown, because a placeholder that never
+// resolves is worse than an empty space.
+function skelLines(n,opts){
+  const o=opts||{};
+  let h='';
+  for(let i=0;i<(n||3);i++){
+    const w=o.widths&&o.widths[i]?o.widths[i]:(88-i*9)+'%';
+    h+=`<div class="skel" style="height:${o.h||12}px;width:${w};margin-bottom:${o.gap||9}px"></div>`;
+  }
+  return h;
+}
+// The shape of a chart rather than a grey slab: bars of varying height along
+// a baseline, so what is coming is recognisable before it gets here.
+function skelChart(height){
+  const H=height||190;
+  let bars='';
+  const hs=[46,68,38,82,55,74,30,62,88,50,70,42,78,58];
+  hs.forEach((v,i)=>{bars+=`<div class="skel skel-bar" style="height:${v}%;animation-delay:${(i*70)%900}ms"></div>`;});
+  return `<div class="skel-chart" style="height:${H}px" aria-hidden="true">${bars}</div>`;
+}
 const _csNoHistory=new Set();
 const CS_DEFAULT_TF='1d';
 // N candles into one. A trailing partial group is kept, the way the current
@@ -8079,7 +8221,7 @@ async function loadCandles(coinId,tfKey,btn,assetId){
   const area=el('csArea');if(!area)return;
   // The chart being replaced may still be listening on the window mid-drag.
   if(area._csDestroy)area._csDestroy();
-  area.outerHTML='<div class="cs-loading" id="csArea">Loading price chart…</div>';
+  area.outerHTML='<div class="cs-loading" id="csArea">'+skelChart(190)+'</div>';
   const wrap=el('csArea')&&el('csArea').parentElement;
   const a=(state.assets||[]).find(x=>x.id===assetId)
     ||(state.assets||[]).find(x=>x.coinId===coinId)||null;
@@ -8096,7 +8238,11 @@ async function loadCandles(coinId,tfKey,btn,assetId){
   // same lie, just shorter. Either the candles arrive and the block appears
   // with them, or nothing ever appears.
   const initial=!btn;
-  if(initial&&wrap)wrap.style.display='none';
+  // A holding already known to have no history shows nothing at all, as
+  // before: no skeleton, because nothing is coming. Everything else shows
+  // the shape of the chart while it loads, and the block is taken away
+  // again if it turns out there is nothing after all.
+  if(initial&&wrap)wrap.style.display=_csNoHistory.has(coinId)?'none':'';
   // And once a holding has come back with nothing, it does not come back
   // with nothing more slowly every time you open it.
   if(initial&&_csNoHistory.has(coinId))return;
