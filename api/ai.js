@@ -125,9 +125,15 @@ const CATEGORISE_SYSTEM = [
   'nothing else. No punctuation, no explanation, no quotes.',
   '',
   'Only if NONE of them genuinely fits may you name a new one, by replying exactly:',
-  '    new: <Name> | <group>',
-  'where <Name> is two or three words in Title Case naming the kind of thing bought, and',
-  '<group> is one of needs, wants, giving, personal, other (omit the group for income).',
+  '    new: <Name> | <group> | <icon>',
+  'where <Name> is two or three words in Title Case naming the kind of thing bought,',
+  '<group> is one of needs, wants, giving, personal, other (write none for income), and',
+  '<icon> is the one from this list that best suits the category:',
+  '    leaf box car zap home heart graduation gift trophy rocket briefcase laptop',
+  '    banknote building wallet coins star shield piggy diamond phone clock sun',
+  '    hexagon chartline target search alert',
+  'Pick the icon for what the category IS, not for what it is called: game topups are',
+  'closer to trophy than to box. Use box when nothing fits.',
   '',
   'Be reluctant about this. A new category is only worth it when the note is about',
   'something the list has no word for at all, like game topups or a pet, and when you',
@@ -317,12 +323,15 @@ module.exports = async function handler(req, res) {
       // A proposal for a new one. Only the shape is checked here; whether it
       // is really new, or just another word for something the app already has,
       // is decided on the client where the full list lives.
-      const m = /^new\s*:\s*([^|\n]{2,40})(?:\|\s*([a-z]+))?/i.exec(raw);
+      const m = /^new\s*:\s*([^|\n]{2,40})(?:\|\s*([a-z]*))?(?:\s*\|\s*([a-z]*))?/i.exec(raw);
       if (m) {
         const label = m[1].trim().replace(/["'`.]+$/g, '');
         const group = (m[2] || '').trim().toLowerCase();
+        // The icon is a hint, not a contract: the client checks it against the
+        // icons it actually has and falls back on its own table otherwise.
+        const icon = (m[3] || '').trim().toLowerCase().slice(0, 20);
         if (label && /[a-z]/i.test(label) && label.length <= 28) {
-          return res.status(200).json({ category: null, propose: { label, group }, via: out.via });
+          return res.status(200).json({ category: null, propose: { label, group, icon }, via: out.via });
         }
       }
       return res.status(200).json({ category: null, via: out.via });

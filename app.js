@@ -3199,7 +3199,10 @@ function pnlScopeLabel(scope){
 function pnlFlowsByDay(ids){
   const flows={};
   (state.transactions||[]).forEach(t=>{
-    if(!t||t.transfer)return;
+    // A transfer between two accounts is money leaving one and arriving in
+    // the other, so it is a flow for each of them and no profit for either.
+    // Across a scope that holds both ends it cancels out on its own.
+    if(!t)return;
     if(t.txType==='income')return;
     if(!ids.has(t.assetId))return;
     const k=nwDayKey(t.date);if(!k)return;
@@ -7859,21 +7862,38 @@ function bindLiqAmtCcy(){
   resetMoneyCcy(['liqAmt']);
   bindMoneyCcy('liqAmt','liqAmtCcyWrap',()=>updateLiqPreview(detailAssetId));
 }
+// Where a transfer is going. Null until something is picked, and every other
+// account is a candidate except this one.
+let liqXferTo=null;
+function liqXferOptions(fromId){
+  return cashAccounts().filter(a=>a.id!==fromId)
+    .map(a=>({value:a.id,label:a.name+' \u00b7 '+fmt(getAssetCurrentValue(a))}));
+}
 function setLiqMode(mode){
   liqMode=(liqMode===mode)?null:mode;
   syncTxTabs();
   const box=el('liqForm'); if(!box) return;
   box.classList.toggle('open',!!liqMode);
+  const xr=el('liqXferRow');
+  if(xr)xr.hidden=liqMode!=='transfer';
   if(!liqMode) return;
-  el('liqFormTitle').textContent=liqMode==='add'?'Record Deposit':'Record Withdrawal';
+  el('liqFormTitle').textContent=liqMode==='add'?'Record Deposit'
+    :liqMode==='withdraw'?'Record Withdrawal':'Move money to another account';
   const btn=el('liqSaveBtn');
-  btn.textContent=liqMode==='add'?'Deposit':'Withdraw';
-  btn.style.background=liqMode==='add'?'var(--green)':'var(--red)';
+  btn.textContent=liqMode==='add'?'Deposit':liqMode==='withdraw'?'Withdraw':'Transfer';
+  btn.style.background=liqMode==='add'?'var(--green)':liqMode==='withdraw'?'var(--red)':'var(--blue)';
+  btn.style.color=liqMode==='transfer'?'#04121f':'';
   el('liqAmt').value='';
   bindLiqAmtCcy();
   el('liqNote').value='';
   el('liqDate').value=todayStr();
   el('liqPreview').textContent='';
+  if(liqMode==='transfer'){
+    const opts=liqXferOptions(detailAssetId);
+    liqXferTo=opts.length?opts[0].value:null;
+    buildCustomSelect('liqXferWrap',opts.length?opts:[{value:'',label:'No other account yet'}],
+      liqXferTo||'',v=>{liqXferTo=v;updateLiqPreview(detailAssetId);});
+  }
   haptic('tap');
   setTimeout(()=>{try{el('liqAmt').focus();}catch(e){}},80);
 }
@@ -7882,15 +7902,18 @@ function updateLiqPreview(id){
   const p=el('liqPreview'); if(!p) return;
   const base=moneyBase('liqAmt');
   if(isNaN(base)||base<=0){p.textContent='';return;}
-  const deltaNPR=liqMode==='withdraw'?-base:base;
-  const after=(a.value||0)+deltaNPR;
-  p.innerHTML=`Balance after: <b style="color:${after<0?'var(--red)':'var(--text)'}">${fmt(after)}</b>`
+  const out=liqMode==='withdraw'||liqMode==='transfer';
+  const after=(a.value||0)+(out?-base:base);
+  const to=liqMode==='transfer'&&liqXferTo?(state.assets||[]).find(x=>x.id===liqXferTo):null;
+  p.innerHTML=`${esc(stripParens(a.name))}: <b style="color:${after<0?'var(--red)':'var(--text)'}">${fmt(after)}</b>`
+    +(to?` &rarr; ${esc(stripParens(to.name))}: <b>${fmt(getAssetCurrentValue(to)+base)}</b>`:'')
     +(after<0?' <span style="color:var(--red)">more than the balance</span>':'');
 }
 function saveLiqTx(id){
   const a=state.assets.find(x=>x.id===id); if(!a) return;
   const amtNPR=moneyBase('liqAmt');
   if(isNaN(amtNPR)||amtNPR<=0){toast('Enter an amount','error');return;}
+  if(liqMode==='transfer')return saveLiqTransfer(a,amtNPR);
   if(liqMode==='withdraw'&&amtNPR>(a.value||0)+1e-9){toast('That is more than the balance','error');return;}
   const delta=liqMode==='withdraw'?-amtNPR:amtNPR;
   a.value=(a.value||0)+delta;
@@ -7910,6 +7933,34 @@ function saveLiqTx(id){
   openAssetDetail(id);
 }
 
+// Money moving between two of your own accounts is not income, not spending
+// and not profit: it is the same rupees in a different place. So it is one
+// event written as two linked legs, the pair the rest of the app already
+// uses for a trade's cash side, which means undoing it, editing it and the
+// daily profit figures all treat it correctly without knowing it is special.
+function saveLiqTransfer(from,amtNPR){
+  const to=(state.assets||[]).find(x=>x&&x.id===liqXferTo);
+  if(!to){toast('Pick an account to transfer to','error');return;}
+  if(to.id===from.id){toast('Pick a different account','error');return;}
+  const have=getAssetCurrentValue(from);
+  if(amtNPR>have+1e-9){toast('That is more than '+stripParens(from.name)+' holds','error');return;}
+  {const blk=cashLegBlocked(to);if(blk){toast(blk,'error');return;}}
+  const date=el('liqDate').value?dayToISO(el('liqDate').value):new Date().toISOString();
+  const note=el('liqNote').value.trim()||null;
+  const linkId=uid();
+  state.transactions=state.transactions||[];
+  withUndo('Transfer to '+stripParens(to.name),['assets','transactions'],()=>{
+    applyCashLegBalance(from,amtNPR,'out');
+    pushCashLeg(from,amtNPR,'out',date,linkId,note||('To '+stripParens(to.name)));
+    applyCashLegBalance(to,amtNPR,'in');
+    pushCashLeg(to,amtNPR,'in',date,linkId,note||('From '+stripParens(from.name)));
+    trackPnLHistory();saveState();
+  });
+  liqMode=null;liqXferTo=null;
+  renderAll();haptic('success');
+  toast(fmt(amtNPR)+' moved to '+stripParens(to.name),'success');
+  openAssetDetail(from.id);
+}
 function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)return;parkPnlCal();detailAssetId=id;txMode=null;txUnit=null;txCashChoice=null;liqMode=null;const cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),cp=getAssetCurrentPrice(a),pos=pnl===null||pnl>=0,txs=txsForAsset(a).slice().reverse(),type=ASSET_TYPES.find(t=>t.id===a.category)||ASSET_TYPES[5],img=a.coinImage||'';
   // What the holding is up or down, next to the value it is a gain on. It sat
   // beside the unit price before, where it read as if the price had moved.
@@ -7924,12 +7975,13 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
     // own deposit/withdraw controls plus a direct balance edit, instead of
     // being the one asset type with no way to change its value from here.
     extra=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px"><div class="d-stat"><div class="d-stat-lbl">TYPE</div><div class="d-stat-val" style="font-size:11px">${esc(a.liquidityType||'Cash')}</div></div>${a.interest?`<div class="d-stat"><div class="d-stat-lbl">INTEREST</div><div class="d-stat-val">${a.interest}% / yr</div></div>`:''}${a.maturity?`<div class="d-stat"><div class="d-stat-lbl">MATURITY</div><div class="d-stat-val" style="font-size:10px">${formatDate(a.maturity)}</div></div>`:''}${accrued>0?`<div class="d-stat"><div class="d-stat-lbl">ACCRUED</div><div class="d-stat-val" style="color:var(--green)">+${fmt(accrued)}</div></div>`:''}</div>
-    <div class="mini-actions" role="tablist"><button class="act-pill buy${liqMode==='add'?' active':''}" role="tab" aria-selected="${liqMode==='add'}" onclick="setLiqMode('add')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Deposit</button><button class="act-pill sell${liqMode==='withdraw'?' active':''}" role="tab" aria-selected="${liqMode==='withdraw'}" onclick="setLiqMode('withdraw')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg> Withdraw</button></div>
+    <div class="mini-actions" role="tablist"><button class="act-pill buy${liqMode==='add'?' active':''}" role="tab" aria-selected="${liqMode==='add'}" onclick="setLiqMode('add')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Deposit</button><button class="act-pill sell${liqMode==='withdraw'?' active':''}" role="tab" aria-selected="${liqMode==='withdraw'}" onclick="setLiqMode('withdraw')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg> Withdraw</button>${cashAccounts().length>1?`<button class="act-pill xfer${liqMode==='transfer'?' active':''}" role="tab" aria-selected="${liqMode==='transfer'}" onclick="setLiqMode('transfer')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 2 21 6 17 10"/><line x1="21" y1="6" x2="7" y2="6"/><polyline points="7 22 3 18 7 14"/><line x1="3" y1="18" x2="17" y2="18"/></svg> Transfer</button>`:''}</div>
     <div class="mini-form" id="liqForm"><div style="font-size:12px;font-weight:700;margin-bottom:8px" id="liqFormTitle"></div>
       <div class="form-row-2" style="margin-bottom:8px">
         <div><label class="form-lbl" id="liqAmtLbl">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="liqAmt" type="number" step="any" inputmode="decimal" placeholder="0.00" oninput="updateLiqPreview('${a.id}')"/><div class="ccy-sel-wrap" id="liqAmtCcyWrap"></div></div></div>
         <div><label class="form-lbl">DATE</label><input class="form-input" id="liqDate" type="date"/></div>
       </div>
+      <div class="form-row" id="liqXferRow" hidden style="margin-bottom:8px"><label class="form-lbl">TO ACCOUNT</label><div class="custom-select-wrap" id="liqXferWrap"></div></div>
       <div id="liqPreview" style="font-size:11px;font-weight:600;margin:-2px 0 8px;padding:6px 8px;border-radius:6px;background:var(--bg3);color:var(--text2)"></div>
       <div class="form-row" style="margin-bottom:8px"><label class="form-lbl">NOTE</label><input class="form-input" id="liqNote" placeholder="Optional note"/></div>
       <button class="submit-btn" id="liqSaveBtn" style="margin-top:0" onclick="saveLiqTx('${a.id}')">Save</button>
@@ -8396,7 +8448,7 @@ function mountCandleChart(canvas,ohlc,asset){
     }
     const t=e.touches?e.touches[0]:e;
     const isTouch=!!e.touches;
-    drag={x:t.clientX,startOffset:st.offset,moved:0};
+    drag={x:t.clientX,startOffset:st.offset,moved:0,isTouch};
     clearTimeout(canvas._csClear);
     if(isTouch){
       mode=null;
@@ -8429,6 +8481,14 @@ function mountCandleChart(canvas,ohlc,asset){
     const x=t.clientX;
     drag.moved=Math.max(drag.moved,Math.abs(x-drag.x));
     if(mode===null&&drag.moved>PAN_SLOP){mode='pan';clearTimeout(holdTimer);}
+    // A mouse press starts on the crosshair, because hovering a desktop chart
+    // should read a candle straight away. But the early return below then kept
+    // it there for the whole gesture, so dragging with a mouse could only ever
+    // scrub: the pan branch was unreachable and there was no way to scroll
+    // back through history without a touch screen. Dragging past the slop
+    // hands over to panning, the way it does on a phone. A held finger that
+    // has chosen to scrub keeps scrubbing, which is what the hold is for.
+    if(mode==='scrub'&&!drag.isTouch&&drag.moved>PAN_SLOP){mode='pan';st.cross=null;}
     if(mode==='scrub'){
       st.cross=idxAt(x);draw();return;
     }
@@ -8450,6 +8510,7 @@ function mountCandleChart(canvas,ohlc,asset){
       // Leave it up long enough to actually read.
       canvas._csClear=setTimeout(()=>{st.cross=null;draw();},3000);
     }
+    if(canvas.style)canvas.style.cursor='crosshair';
   };
   // A mouse drag has to keep tracking after the pointer leaves the canvas, so
   // it listens on the window, but only while the button is down. These used to
@@ -8473,15 +8534,29 @@ function mountCandleChart(canvas,ohlc,asset){
   canvas.addEventListener('touchmove',onMove,{passive:true});
   canvas.addEventListener('touchend',onUp,{passive:true});
   canvas.addEventListener('touchcancel',onUp,{passive:true});
-  canvas.addEventListener('mousedown',e=>{attachWindowDrag();onDown(e);});
+  canvas.style.cursor='crosshair';
+  canvas.addEventListener('mousedown',e=>{e.preventDefault();canvas.style.cursor='grabbing';attachWindowDrag();onDown(e);});
   canvas.addEventListener('mousemove',e=>{if(!drag){mode='scrub';st.cross=idxAt(e.clientX);draw();}});
   canvas.addEventListener('mouseleave',()=>{if(!drag){st.cross=null;draw();}});
   canvas.addEventListener('wheel',e=>{
+    // Sideways on a trackpad, or shift with a wheel, is what scrolling back
+    // through history means everywhere else, so it means that here too.
+    // A plain wheel still zooms, which is what a trading chart does.
+    const sideways=Math.abs(e.deltaX)>Math.abs(e.deltaY);
+    if(sideways||e.shiftKey){
+      const r=canvas.getBoundingClientRect();
+      const perBar=(r.width-PAD_L-PAD_R)/Math.max(1,st.bars);
+      const px=sideways?e.deltaX:e.deltaY;
+      st.offset-=Math.round(px/Math.max(2,perBar))||(px>0?-1:1);
+      clampOffset();st.cross=null;draw();
+      if(e.cancelable)e.preventDefault();
+      return;
+    }
     const f=e.deltaY>0?1.12:0.89;
     st.bars=Math.round(Math.max(CS_MIN_BARS,Math.min(
       Math.min(CS_MAX_BARS,st.data.length),st.bars*f)));
     clampOffset();draw();
-  },{passive:true});
+  },{passive:false});
   // Belt and braces: if the canvas is torn out mid-drag (closing the sheet,
   // switching timeframe), nothing is left listening on the window.
   canvas._csDestroy=()=>{detachWindowDrag();clearTimeout(holdTimer);clearTimeout(canvas._csClear);clearInterval(st._loadTick);};
@@ -11955,7 +12030,13 @@ function customCats(){
 // existing category and to be reluctant about naming a new one. Where it is
 // unsure it folds rather than creates, because one category too many quietly
 // splits a budget in half while one too few is a single tap to correct.
-const CAT_STOPWORDS=new Set(['and','the','of','for','a','an','my','other','misc','general']);
+// Words that name the list rather than an entry in it. "Income" is what every
+// income category IS, so counting it as a shared word folded Rental Income,
+// Interest Income and Side Income all into "Other Income" — the matcher saw
+// one word of real length in common and stopped there. The same for
+// "expense", "payment" and "money" on the spending side.
+const CAT_STOPWORDS=new Set(['and','the','of','for','a','an','my','other','misc','general',
+  'income','expense','expenses','payment','payments','money','spend','spending','cost','costs']);
 function catStem(w){
   w=String(w||'').toLowerCase();
   if(w.length>4&&w.endsWith('ies'))w=w.slice(0,-3)+'i';
@@ -12024,15 +12105,24 @@ function tidyCatLabel(label){
 }
 // Returns an existing category when the name already means something the app
 // knows, and only otherwise creates one.
-function adoptCategory(label,kind,group){
+function adoptCategory(label,kind,group,icon){
   const tidy=tidyCatLabel(label);
   if(!tidy||tidy.length<2)return null;
+  // Nothing but filler words: "Other Expenses", "General Payment". That is
+  // the catch-all wearing a different hat, and it already exists.
+  if(!catTokens(tidy).length)return null;
   const hit=findCatByLabel(tidy,kind);
   if(hit)return hit;
   if(customCats().length>=24)return null;   // a vocabulary, not a junk drawer
+  // The model names the icon when it names the category, since it knows what
+  // the category is FOR and the keyword table only knows what it is called.
+  // Checked against the icons that exist, so a made-up name falls back to the
+  // table rather than drawing nothing.
+  const wanted=String(icon||'').trim().toLowerCase();
+  const ico=(wanted&&ICON_KEYS.indexOf(wanted)>=0)?wanted:pickCatIcon(tidy);
   const cat={id:slugCat(tidy),label:tidy,kind:kind==='income'?'income':'expense',
     group:(kind==='income')?null:(['needs','wants','giving','personal','other'].indexOf(group)>=0?group:'other'),
-    icon:pickCatIcon(tidy),color:pickCatColor(tidy),ai:true,created:new Date().toISOString()};
+    icon:ico,color:pickCatColor(tidy),ai:true,created:new Date().toISOString()};
   customCats().push(cat);
   rebuildCats();
   return cat;
@@ -12047,6 +12137,155 @@ function rebuildCats(){
     .concat(cs.filter(c=>c.kind!=='income')).concat([otherOut]);
   INCOME_CATS=INCOME_CATS_BUILTIN.filter(c=>c.id!=='other_in')
     .concat(cs.filter(c=>c.kind==='income')).concat([otherIn]);
+  // A built-in is code, not data, so renaming or restyling one is stored as
+  // an override and replayed over the list here: every path that rebuilds
+  // gets it, and an app update cannot quietly undo it.
+  const ov=state.settings&&state.settings.catOverrides;
+  if(ov&&typeof ov==='object'){
+    const patch=list=>list.map(c=>{
+      const o=ov[c.id];
+      if(!o)return c;
+      return Object.assign({},c,o.label?{label:o.label}:{},o.icon?{icon:o.icon}:{},
+        o.color?{color:o.color}:{},o.group?{group:o.group}:{});
+    });
+    SPEND_CATS=patch(SPEND_CATS);INCOME_CATS=patch(INCOME_CATS);
+  }
+}
+// ════════ MANAGING CATEGORIES ════════
+// Folio names categories, so the person has to be able to disagree with it:
+// rename one, give it a better icon or colour, move it between needs and
+// wants, or remove it entirely. A built-in can be renamed and restyled but
+// not deleted, since the app falls back to "Other" by id and the entries
+// already filed under it have to keep landing somewhere.
+let catMgrKind='expense';
+let editingCatId=null,catEditIcon='box',catEditColor=NEWCAT_PALETTE[0];
+function catsOfKind(kind){return kind==='income'?INCOME_CATS:SPEND_CATS;}
+function isCustomCat(id){return customCats().some(c=>c&&c.id===id);}
+function catUseCount(id,kind){
+  return (state.spends||[]).filter(s=>s&&s.category===id
+    &&((s.kind==='income')===(kind==='income'))).length;
+}
+function setCatMgrKind(k){
+  catMgrKind=k==='income'?'income':'expense';
+  haptic('tap');renderCatManager();
+}
+function openCatManager(){catMgrKind='expense';renderCatManager();openModal('catMgrModal');}
+function renderCatManager(){
+  const host=el('catMgrList');if(!host)return;
+  const kind=catMgrKind;
+  el('catMgrSegOut').className=kind==='expense'?'on':'';
+  el('catMgrSegIn').className=kind==='income'?'on':'';
+  const list=catsOfKind(kind);
+  host.innerHTML=list.map(c=>{
+    const n=catUseCount(c.id,kind);
+    const made=isCustomCat(c.id);
+    return `<button type="button" class="cat-mgr-row" onclick="openCatEdit('${jsAttr(c.id)}')">
+      <span class="cat-mgr-ico" style="background:${esc(c.color)}22;color:${esc(c.color)}">${svgIcon(c.icon||'box',16)}</span>
+      <span class="cat-mgr-txt">
+        <span class="cat-mgr-nm">${esc(c.label)}${made?'<span class="cat-mgr-tag">made for you</span>':''}</span>
+        <span class="cat-mgr-sub">${n?plural(n,'entry','entries'):'nothing filed here'}${(kind!=='income'&&c.group)?' · '+esc(c.group):''}</span>
+      </span>
+      <svg class="pick-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>`;
+  }).join('');
+  const hint=el('catMgrHint');
+  if(hint){
+    const made=customCats().filter(c=>(c.kind==='income')===(kind==='income')).length;
+    hint.textContent=made
+      ? made+' of these were named for you as you typed. Rename, restyle or remove any of them.'
+      : 'Folio adds one here when a note fits nothing on the list.';
+  }
+}
+const CAT_GROUPS=[{value:'needs',label:'A need'},{value:'wants',label:'A want'},
+  {value:'giving',label:'Giving'},{value:'personal',label:'Personal'},{value:'other',label:'Something else'}];
+let catEditGroup='other';
+function openCatEdit(id){
+  const kind=catMgrKind;
+  const cat=id?catsOfKind(kind).find(c=>c.id===id):null;
+  editingCatId=cat?cat.id:null;
+  el('catEditTitle').textContent=cat?'Edit category':'New category';
+  el('catEditName').value=cat?cat.label:'';
+  catEditIcon=cat?(cat.icon||'box'):'box';
+  catEditColor=cat?(cat.color||NEWCAT_PALETTE[0]):pickCatColor(String(Date.now()));
+  catEditGroup=cat?(cat.group||'other'):'other';
+  syncCatEditIcon();renderCatEditColors();
+  const gr=el('catEditGroupRow');
+  if(gr){
+    gr.hidden=kind==='income';
+    if(kind!=='income')buildCustomSelect('catEditGroupWrap',CAT_GROUPS,catEditGroup,v=>{catEditGroup=v;});
+  }
+  const del=el('catEditDelete');
+  const removable=!!cat&&isCustomCat(cat.id);
+  del.style.display=removable?'block':'none';
+  const used=cat?catUseCount(cat.id,kind):0;
+  el('catEditHint').textContent=!cat?'It joins the list straight away and Folio can file notes under it.'
+    :removable?(used?'Deleting it moves its '+plural(used,'entry','entries')+' to Other.':'Nothing is filed here, so deleting it changes nothing else.')
+    :'A built-in category. You can rename and restyle it; it cannot be removed.';
+  if(id)swapModal('catMgrModal','catEditModal');else openModal('catEditModal');
+}
+function syncCatEditIcon(){
+  const p=el('catEditIcoPrev');if(p){p.innerHTML=svgIcon(catEditIcon,18);p.style.background=catEditColor+'22';p.style.color=catEditColor;}
+  const n=el('catEditIcoName');if(n)n.textContent=catEditIcon;
+}
+function openCatIconPicker(){openIconPicker(catEditIcon,k=>{catEditIcon=k;syncCatEditIcon();},'Category icon');}
+function renderCatEditColors(){
+  const g=el('catEditColors');if(!g)return;
+  g.innerHTML=NEWCAT_PALETTE.map(c=>`<button type="button" class="color-opt ${c===catEditColor?'sel':''}" style="background:${c}" onclick="pickCatEditColor('${c}')" aria-label="colour ${c}"></button>`).join('');
+}
+function pickCatEditColor(c){catEditColor=c;renderCatEditColors();syncCatEditIcon();haptic('tap');}
+function saveCatEdit(){
+  const kind=catMgrKind;
+  const label=tidyCatLabel(el('catEditName').value);
+  if(!label||label.length<2){toast('Give it a name','error');return;}
+  if(editingCatId){
+    const custom=customCats().find(c=>c.id===editingCatId);
+    if(custom){
+      Object.assign(custom,{label,icon:catEditIcon,color:catEditColor});
+      if(kind!=='income')custom.group=catEditGroup;
+      rebuildCats();
+    }else{
+      // A built-in is code, not data, so an edit to one is stored as an
+      // override and applied over the top on every load.
+      const ov=state.settings.catOverrides||(state.settings.catOverrides={});
+      ov[editingCatId]={label,icon:catEditIcon,color:catEditColor,
+        group:kind!=='income'?catEditGroup:undefined};
+      rebuildCats();
+    }
+  }else{
+    const clash=findCatByLabel(label,kind);
+    if(clash){toast('"'+clash.label+'" already covers that','error');return;}
+    if(customCats().length>=24){toast('That is as many as the list will hold','error');return;}
+    customCats().push({id:slugCat(label),label,kind:kind==='income'?'income':'expense',
+      group:kind==='income'?null:catEditGroup,icon:catEditIcon,color:catEditColor,
+      ai:false,created:new Date().toISOString()});
+    rebuildCats();
+  }
+  editingCatId=null;
+  saveState();renderAll();haptic('success');
+  swapModal('catEditModal','catMgrModal');renderCatManager();
+  toast('Category saved','success');
+}
+async function deleteCatEdit(){
+  const id=editingCatId;if(!id)return;
+  const kind=catMgrKind;
+  const cat=catsOfKind(kind).find(c=>c.id===id);
+  const used=catUseCount(id,kind);
+  const fallback=kind==='income'?'other_in':'other';
+  if(!await askConfirm({title:'Delete '+((cat&&cat.label)||'category')+'?',
+    message:used?plural(used,'entry','entries')+' filed here will move to Other. Nothing is lost.'
+                :'Nothing is filed here, so nothing else changes.',
+    confirmText:'Delete'}))return;
+  let moved=0;
+  (state.spends||[]).forEach(sp=>{if(sp&&sp.category===id&&((sp.kind==='income')===(kind==='income'))){sp.category=fallback;moved++;}});
+  // A rule that taught this category has nothing left to point at.
+  state.settings.spendRules=userSpendRules().filter(r=>r&&r.cat!==id);
+  state.settings.customCats=customCats().filter(c=>c&&c.id!==id);
+  if(state.settings.catOverrides)delete state.settings.catOverrides[id];
+  rebuildCats();saveState();
+  editingCatId=null;
+  renderAll();haptic('tap');
+  swapModal('catEditModal','catMgrModal');renderCatManager();
+  toast(moved?'Deleted, '+plural(moved,'entry','entries')+' moved to Other':'Category deleted','success');
 }
 // An invented category that nothing was ever filed under is clutter. Drop it
 // on load, but only once it has had a day to be used, so the one you created
@@ -12095,18 +12334,38 @@ const DEFAULT_INCOME_RULES=[
 ];
 function userSpendRules(){return Array.isArray(state.settings.spendRules)?state.settings.spendRules:[];}
 // Longest match wins, so a rule for "water bill" beats a rule for "bill".
-function guessCategory(note,kind){
+// Two kinds of rule answer here and they do not carry the same weight.
+//
+// One the person taught, by correcting an entry themselves, is their own
+// decision about their own money and stands.
+//
+// One of the built-in keywords is a guess. A good one, worth showing at once
+// so the field is never empty while a reply is on its way, but it matches a
+// WORD and the meaning lives in the sentence: "bhatbhateni" is groceries in
+// "khaja at bhatbhateni" and is not in "gift card for bhatbhateni". So a
+// built-in keyword no longer ends the question, it only answers it provisionally.
+function guessCategoryRule(note,kind){
   const t=String(note||'').toLowerCase().trim();
   if(!t)return null;
-  const pool=userSpendRules().filter(r=>r&&r.match&&(!r.kind||r.kind===kind))
-    .concat(kind==='income'?DEFAULT_INCOME_RULES:DEFAULT_SPEND_RULES);
-  let best=null;
-  pool.forEach(r=>{
-    const m=String(r.match||'').toLowerCase();
-    if(m&&t.includes(m)&&(!best||m.length>best.len))best={cat:r.cat,len:m.length};
-  });
+  const taught=userSpendRules().filter(r=>r&&r.match&&(!r.kind||r.kind===kind));
+  const builtin=kind==='income'?DEFAULT_INCOME_RULES:DEFAULT_SPEND_RULES;
   const valid=kind==='income'?INCOME_CATS:SPEND_CATS;
-  return (best&&valid.some(c=>c.id===best.cat))?best.cat:null;
+  const pick=pool=>{
+    let best=null;
+    pool.forEach(r=>{
+      const m=String(r.match||'').toLowerCase();
+      if(m&&t.includes(m)&&(!best||m.length>best.len))best={cat:r.cat,len:m.length};
+    });
+    return (best&&valid.some(c=>c.id===best.cat))?best.cat:null;
+  };
+  const mine=pick(taught);
+  if(mine)return {cat:mine,taught:true};
+  const std=pick(builtin);
+  return std?{cat:std,taught:false}:null;
+}
+function guessCategory(note,kind){
+  const g=guessCategoryRule(note,kind);
+  return g?g.cat:null;
 }
 // Remember a correction so the same shop lands in the right place next time.
 function learnCategory(note,cat,kind){
@@ -12382,13 +12641,16 @@ function onSpendNoteInput(){
   // anything here can work out.
   if(spendCatPicked){setCatAiTag(null);return;}
   const note=(el('spendNote').value||'').trim();
-  const g=guessCategory(note,spendKind);
+  const g=guessCategoryRule(note,spendKind);
   if(g){
-    setCatAiTag(null);_catSettled=true;
-    if(g!==spendCatChoice){spendCatChoice=g;buildSpendCatSelect();}
-    return;
+    // Fill it in straight away either way: an empty field while a reply is in
+    // flight is worse than a good guess that may be corrected in a second.
+    if(g.cat!==spendCatChoice){spendCatChoice=g.cat;buildSpendCatSelect();}
+    // Their own correction is the answer. A built-in keyword is not, so the
+    // read carries on and its answer replaces this one.
+    if(g.taught){setCatAiTag(null);_catSettled=true;return;}
   }
-  if(note.length<3||!navigator.onLine){setCatAiTag(null);_catSettled=!note;return;}
+  if(note.length<3||!navigator.onLine){setCatAiTag(null);_catSettled=!!g||!note;return;}
   const key=spendKind+'|'+note.toLowerCase();
   if(_catAiCache.has(key)){
     setCatAiTag(null);
@@ -12415,7 +12677,7 @@ function catFromReply(reply,kind){
     return valid.some(c=>c.id===reply)?reply:null;
   }
   if(reply.propose&&reply.propose.label){
-    const made=adoptCategory(reply.propose.label,kind,reply.propose.group);
+    const made=adoptCategory(reply.propose.label,kind,reply.propose.group,reply.propose.icon);
     if(made){saveState();return made.id;}
   }
   return null;
@@ -12531,6 +12793,8 @@ function saveSpend(){
 function finishCategorising(id,note,kind){
   clearTimeout(_catAiTimer);_catAiSeq++;setCatAiTag(null);
   if(_catSettled||!note||note.length<3||!navigator.onLine)return;
+  // A rule the person taught has already settled it; nothing to hand over.
+  {const g=guessCategoryRule(note,kind);if(g&&g.taught)return;}
   const key=kind+'|'+note.toLowerCase();
   if(_catAiCache.has(key)){
     const cid=catFromReply(_catAiCache.get(key),kind);

@@ -988,6 +988,18 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .pick-sub{font-size:10.5px;color:var(--text3);text-transform:capitalize}
 .pick-chev{color:var(--text3);flex:none}
 .ip-empty{text-align:center;font-size:12px;color:var(--text3);padding:22px 0}
+/* ══ CATEGORIES ══════════════════════════════════════════════════════ */
+.cat-mgr-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;
+  background:var(--card2);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;
+  cursor:pointer;font-family:var(--font);color:inherit;text-align:left;transition:.15s}
+.cat-mgr-row:active{transform:scale(.99)}
+.cat-mgr-ico{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center}
+.cat-mgr-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cat-mgr-nm{font-size:12.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;
+  min-width:0}
+.cat-mgr-tag{flex:none;font-size:8px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--accent);background:var(--accent-glow);border-radius:5px;padding:2px 5px}
+.cat-mgr-sub{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Every cash account you own, inside a sheet that still has a target date
    and a projection below it. Four fit; the rest scroll. */
 .goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
@@ -1241,6 +1253,11 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .act-pill{flex:1;border:1px solid var(--border2);border-radius:10px;padding:10px;font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:.18s;background:var(--bg3);color:var(--text2)}
 .act-pill:active{transform:scale(.96)}
 .act-pill.buy{color:var(--blue)}.act-pill.sell{color:var(--green)}.act-pill.add{color:var(--accent)}
+/* Three actions on a cash account, so each one gets less room and the label
+   has to survive a 360px phone. */
+.act-pill.xfer{color:var(--purple)}
+.mini-actions .act-pill{min-width:0;padding:10px 6px}
+.mini-actions .act-pill svg{flex:none}
 .mini-form{background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-bottom:12px;display:none;position:relative;z-index:1}
 .mini-form.open{z-index:50}
 .mini-form.open{display:block;animation:enter .3s both}

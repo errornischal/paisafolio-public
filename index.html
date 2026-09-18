@@ -412,7 +412,7 @@ if (typeof window.isPendingSync !== 'function') {
       </div>
 
       <div class="card">
-        <div class="sec-head"><div class="sec-title">WHERE IT WENT</div></div>
+        <div class="sec-head"><div class="sec-title">WHERE IT WENT</div><button class="link-btn" onclick="openCatManager()">Categories</button></div>
         <div class="where-bar" id="whereBar"></div>
         <div class="where-list" id="whereList"></div>
       </div>
@@ -881,6 +881,44 @@ if (typeof window.isPendingSync !== 'function') {
 </div>
 
 <!-- BUDGET -->
+<!-- CATEGORIES -->
+<div class="modal-overlay" id="catMgrModal" role="dialog" aria-modal="true" aria-labelledby="catMgrTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="catMgrTitle">Categories</div><button class="modal-close" onclick="closeModal('catMgrModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="seg" role="group" aria-label="Which categories" style="margin-bottom:12px">
+        <button id="catMgrSegOut" class="on" onclick="setCatMgrKind('expense')">Spending</button>
+        <button id="catMgrSegIn" onclick="setCatMgrKind('income')">Income</button>
+      </div>
+      <div id="catMgrList"></div>
+      <button class="ghost-btn" style="margin-top:10px" onclick="openCatEdit(null)">+ New category</button>
+      <div class="form-hint" style="margin-top:9px" id="catMgrHint"></div>
+    </div>
+  </div>
+</div>
+<!-- ONE CATEGORY -->
+<div class="modal-overlay" id="catEditModal" role="dialog" aria-modal="true" aria-labelledby="catEditTitle" aria-hidden="true">
+  <div class="modal-sheet">
+    <div class="modal-handle" data-drag></div>
+    <div class="modal-hdr"><div class="modal-title" id="catEditTitle">Category</div><button class="modal-close" onclick="closeModal('catEditModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-lbl" for="catEditName">NAME</label><input class="form-input" id="catEditName" maxlength="28" placeholder="Groceries, Game Topups…"/></div>
+      <div class="form-row"><label class="form-lbl">ICON</label>
+        <button type="button" class="pick-row" onclick="openCatIconPicker()">
+          <span class="pick-ico" id="catEditIcoPrev"></span>
+          <span class="pick-txt"><span class="pick-name">Icon</span><span class="pick-sub" id="catEditIcoName">Choose one</span></span>
+          <svg class="pick-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="form-row"><label class="form-lbl">COLOUR</label><div class="color-grid" id="catEditColors"></div></div>
+      <div class="form-row" id="catEditGroupRow"><label class="form-lbl">COUNTS AS</label><div class="custom-select-wrap" id="catEditGroupWrap"></div></div>
+      <div class="form-hint" id="catEditHint"></div>
+      <button class="submit-btn" id="catEditSave" onclick="saveCatEdit()">Save</button>
+      <button class="delete-btn" id="catEditDelete" style="display:none" onclick="deleteCatEdit()">Delete category</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="budgetModal" role="dialog" aria-modal="true" aria-label="Monthly budget" aria-hidden="true" onclick="if(event.target===this&&!justOpened(this))closeModal('budgetModal')">
   <div class="modal-sheet">
     <div class="modal-hdr"><div class="modal-title">Monthly Budget</div><button class="modal-close" onclick="closeModal('budgetModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
