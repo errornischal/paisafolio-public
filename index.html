@@ -1119,10 +1119,16 @@ if (typeof window.isPendingSync !== 'function') {
   <div class="modal-sheet">
     <div class="modal-handle" data-drag></div>
     <div class="modal-hdr">
-      <div class="modal-title" id="debtDetailTitle">Debt</div>
+      <div class="debt-hdr">
+        <div class="debt-avatar" id="debtDetailAvatar" aria-hidden="true"></div>
+        <div class="debt-hdr-txt">
+          <div class="modal-title" id="debtDetailTitle">Debt</div>
+          <div class="debt-hdr-sub" id="debtDetailSub"></div>
+        </div>
+      </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="icon-btn" id="debtDetailShareBtn" onclick="openDebtExportPicker(viewingDebtId)" aria-label="Share this debt" style="background:var(--surface2);border:none;border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>
-        <button class="icon-btn" id="debtDetailEditBtn" onclick="openDebtDetailEdit()" aria-label="Edit" style="background:var(--surface2);border:none;border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
+        <button class="icon-btn" id="debtDetailShareBtn" onclick="openDebtExportPicker(viewingDebtId)" aria-label="Share this debt" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>
+        <button class="icon-btn" id="debtDetailEditBtn" onclick="openDebtDetailEdit()" aria-label="Edit" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text2)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
         <button class="modal-close" onclick="closeModal('debtDetailModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
@@ -1148,6 +1154,10 @@ if (typeof window.isPendingSync !== 'function') {
         <span id="debtLedgerLockTxt">The amount is the total of the entries in this debt’s history.</span>
       </div>
       <div class="form-row"><label class="form-lbl" for="debtAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="debtAmount" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="debtAmountCcyWrap"></div></div></div>
+      <div class="form-row" id="debtNewAcctRow"><label class="form-lbl" id="debtNewAcctLbl">PAID FROM</label>
+        <div id="debtNewAcctWrap" class="custom-select-wrap"></div>
+        <div class="form-hint" id="debtNewAcctHint">Which account the money left. Its balance follows.</div>
+      </div>
       <div class="form-row"><label class="form-lbl" for="debtNote">REASON / NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtNote" placeholder="Loan, product, service…"/></div>
       <div class="form-row"><label class="form-lbl" for="debtLentDate">LENT / BORROWED ON</label>
         <div class="freq-row" style="margin-bottom:6px">

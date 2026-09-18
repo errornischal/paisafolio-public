@@ -552,20 +552,62 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .debt-sum-sub{font-size:9px;color:var(--text3);margin-top:3px;min-height:12px}
 /* One lend or one repayment, opened on its own. A row, not a card: it sits
    inside a section that already has a surface. */
-.debt-entry{display:flex;align-items:center;gap:10px;width:100%;padding:10px 2px;
-  background:none;border:0;border-bottom:1px solid var(--border);
-  font-family:var(--font);text-align:left;cursor:pointer;color:var(--text)}
-.debt-entry:last-child{border-bottom:0}
-.debt-entry:active{background:var(--glass-card-hi)}
-.debt-entry-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.debt-entry-amt{font-size:13px;font-weight:600}
-.debt-entry-sub{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.debt-entry-chev{color:var(--text3);flex-shrink:0}
+/* ── Debt detail sheet ──
+   A debt is a relationship, so the sheet opens with the person: their face,
+   their name, and which way the money runs. Below that it is two ledgers in
+   two boxes — what was handed over, and what has come back — because reading
+   a lend and a repayment as one undifferentiated list never once helped. */
+.debt-hdr{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.debt-hdr .debt-avatar{width:36px;height:36px;font-size:13px}
+.debt-hdr-txt{min-width:0}
+#debtDetailTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.debt-hdr-sub{font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-top:1px}
+.dprog{background:var(--border2);border-radius:6px;height:6px;overflow:hidden;margin-bottom:12px}
+.dprog-fill{height:100%;background:var(--green);border-radius:6px;transition:width .4s}
+.dmeta{display:flex;flex-wrap:wrap;gap:6px}
+.dmeta-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:11px;color:var(--text3);
+  background:var(--card2);border:1px solid var(--border);border-radius:999px;padding:4px 9px}
+.dmeta-chip svg{flex-shrink:0}
+.dmeta-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dmeta-chip.accent{color:var(--accent);border-color:var(--accent-glow)}
+.dmeta-chip.over{color:var(--red)}
+.dcard{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden}
+.dcard-hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:12px 13px 8px}
+.dcard-ttl{font-size:10.5px;font-weight:800;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.dcard-sum{font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dcard-bd{padding:0 13px}
+.dcard-ft{border-top:1px solid var(--border);background:var(--card2);padding:11px 13px 12px}
+.dcard-ft .form-lbl{margin-bottom:5px}
+.dcard-ft .form-row-2{margin-bottom:8px}
+.dcard-ft .ghost-btn{padding:9px;font-size:12px}
+.dcard-acts{display:flex;gap:8px;align-items:stretch}
+.dcard-acts .ghost-btn{width:auto;flex:0 0 92px}
+.dcard-acts .submit-btn{margin-top:0;padding:11px;font-size:13px;border-radius:10px}
+/* One row of the ledger: direction on the left as a chip, the money on the
+   right, and the small print underneath. Tapping it opens that one entry. */
+.dtx{display:flex;align-items:center;gap:10px;width:100%;padding:10px 0;text-align:left;
+  background:none;border:0;border-top:1px solid var(--border);color:inherit;font:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+.dtx:first-child{border-top:0}
+.dtx:active{opacity:.55}
+.dtx-ico{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dtx-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dtx-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.dtx-ttl{font-size:13px;font-weight:650;color:var(--text);white-space:nowrap}
+.dtx-amt{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dtx-bot{display:flex;align-items:center;gap:7px;min-width:0;font-size:11px;color:var(--text3)}
+.dtx-date{flex-shrink:0}
+.dtx-acct{display:inline-flex;align-items:center;gap:4px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtx-acct svg{flex-shrink:0;opacity:.8}
+.dtx-note{font-size:11px;color:var(--text3);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtx-empty{padding:16px 0 18px;text-align:center;font-size:12px;color:var(--text3)}
 .debt-sum-val{font-size:15px;font-weight:800}
 .debt-list{padding:0 12px;display:flex;flex-direction:column;gap:7px}
 .debt-item{position:relative;background:var(--glass-card);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);border:1px solid var(--glass-border);border-radius:var(--radius);padding:11px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:.18s;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;box-shadow:var(--glass-shadow)}
 .debt-item:active{transform:scale(.98)}
-.debt-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0}
+.debt-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;
+  background:hsla(var(--dav-h,210),68%,55%,.16);color:hsl(var(--dav-h,210),62%,64%)}
+:root[data-theme=light] .debt-avatar{background:hsla(var(--dav-h,210),68%,46%,.13);color:hsl(var(--dav-h,210),58%,36%)}
 .debt-info{flex:1;min-width:0}
 .debt-name-row{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:nowrap}
 .debt-name{font-size:13px;font-weight:700;color:var(--text);min-width:0;

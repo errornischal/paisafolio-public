@@ -4548,6 +4548,19 @@ function applyDebtCash(d,entry,kind){
   applyCashLegBalance(acct,amt,dir);
   pushCashLeg(acct,amt,dir,entry.date||todayStr(),entry.linkId,debtLegNote(d,kind));
 }
+// Lending hands money over, so the account has to actually have it, and an
+// account that cannot carry a leg at all has to say so. Every sheet that can
+// create a lend or a repayment asks this same question, and used to answer it
+// with its own copy of the same eight lines.
+function debtCashError(d,acct,amtN,kind){
+  const blk=cashLegBlocked(acct);
+  if(blk)return blk;
+  if(acct&&debtCashDir(d&&d.type==='owed',kind)==='out'){
+    const have=isStablecoin(acct)?getAssetCurrentValue(acct):num(acct.value);
+    if(have+1e-9<amtN)return acct.name+' only has '+fmt(have);
+  }
+  return null;
+}
 function reverseDebtCash(d,entry,kind){
   if(!d||!entry||!entry.account||!entry.linkId)return;
   const acct=(state.assets||[]).find(x=>x.id===entry.account);
@@ -4562,108 +4575,152 @@ function openDebtDetail(id){
   const d=state.debts.find(x=>x.id===id);if(!d)return;
   viewingDebtId=id;
   el('debtDetailTitle').textContent=d.name;
+  debtAddOpen=false;debtPayOpen=false;debtAddAcct=null;debtPayAcct=null;
   renderDebtDetailBody();
   openModal('debtDetailModal');
 }
 function openDebtDetailEdit(){closeModal('debtDetailModal',true);setTimeout(()=>openDebtEdit(viewingDebtId),200);}
+// The same two letters and the same colour follow a person everywhere they
+// appear, so the row in the list and the sheet it opens read as one person
+// rather than two unrelated cards. Derived from the name, so it needs no
+// storage and never goes stale.
+function debtInitials(name){
+  const parts=String(name||'').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return '?';
+  return parts.map(w=>w[0]).join('').toUpperCase().slice(0,2);
+}
+function debtHue(name){
+  const t=String(name||'').trim().toLowerCase();
+  let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))>>>0;
+  return h%360;
+}
+const DTX_OUT='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>';
+const DTX_IN='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>';
+const DTX_WALLET='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2"/><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><circle cx="17" cy="14" r="1.2"/></svg>';
+// Newest first, and for two entries logged on the same day the one added last
+// comes first: a plain reverse got that right only by accident, and got the
+// order wrong the moment anything was backdated.
+function debtEntriesNewestFirst(list){
+  return (list||[]).map((e,i)=>({e,i}))
+    .sort((A,B)=>{const c=String(B.e&&B.e.date||'').localeCompare(String(A.e&&A.e.date||''));return c||(B.i-A.i);})
+    .map(x=>x.e);
+}
+// The two forms start folded. A debt is read far more often than it is added
+// to, and two always-open forms pushed the history — the thing you opened the
+// sheet for — off the bottom of the screen.
+let debtAddOpen=false,debtPayOpen=false;
+function toggleDebtAddForm(){debtAddOpen=!debtAddOpen;debtPayOpen=false;renderDebtDetailBody();haptic('tap');if(debtAddOpen)setTimeout(()=>{const f=el('debtAddAmt');if(f)f.focus();},60);}
+function toggleDebtPayForm(){debtPayOpen=!debtPayOpen;debtAddOpen=false;renderDebtDetailBody();haptic('tap');if(debtPayOpen)setTimeout(()=>{const f=el('debtPayAmt');if(f)f.focus();},60);}
 function renderDebtDetailBody(){
   const d=state.debts.find(x=>x.id===viewingDebtId);if(!d)return;
-  const rate=getCurrRate(currentCurrency.code);
   const isOwed=d.type==='owed';
   const acc=calcAccrued(d);
   const payments=d.payments||[];
-  const totalPaid=payments.reduce((s,p)=>s+p.amount,0);
+  const lendHistory=debtLedger(d);
+  const totalPaid=payments.reduce((s,p)=>s+num(p&&p.amount),0);
+  const totalLent=lendHistory.reduce((s,h)=>s+num(h&&h.amount),0);
   const remaining=Math.max(0,d.amount+acc-totalPaid);
   const paidPct=d.amount>0?Math.min(100,(totalPaid/(d.amount+acc))*100):0;
-
   const statusColor=isOwed?'var(--green)':'var(--red)';
-  const lendHistory=debtLedger(d);
-  // Which account the money moved through, said on the row, because a lend
-  // that came out of a bank account and one that came from outside money are
-  // different events and used to look identical.
+
+  const av=el('debtDetailAvatar');
+  if(av){av.textContent=debtInitials(d.name);av.style.setProperty('--dav-h',debtHue(d.name));}
+  const sub=el('debtDetailSub');
+  if(sub)sub.textContent=isOwed?'Owes you':'You owe';
+
   const acctName=e=>{const a=e&&e.account?(state.assets||[]).find(x=>x.id===e.account):null;return a?a.name:null;};
+  // Colour says which way the money went, not which kind of entry it is.
+  // Being repaid on a debt owed to you and repaying one you owe are opposite
+  // events, and used to be drawn the same green.
   const entryRow=(e,kind)=>{
-    const paying=kind==='pay';
-    const col=paying?'var(--green)':statusColor;
-    const word=paying?(isOwed?'Received':'Paid'):(isOwed?'Lent':'Borrowed');
-    const acct=acctName(e);
-    return `<button type="button" class="debt-entry" onclick="openDebtEntry('${jsAttr(d.id)}','${kind}','${jsAttr(e.id)}')">
-      <span class="debt-entry-main">
-        <span class="debt-entry-amt" style="color:${col}">${word} ${fmt(e.amount)}</span>
-        <span class="debt-entry-sub">${formatDate(e.date)}${acct?' · '+esc(acct):''}${e.note?' · '+esc(e.note):''}</span>
+    const inward=debtCashDir(isOwed,kind)==='in';
+    const col=inward?'var(--green)':'var(--red)';
+    const tint=inward?'rgba(0,200,150,.14)':'rgba(255,77,106,.14)';
+    const word=kind==='pay'?(isOwed?'Received':'Repaid'):(isOwed?'Lent':'Borrowed');
+    const an=acctName(e);
+    return `<button type="button" class="dtx" onclick="openDebtEntry('${jsAttr(d.id)}','${kind}','${jsAttr(e.id)}')" aria-label="${word} ${fmt(e.amount)} on ${esc(formatDate(e.date))}, edit">
+      <span class="dtx-ico" style="background:${tint};color:${col}">${inward?DTX_IN:DTX_OUT}</span>
+      <span class="dtx-main">
+        <span class="dtx-top"><span class="dtx-ttl">${word}</span><span class="dtx-amt" style="color:${col}">${inward?'+':'−'}${fmt(e.amount)}</span></span>
+        <span class="dtx-bot"><span class="dtx-date">${formatDate(e.date)}</span>${an?`<span class="dtx-acct">${DTX_WALLET}${esc(an)}</span>`:''}</span>
+        ${e.note?`<span class="dtx-note">${esc(e.note)}</span>`:''}
       </span>
-      <svg class="debt-entry-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
     </button>`;
   };
-  const lendRows=lendHistory.slice().reverse().map(h=>entryRow(h,'lend')).join('');
-  const payRows=payments.slice().reverse().map(p=>entryRow(p,'pay')).join('');
+  const lendRows=debtEntriesNewestFirst(lendHistory).map(h=>entryRow(h,'lend')).join('');
+  const payRows=debtEntriesNewestFirst(payments).map(p=>entryRow(p,'pay')).join('');
+
+  const ICO_NOTE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+  const ICO_CAL='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+  const ICO_BOLT='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+  const _mid=new Date();_mid.setHours(0,0,0,0);
+  const overdue=!!(d.due&&parseDay(d.due)<_mid);
+  const chips=[];
+  if(d.note)chips.push(`<span class="dmeta-chip">${ICO_NOTE}<span>${esc(d.note)}</span></span>`);
+  if(d.due)chips.push(`<span class="dmeta-chip${overdue?' over':''}">${ICO_CAL}<span>${overdue?'Overdue':'Due'} ${formatDate(d.due)}</span></span>`);
+  if(acc>0)chips.push(`<span class="dmeta-chip accent" title="${esc(accruedBasis(d)||'')}">${ICO_BOLT}<span>${fmt(acc)} interest</span></span>`);
+
+  const addForm=`
+      <div class="form-row-2">
+        <div><label class="form-lbl" for="debtAddAmt">AMOUNT (${currentCurrency.code})</label>
+          <input class="form-input" id="debtAddAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/></div>
+        <div><label class="form-lbl" for="debtAddDate">DATE</label>
+          <input class="form-input" id="debtAddDate" type="date" value="${todayStr()}"/></div>
+      </div>
+      <input class="form-input" id="debtAddNote" type="text" placeholder="Reason (optional)" style="margin-bottom:8px"/>
+      <label class="form-lbl" id="debtAddAcctLbl">${isOwed?'PAID FROM':'RECEIVED INTO'}</label>
+      <div id="debtAddAcctWrap" class="custom-select-wrap" style="margin-bottom:10px"></div>
+      <div class="dcard-acts">
+        <button type="button" class="ghost-btn" onclick="toggleDebtAddForm()">Cancel</button>
+        <button type="button" class="submit-btn" onclick="recordDebtAddition()">${isOwed?'Record lend':'Record borrow'}</button>
+      </div>`;
+  const payForm=`
+      <div class="form-row-2">
+        <div><label class="form-lbl" for="debtPayAmt">AMOUNT (${currentCurrency.code})</label>
+          <input class="form-input" id="debtPayAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/></div>
+        <div><label class="form-lbl" for="debtPayDate">DATE</label>
+          <input class="form-input" id="debtPayDate" type="date" value="${todayStr()}"/></div>
+      </div>
+      <input class="form-input" id="debtPayNote" type="text" placeholder="Note (optional)" style="margin-bottom:8px"/>
+      <label class="form-lbl" id="debtPayAcctLbl">${isOwed?'RECEIVED INTO':'PAID FROM'}</label>
+      <div id="debtPayAcctWrap" class="custom-select-wrap" style="margin-bottom:10px"></div>
+      <div class="dcard-acts">
+        <button type="button" class="ghost-btn" onclick="toggleDebtPayForm()">Cancel</button>
+        <button type="button" class="submit-btn" style="background:var(--green);box-shadow:none;color:#04150f" onclick="recordDebtPayment()">${isOwed?'Record received':'Record repayment'}</button>
+      </div>`;
 
   el('debtDetailBody').innerHTML=`
-    <div style="margin-bottom:16px">
+    <div class="dcard" style="padding:13px;margin-bottom:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="d-stat"><div class="d-stat-lbl">${isOwed?'OWED TO YOU':'YOU OWE'}</div><div class="d-stat-val" style="color:${statusColor}">${fmt(d.amount+(acc||0))}</div></div>
         <div class="d-stat"><div class="d-stat-lbl">REMAINING</div><div class="d-stat-val" style="color:${statusColor}">${fmt(remaining)}</div></div>
         <div class="d-stat"><div class="d-stat-lbl">TOTAL PAID</div><div class="d-stat-val" style="color:var(--green)">${fmt(totalPaid)}</div></div>
         <div class="d-stat"><div class="d-stat-lbl">PROGRESS</div><div class="d-stat-val">${paidPct.toFixed(0)}%</div></div>
       </div>
-      ${d.amount>0?`<div style="background:var(--surface2);border-radius:6px;height:6px;overflow:hidden;margin-bottom:12px"><div style="height:100%;width:${paidPct}%;background:var(--green);border-radius:6px;transition:.4s"></div></div>`:''}
-      ${d.note?`<div style="font-size:12px;color:var(--text3);margin-bottom:8px"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><polyline points=\"14 2 14 8 20 8\"/></svg> ${esc(d.note)}</div>`:''}
-      ${d.due?`<div style="font-size:12px;color:var(--text3);margin-bottom:8px"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><line x1=\"16\" y1=\"2\" x2=\"16\" y2=\"6\"/><line x1=\"8\" y1=\"2\" x2=\"8\" y2=\"6\"/><line x1=\"3\" y1=\"10\" x2=\"21\" y2=\"10\"/></svg> Due: ${formatDate(d.due)}</div>`:''}
-      ${acc>0?`<div style="font-size:12px;color:var(--accent);margin-bottom:8px"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg> Interest accrued: ${fmt(acc)}</div>${accruedBasis(d)?`<div style="font-size:10.5px;color:var(--text3);margin:-4px 0 8px 16px">${esc(accruedBasis(d))}</div>`:''}`:''}
+      ${d.amount>0?`<div class="dprog"><div class="dprog-fill" style="width:${paidPct}%"></div></div>`:''}
+      ${chips.length?`<div class="dmeta">${chips.join('')}</div>`:''}
     </div>
 
-    ${lendHistory.length?`
-    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">${isOwed?'LEND':'BORROW'} HISTORY</div>
-      <div>${lendRows}</div>
-    </div>`:''}
-
-    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px">${isOwed?'LEND MORE':'BORROW MORE'}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div>
-          <label class="form-lbl">AMOUNT (${currentCurrency.code})</label>
-          <input class="form-input" id="debtAddAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/>
-        </div>
-        <div>
-          <label class="form-lbl">DATE</label>
-          <input class="form-input" id="debtAddDate" type="date" value="${todayStr()}"/>
-        </div>
+    <section class="dcard">
+      <div class="dcard-hd">
+        <div class="dcard-ttl">${isOwed?'LENT OUT':'BORROWED'}</div>
+        <div class="dcard-sum">${fmt(totalLent)}${lendHistory.length>1?` &middot; ${lendHistory.length} entries`:''}</div>
       </div>
-      <input class="form-input" id="debtAddNote" type="text" placeholder="Reason (optional)" style="margin-bottom:8px"/>
-      <label class="form-lbl" id="debtAddAcctLbl">${isOwed?'PAID FROM':'RECEIVED INTO'}</label>
-      <div id="debtAddAcctWrap" class="custom-select-wrap" style="margin-bottom:8px"></div>
-      <button class="submit-btn" style="margin:0" onclick="recordDebtAddition()">
-        ${isOwed?'Record New Lend':'Record New Borrow'}
-      </button>
-    </div>
+      <div class="dcard-bd">${lendRows||`<div class="dtx-empty">Nothing recorded yet</div>`}</div>
+      <div class="dcard-ft">${debtAddOpen?addForm:`<button type="button" class="ghost-btn" onclick="toggleDebtAddForm()">+ ${isOwed?'Lend more':'Borrow more'}</button>`}</div>
+    </section>
 
-    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px">RECORD PAYMENT</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div>
-          <label class="form-lbl">AMOUNT (${currentCurrency.code})</label>
-          <input class="form-input" id="debtPayAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/>
-        </div>
-        <div>
-          <label class="form-lbl">DATE</label>
-          <input class="form-input" id="debtPayDate" type="date" value="${todayStr()}"/>
-        </div>
+    <section class="dcard">
+      <div class="dcard-hd">
+        <div class="dcard-ttl">REPAYMENTS</div>
+        <div class="dcard-sum">${fmt(totalPaid)}${payments.length>1?` &middot; ${payments.length} entries`:''}</div>
       </div>
-      <input class="form-input" id="debtPayNote" type="text" placeholder="Note (optional)" style="margin-bottom:8px"/>
-      <label class="form-lbl" id="debtPayAcctLbl">${isOwed?'RECEIVED INTO':'PAID FROM'}</label>
-      <div id="debtPayAcctWrap" class="custom-select-wrap" style="margin-bottom:8px"></div>
-      <button class="submit-btn" style="margin:0;background:var(--green)" onclick="recordDebtPayment()">
-        ${isOwed?'Record Payment Received':'Record Payment Made'}
-      </button>
-    </div>
-
-    ${payments.length?`
-    <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">PAYMENT HISTORY</div>
-    <div>${payRows}</div>`:'<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">No payments recorded yet</div>'}
+      <div class="dcard-bd">${payRows||`<div class="dtx-empty">${isOwed?'Nothing paid back yet':'You have not repaid any of this yet'}</div>`}</div>
+      <div class="dcard-ft">${debtPayOpen?payForm:`<button type="button" class="ghost-btn" onclick="toggleDebtPayForm()">+ ${isOwed?'Record a payment received':'Record a repayment'}</button>`}</div>
+    </section>
   `;
-  buildDebtAcctSelect('debtAddAcctWrap','lend');
-  buildDebtAcctSelect('debtPayAcctWrap','pay');
+  buildDebtAcctSelect('debtAddAcctWrap','lend',undefined,undefined,debtCashDir(isOwed,'lend')==='in');
+  buildDebtAcctSelect('debtPayAcctWrap','pay',undefined,undefined,debtCashDir(isOwed,'pay')==='in');
 }
 // Where the money comes from, or lands. Same accounts the rest of the app
 // offers, plus the honest option of money that never touched one.
@@ -4671,14 +4728,16 @@ function renderDebtDetailBody(){
 // declared further down the file, and naming it here runs into its temporal
 // dead zone and throws on load. Null reads as "not a tracked account" too.
 let debtAddAcct=null,debtPayAcct=null;
-function debtAcctOptions(){
+function debtAcctOptions(dirIn){
   const opts=cashAccounts().map(a=>({value:a.id,label:a.name+' · '+fmt(a.value||0)}));
-  opts.push({value:CASH_NONE,label:'Not from a tracked account'});
+  // Money that never touched an account is a real answer, and it reads
+  // backwards when the option says "from" about money coming in.
+  opts.push({value:CASH_NONE,label:dirIn?'Did not land in a tracked account':'Not from a tracked account'});
   return opts;
 }
-function buildDebtAcctSelect(wrapId,kind,current,onPick){
+function buildDebtAcctSelect(wrapId,kind,current,onPick,dirIn){
   const wrap=el(wrapId);if(!wrap)return;
-  const opts=debtAcctOptions();
+  const opts=debtAcctOptions(dirIn);
   let cur=current!==undefined?current:(kind==='pay'?debtPayAcct:debtAddAcct);
   if(!cur||!opts.some(o=>o.value===cur))cur=CASH_NONE;
   if(current===undefined){ if(kind==='pay')debtPayAcct=cur; else debtAddAcct=cur; }
@@ -4697,16 +4756,12 @@ function recordDebtPayment(){
   if(amt/rate>remaining+0.001){toast('Cannot exceed remaining '+fmt(remaining),'error');return;}
   if(!d.payments)d.payments=[];
   const payAcct=(debtPayAcct&&debtPayAcct!==CASH_NONE)?resolveCashAccount(debtPayAcct):null;
-  {const blk=cashLegBlocked(payAcct);if(blk){toast(blk,'error');return;}}
-  // Paying a debt you owe moves money you have to have.
-  if(payAcct&&debtCashDir(d.type==='owed','pay')==='out'){
-    const have=isStablecoin(payAcct)?getAssetCurrentValue(payAcct):num(payAcct.value);
-    if(have+1e-9<amt/rate){toast(payAcct.name+' only has '+fmt(have),'error');return;}
-  }
+  {const err=debtCashError(d,payAcct,amt/rate,'pay');if(err){toast(err,'error');return;}}
   const payEntry={id:uid(),amount:amt/rate,date:el('debtPayDate').value||todayStr(),
     note:el('debtPayNote').value.trim()||null,account:payAcct?payAcct.id:null,linkId:null};
   d.payments.push(payEntry);
   applyDebtCash(d,payEntry,'pay');
+  debtPayOpen=false;debtPayAcct=null;
   saveState();renderAll();renderDebtDetailBody();
   haptic('success');toast('Payment recorded'+(payAcct?(debtCashDir(d.type==='owed','pay')==='in'?', into ':', from ')+payAcct.name:''),'success');
 }
@@ -4720,17 +4775,13 @@ function recordDebtAddition(){
   const noteVal=el('debtAddNote').value.trim();
   debtLedger(d);
   const addAcct=(debtAddAcct&&debtAddAcct!==CASH_NONE)?resolveCashAccount(debtAddAcct):null;
-  {const blk=cashLegBlocked(addAcct);if(blk){toast(blk,'error');return;}}
-  // Lending hands money over: the account has to actually have it.
-  if(addAcct&&debtCashDir(d.type==='owed','lend')==='out'){
-    const have=isStablecoin(addAcct)?getAssetCurrentValue(addAcct):num(addAcct.value);
-    if(have+1e-9<amtN){toast(addAcct.name+' only has '+fmt(have),'error');return;}
-  }
+  {const err=debtCashError(d,addAcct,amtN,'lend');if(err){toast(err,'error');return;}}
   const lendEntry={id:uid(),amount:amtN,note:noteVal||null,date:dateVal,
     account:addAcct?addAcct.id:null,linkId:null};
   d.lendHistory.push(lendEntry);
   applyDebtCash(d,lendEntry,'lend');
   recalcDebtAmount(d);
+  debtAddOpen=false;debtAddAcct=null;
   saveState();renderAll();renderDebtDetailBody();
   haptic('success');toast((d.type==='owed'?'Lend':'Borrow')+' recorded','success');
 }
@@ -4762,7 +4813,7 @@ function openDebtEntry(debtId,kind,entryId){
   el('debtEntryDate').value=e.date||todayStr();
   el('debtEntryNote').value=e.note||'';
   debtEntryAcct=e.account||CASH_NONE;
-  buildDebtAcctSelect('debtEntryAcctWrap',kind,debtEntryAcct,v=>{debtEntryAcct=v;});
+  buildDebtAcctSelect('debtEntryAcctWrap',kind,debtEntryAcct,v=>{debtEntryAcct=v;},dir==='in');
   // The only lend is what the debt IS. Deleting it would leave a debt of
   // nothing; deleting the debt is the thing they actually want.
   const solo=kind==='lend'&&debtLedger(d).length<2;
@@ -4780,17 +4831,11 @@ function saveDebtEntry(){
   if(isNaN(amt)||amt<=0){toast('Enter an amount','error');return;}
   const acct=(debtEntryAcct&&debtEntryAcct!==CASH_NONE)?resolveCashAccount(debtEntryAcct):null;
   {const blk=cashLegBlocked(acct);if(blk){toast(blk,'error');return;}}
-  const dir=debtCashDir(d.type==='owed',kind);
   // Put the old movement back first, so the check below and the new leg both
   // measure against the balance as it would be without this entry.
   reverseDebtCash(d,e,kind);
-  if(acct&&dir==='out'){
-    const have=isStablecoin(acct)?getAssetCurrentValue(acct):num(acct.value);
-    if(have+1e-9<amt){
-      applyDebtCash(d,e,kind);   // nothing changed
-      toast(acct.name+' only has '+fmt(have),'error');return;
-    }
-  }
+  {const err=debtCashError(d,acct,amt,kind);
+   if(err){applyDebtCash(d,e,kind);toast(err,'error');return;}}
   e.amount=amt;
   e.date=el('debtEntryDate').value||e.date||todayStr();
   e.note=el('debtEntryNote').value.trim()||null;
@@ -4874,7 +4919,7 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
 
   let list=activeDebtTab==='owed'?owed:iowe;const isOwed=activeDebtTab==='owed';if(debtQuery)list=list.filter(d=>(d.name||'').toLowerCase().includes(debtQuery)||(d.note||'').toLowerCase().includes(debtQuery));
   const dl=el('debtList');if(!list.length){dl.innerHTML=debtQuery?`<div class="empty-state"><div class="empty-ico">${svgIcon('coins',30)}</div><h3>No matches</h3><p>No debts match "${esc(debtQuery)}".</p></div>`:`<div class="empty-state"><div class="empty-ico">${svgIcon(isOwed?'trending':'coins',30)}</div><h3>${isOwed?'No one owes you':"You don't owe anyone"}</h3><p>${isOwed?'Track money lent to friends, family or clients with optional interest.':'Keep tabs on loans and dues so nothing slips.'}</p><button class="empty-cta" onclick="openAddDebt()">${svgIcon('zap',14)} Record a debt</button></div>`;return;}
-  const sorted=sortDebts(list.filter(d=>!debtQuery||d.name?.toLowerCase().includes(debtQuery)||d.note?.toLowerCase().includes(debtQuery)));dl.innerHTML=sorted.map((d,i)=>{const over=d.due&&parseDay(d.due)<today,ini=(d.name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2),bg=isOwed?'rgba(0,200,150,.12)':'rgba(255,77,106,.12)',acc=calcAccrued(d);
+  const sorted=sortDebts(list.filter(d=>!debtQuery||d.name?.toLowerCase().includes(debtQuery)||d.note?.toLowerCase().includes(debtQuery)));dl.innerHTML=sorted.map((d,i)=>{const over=d.due&&parseDay(d.due)<today,ini=debtInitials(d.name),acc=calcAccrued(d);
     // Four stacked lines on the right against two on the left made every card
     // as tall as its longest column and mostly empty down the middle. The
     // status belongs beside the name, where the eye already is, and the rest
@@ -4889,7 +4934,7 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
     const metaHtml=metaBits.join(' &middot; ')||'&nbsp;';
     const subBits=[];
     const accHtml=acc?`<span style="color:var(--accent)">+${fmt(acc)} interest</span>`:'';
-    const totalPaid=(d.payments||[]).reduce((s,p)=>s+p.amount,0);const remaining=Math.max(0,d.amount+(acc||0)-totalPaid);const paidBadge=totalPaid>0?`<span style="color:var(--green)">Paid ${fmt(totalPaid)}</span>`:'';return `<div class="debt-item${enterCls()}${isPendingSync('debts',d.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-debt-id="${d.id}" onclick="openDebtDetail('${d.id}')" aria-label="${esc(d.name)}, ${fmt(remaining)}">${isPendingSync('debts',d.id)?pendingBadge():''}<div class="debt-avatar" style="background:${bg};color:${isOwed?'var(--green)':'var(--red)'}">${esc(ini)}</div><div class="debt-info"><div class="debt-name-row"><span class="debt-name">${esc(d.name)}</span>${d.interest&&d.interest.enabled?`<span class="debt-int-badge">${d.interest.type==='pct'?d.interest.rate+'%/'+freqShort(d.interest.freq):'Flat'}</span>`:''}${duePill}</div><div class="debt-note">${metaHtml}</div></div><div class="debt-vals"><div class="debt-val ${isOwed?'grn':'rd'}">${fmt(remaining)}</div><div class="debt-due">${[paidBadge,accHtml].filter(Boolean).join('')}</div></div></div>`;}).join('');
+    const totalPaid=(d.payments||[]).reduce((s,p)=>s+p.amount,0);const remaining=Math.max(0,d.amount+(acc||0)-totalPaid);const paidBadge=totalPaid>0?`<span style="color:var(--green)">Paid ${fmt(totalPaid)}</span>`:'';return `<div class="debt-item${enterCls()}${isPendingSync('debts',d.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-debt-id="${d.id}" onclick="openDebtDetail('${d.id}')" aria-label="${esc(d.name)}, ${fmt(remaining)}">${isPendingSync('debts',d.id)?pendingBadge():''}<div class="debt-avatar" style="--dav-h:${debtHue(d.name)}">${esc(ini)}</div><div class="debt-info"><div class="debt-name-row"><span class="debt-name">${esc(d.name)}</span>${d.interest&&d.interest.enabled?`<span class="debt-int-badge">${d.interest.type==='pct'?d.interest.rate+'%/'+freqShort(d.interest.freq):'Flat'}</span>`:''}${duePill}</div><div class="debt-note">${metaHtml}</div></div><div class="debt-vals"><div class="debt-val ${isOwed?'grn':'rd'}">${fmt(remaining)}</div><div class="debt-due">${[paidBadge,accHtml].filter(Boolean).join('')}</div></div></div>`;}).join('');
   attachContextMenu(dl,'.debt-item',openDebtContextMenu);}
 // Interest on what is actually outstanding, over the stretch it was outstanding.
 //
@@ -7137,7 +7182,7 @@ function setLentDate(daysAgo){const v=daysAgoISO(daysAgo);el('debtLentDate').val
 function syncLentQuickBtns(){const v=el('debtLentDate').value;const map={0:'lentQkToday',1:'lentQkYest',7:'lentQkWeek',30:'lentQkMonth'};Object.entries(map).forEach(([days,id])=>{const b=el(id);if(b)b.className='freq-btn'+(v===daysAgoISO(Number(days))?' active':'');});}
 function setChargeFrom(v){chargeFrom=v;el('chargeFromLend').className='freq-btn'+(v==='lend'?' active':'');el('chargeFromDue').className='freq-btn'+(v==='due'?' active':'');el('chargeFromHint').textContent=v==='lend'?'Interest accrues from the day you lent / borrowed the money.':'Interest only starts accruing after the due date passes.';}
 function setIntFreq(f){intFreq=f;['day','week','month','year'].forEach(x=>{el('intFreq'+x.charAt(0).toUpperCase()+x.slice(1)).className='freq-btn'+(x===f?' active':'');});}
-function setDebtType(t){selectedDebtType=t;el('dtypeOwed').className='dtype-btn'+(t==='owed'?' active grn':'');el('dtypeIOwe').className='dtype-btn'+(t==='iowe'?' active rd':'');el('dtypeOwed').style.animation='';el('dtypeIOwe').style.animation='';}
+function setDebtType(t){selectedDebtType=t;el('dtypeOwed').className='dtype-btn'+(t==='owed'?' active grn':'');el('dtypeIOwe').className='dtype-btn'+(t==='iowe'?' active rd':'');el('dtypeOwed').style.animation='';el('dtypeIOwe').style.animation='';if(typeof syncDebtNewAcct==='function')syncDebtNewAcct(editingDebtId?state.debts.find(x=>x.id===editingDebtId):null);}
 // ════════ ADD/EDIT ASSET ════════
 // Quantity and average cost are read out of the transactions, so typing over
 // them here was never a real edit: the next thing to touch a transaction
@@ -8086,8 +8131,31 @@ function syncDebtLock(d){
   const f=el('debtAmount');
   if(f){f.readOnly=lock;f.setAttribute('aria-readonly',lock?'true':'false');}
 }
-function openAddDebt(){editingDebtId=null;syncDebtLock(null);el('addDebtTitle').textContent='Add Debt';el('saveDebtBtn').textContent='Add Debt';el('deleteDebtBtn').style.display='none';selectedDebtType=null;el('dtypeOwed').className='dtype-btn';el('dtypeIOwe').className='dtype-btn';el('debtName').value='';el('debtNote').value='';el('debtDue').value='';el('debtAmount').value='';interestEnabled=false;intType='flat';intFreq='day';intFlatFreq='month';intCompound=false;el('compoundToggle').className='toggle';el('compoundToggle').setAttribute('aria-checked','false');el('interestToggle').className='toggle';el('interestToggle').setAttribute('aria-checked','false');el('interestFields').style.display='none';setIntType('flat');setIntFreq('day');setIntFlatFreq('month');chargeFrom='lend';setChargeFrom('lend');el('intFlatAmount').value='';setLentDate(0);setDueDateEnabled(false,'');updateCurrLabels();resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');const ab=el('accruedBox');if(ab)ab.style.display='none';openModal('addDebtModal');}
-function openDebtEdit(id){const d=state.debts.find(x=>x.id===id);if(!d)return;editingDebtId=id;el('addDebtTitle').textContent='Edit Debt';el('saveDebtBtn').textContent='Save Changes';el('deleteDebtBtn').style.display='block';setDebtType(d.type);resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');el('debtName').value=d.name;setMoneyField('debtAmount',d.amount);el('debtNote').value=d.note||'';setDueDateEnabled(!!(d.due),d.due||'');const lentDateVal=d.lentDate||(d.date?d.date.split('T')[0]:'');el('debtLentDate').value=lentDateVal;syncLentQuickBtns();const int=d.interest||{};interestEnabled=int.enabled||false;intType=int.type||'flat';el('interestToggle').className='toggle'+(interestEnabled?' on':'');el('interestToggle').setAttribute('aria-checked',interestEnabled?'true':'false');el('interestFields').style.display=interestEnabled?'block':'none';setIntType(intType);if(int.flatAmount)setMoneyField('intFlatAmount',int.flatAmount);if(int.rate)el('intRate').value=int.rate;if(intType==='flat'){intFlatFreq=int.freq||'month';setIntFlatFreq(intFlatFreq);}else{intFreq=int.freq||'month';setIntFreq(intFreq);}intCompound=int.compound||false;el('compoundToggle').className='toggle'+(intCompound?' on':'');el('compoundToggle').setAttribute('aria-checked',intCompound?'true':'false');chargeFrom=int.chargeFrom||'lend';setChargeFrom(chargeFrom);updateCurrLabels();syncDebtLock(d);refreshAccruedBox(d);openModal('addDebtModal');}
+// The opening lend is a lend like any other, and until now it was the only one
+// the app could not tell you anything about: money simply appeared as a debt
+// and no account moved. The sheet that creates it asks the same question the
+// sheet that edits it does.
+let debtNewAcct=null;
+function syncDebtNewAcct(d){
+  const row=el('debtNewAcctRow');if(!row)return;
+  // More than one entry and there is no single opening lend to attach an
+  // account to; each one is opened and corrected on its own.
+  const many=!!(d&&(d.lendHistory||[]).length>1);
+  const show=!!selectedDebtType&&!many;
+  row.hidden=!show;
+  row.style.display=show?'':'none';
+  if(!show)return;
+  const isOwed=selectedDebtType==='owed';
+  const lbl=el('debtNewAcctLbl');
+  if(lbl)lbl.textContent=isOwed?'PAID FROM':'RECEIVED INTO';
+  const hint=el('debtNewAcctHint');
+  if(hint)hint.textContent=isOwed
+    ? 'Which account the money left. Its balance follows.'
+    : 'Where the money landed. Its balance follows.';
+  buildDebtAcctSelect('debtNewAcctWrap','new',debtNewAcct,v=>{debtNewAcct=v;},!isOwed);
+}
+function openAddDebt(){editingDebtId=null;debtNewAcct=null;syncDebtLock(null);el('addDebtTitle').textContent='Add Debt';el('saveDebtBtn').textContent='Add Debt';el('deleteDebtBtn').style.display='none';selectedDebtType=null;el('dtypeOwed').className='dtype-btn';el('dtypeIOwe').className='dtype-btn';el('debtName').value='';el('debtNote').value='';el('debtDue').value='';el('debtAmount').value='';interestEnabled=false;intType='flat';intFreq='day';intFlatFreq='month';intCompound=false;el('compoundToggle').className='toggle';el('compoundToggle').setAttribute('aria-checked','false');el('interestToggle').className='toggle';el('interestToggle').setAttribute('aria-checked','false');el('interestFields').style.display='none';setIntType('flat');setIntFreq('day');setIntFlatFreq('month');chargeFrom='lend';setChargeFrom('lend');el('intFlatAmount').value='';setLentDate(0);setDueDateEnabled(false,'');updateCurrLabels();resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');const ab=el('accruedBox');if(ab)ab.style.display='none';syncDebtNewAcct(null);openModal('addDebtModal');}
+function openDebtEdit(id){const d=state.debts.find(x=>x.id===id);if(!d)return;editingDebtId=id;el('addDebtTitle').textContent='Edit Debt';el('saveDebtBtn').textContent='Save Changes';el('deleteDebtBtn').style.display='block';setDebtType(d.type);resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');el('debtName').value=d.name;setMoneyField('debtAmount',d.amount);el('debtNote').value=d.note||'';setDueDateEnabled(!!(d.due),d.due||'');const lentDateVal=d.lentDate||(d.date?d.date.split('T')[0]:'');el('debtLentDate').value=lentDateVal;syncLentQuickBtns();const int=d.interest||{};interestEnabled=int.enabled||false;intType=int.type||'flat';el('interestToggle').className='toggle'+(interestEnabled?' on':'');el('interestToggle').setAttribute('aria-checked',interestEnabled?'true':'false');el('interestFields').style.display=interestEnabled?'block':'none';setIntType(intType);if(int.flatAmount)setMoneyField('intFlatAmount',int.flatAmount);if(int.rate)el('intRate').value=int.rate;if(intType==='flat'){intFlatFreq=int.freq||'month';setIntFlatFreq(intFlatFreq);}else{intFreq=int.freq||'month';setIntFreq(intFreq);}intCompound=int.compound||false;el('compoundToggle').className='toggle'+(intCompound?' on':'');el('compoundToggle').setAttribute('aria-checked',intCompound?'true':'false');chargeFrom=int.chargeFrom||'lend';setChargeFrom(chargeFrom);updateCurrLabels();syncDebtLock(d);const _l0=(d.lendHistory||[])[0];debtNewAcct=(_l0&&_l0.account)||CASH_NONE;syncDebtNewAcct(d);refreshAccruedBox(d);openModal('addDebtModal');}
 function scrollToAndPulse(elId,inputId){const target=el(elId)||el(inputId);if(!target)return;const modal=target.closest('.modal-body');if(modal)modal.scrollTo({top:target.offsetTop-20,behavior:'smooth'});target.classList.add('dtype-pulse');setTimeout(()=>target.classList.remove('dtype-pulse'),700);if(inputId&&el(inputId)&&el(inputId)!==target){el(inputId).focus();el(inputId).classList.add('input-error');setTimeout(()=>el(inputId).classList.remove('input-error'),1000);}}
 // Existing people, offered under the debt name field. Picking one sets the
 // direction too, because "Ramesh" who owes you and "Ramesh" you owe are two
@@ -8146,8 +8214,18 @@ function saveDebt(){if(!selectedDebtType){['dtypeOwed','dtypeIOwe'].forEach(id=>
         merged.amount=lends.reduce((t,h)=>t+num(h.amount),0);
       }else if(lends.length===1){
         // One opening entry: correcting the amount corrects that entry, so
-        // the two can never drift apart.
-        lends[0]=Object.assign({},lends[0],{amount:amtN,date:lentDate,note:noteVal||lends[0].note||null});
+        // the two can never drift apart. The account it moved through is
+        // corrected here too, which means putting the old movement back
+        // before the new one is measured or made.
+        const was=lends[0];
+        const acct=(debtNewAcct&&debtNewAcct!==CASH_NONE)?resolveCashAccount(debtNewAcct):null;
+        reverseDebtCash(prev,was,'lend');
+        const err=debtCashError(debt,acct,amtN,'lend');
+        if(err){applyDebtCash(prev,was,'lend');toast(err,'error');return;}
+        const next=Object.assign({},was,{amount:amtN,date:lentDate,note:noteVal||was.note||null,
+          account:acct?acct.id:null,linkId:acct?(was.linkId||uid()):null});
+        applyDebtCash(debt,next,'lend');
+        lends[0]=next;
         merged.amount=amtN;
       }else{
         merged.lendHistory=[{id:uid(),amount:amtN,note:noteVal||null,date:lentDate}];
@@ -8158,18 +8236,45 @@ function saveDebt(){if(!selectedDebtType){['dtypeOwed','dtypeIOwe'].forEach(id=>
   }else{
     // Merge if same name + same type (case-sensitive)
     const existing=state.debts.find(d=>d.name===name&&d.type===selectedDebtType);
+    // Where this money came from, or landed. Checked before anything is
+    // written, so a lend an account cannot cover leaves the sheet as it was.
+    const acct=(debtNewAcct&&debtNewAcct!==CASH_NONE)?resolveCashAccount(debtNewAcct):null;
+    {const err=debtCashError(debt,acct,amtN,'lend');if(err){toast(err,'error');return;}}
+    const entry={id:uid(),amount:amtN,note:noteVal||null,date:lentDate,
+      account:acct?acct.id:null,linkId:null};
     if(existing){
       if(!existing.lendHistory)existing.lendHistory=[{id:uid(),amount:existing.amount,note:existing.note||null,date:existing.lentDate||(existing.date?existing.date.split('T')[0]:lentDate)}];
       existing.amount+=amtN;
-      existing.lendHistory.push({id:uid(),amount:amtN,note:noteVal||null,date:lentDate});
+      existing.lendHistory.push(entry);
       if(!existing.payments)existing.payments=[];
+      applyDebtCash(existing,entry,'lend');
       toast(name+': new debt added to history','success');
     }else{
-      debt.lendHistory=[{id:uid(),amount:amtN,note:noteVal||null,date:lentDate}];
-      state.debts.push(debt);toast('Debt added!','success');
+      debt.lendHistory=[entry];
+      state.debts.push(debt);
+      applyDebtCash(debt,entry,'lend');
+      toast('Debt added!','success');
     }
   }saveState();closeModal('addDebtModal');renderAll();haptic('success');}
-async function deleteDebt(){if(!editingDebtId)return;if(!await askConfirm({title:'Delete debt?',message:'The debt and its full payment history will be removed.',confirmText:'Delete'}))return;const _d=state.debts.find(d=>d.id===editingDebtId);const _id=editingDebtId;withUndo((_d?stripParens(_d.name):'Debt')+' deleted',['debts'],()=>{state.debts=state.debts.filter(d=>d.id!==_id);saveState();});closeModal('addDebtModal');renderAll();haptic('tap');}
+async function deleteDebt(){
+  if(!editingDebtId)return;
+  const _d=state.debts.find(d=>d.id===editingDebtId);const _id=editingDebtId;
+  // Entries that moved real money have to give it back. Dropping the debt and
+  // leaving its legs behind left an account permanently short by a lend that
+  // no longer existed anywhere, with nothing left to explain the gap.
+  const legs=[].concat((_d&&_d.lendHistory||[]).map(e=>({e,kind:'lend'})),
+                       (_d&&_d.payments||[]).map(e=>({e,kind:'pay'})))
+              .filter(x=>x.e&&x.e.account&&x.e.linkId);
+  let msg='The debt and its full payment history will be removed.';
+  if(legs.length)msg+=' The '+legs.length+' entr'+(legs.length===1?'y':'ies')+' that moved money through an account will be put back.';
+  if(!await askConfirm({title:'Delete debt?',message:msg,confirmText:'Delete'}))return;
+  withUndo((_d?stripParens(_d.name):'Debt')+' deleted',['debts','assets','transactions'],()=>{
+    legs.forEach(x=>reverseDebtCash(_d,x.e,x.kind));
+    state.debts=state.debts.filter(d=>d.id!==_id);
+    saveState();
+  });
+  closeModal('addDebtModal');renderAll();haptic('tap');
+}
 // ════════ GOALS ════════
 const GOAL_QUICK={3:'goalQk3m',6:'goalQk6m',12:'goalQk1y',24:'goalQk2y'};
 function setGoalDate(months){const inp=el('goalDate');if(!inp)return;inp.value=monthsAheadISO(months);syncGoalQuickBtns();renderGoalProjection();haptic('tap');}

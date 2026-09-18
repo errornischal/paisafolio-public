@@ -37,7 +37,7 @@
 //  • Version bump only, so a deploy evicts the previous shell. Nothing about
 //    the caching strategy changed.
 
-const VERSION = 'paisafolio-v5.44.0';
+const VERSION = 'paisafolio-v5.45.0';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 
