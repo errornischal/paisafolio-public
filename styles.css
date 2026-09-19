@@ -583,9 +583,25 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .dcard-ft .form-lbl{margin-bottom:5px}
 .dcard-ft .form-row-2{margin-bottom:8px}
 .dcard-ft .ghost-btn{padding:9px;font-size:12px}
+/* Cancel and the action are one pair, so they get one shape. Cancel was
+   pinned to 92px while the action took everything left over, which on a
+   phone made one of them two and a half times the other.
+   Both selectors carry the class twice: .ghost-btn and .submit-btn are
+   defined far below this point, so a single-class rule here loses to them
+   on source order no matter how right it is. The stray bottom margin is
+   reset for the same reason — stretch equalises the MARGIN box, so 12px
+   under one of them came straight off its height to make the two match. */
 .dcard-acts{display:flex;gap:8px;align-items:stretch}
-.dcard-acts .ghost-btn{width:auto;flex:0 0 92px}
-.dcard-acts .submit-btn{margin-top:0;padding:11px;font-size:13px;border-radius:10px}
+.dcard-acts .ghost-btn,.dcard-acts .submit-btn{
+  flex:1 1 0;min-width:0;width:auto;margin:0;
+  padding:12px 10px;font-size:13px;font-weight:700;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;line-height:1.25}
+/* A transparent border of the same width as Cancel's. With flex-basis:0 the
+   free space is split between the two CONTENT boxes and each one's border
+   is added on top, so a button with a border ends up wider than one without
+   by exactly that border: 163 against 161. Matching the borders matches the
+   buttons. */
+.dcard-acts .submit-btn{box-shadow:none;font-weight:800;border:1px solid transparent}
 /* One row of the ledger: direction on the left as a chip, the money on the
    right, and the small print underneath. Tapping it opens that one entry. */
 .dtx{display:flex;align-items:center;gap:10px;width:100%;padding:11px 13px;text-align:left;

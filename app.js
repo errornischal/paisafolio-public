@@ -3851,14 +3851,34 @@ function nwStepForRange(range,count){
   // number of points whatever the span turns out to be.
   return Math.max(1,Math.ceil(count/120));
 }
-// Keep every nth point, and always the last one: the right-hand end of the
-// line is today, and dropping it to keep the spacing even would be drawing
-// the chart short of the number printed above it.
-function sampleEveryNth(arr,n){
+// Thin the series to one point per step, but NEVER at the cost of a real
+// reading.
+//
+// Taking every nth point threw away the days that actually mattered. With a
+// reading on the 10th, 13th, 15th and 18th and a two-day step, the chart
+// plotted the 10th, 12th, 14th, 16th and 18th: the 13th and the 15th, the
+// two days the price genuinely moved, were dropped and replaced by filler
+// carrying the previous value. The line still went up and down, but not on
+// the days it really did, which is the opposite of the point.
+//
+// Each bucket now gives up its measured point if it has one, and only falls
+// back to filler when nobody was there to look. The last point is always
+// kept: the right-hand end of the line is today, and the figure printed
+// above the chart is today's.
+function sampleForRange(arr,n){
   if(n<=1||arr.length<=2)return arr;
+  // Today is appended on its own at the end, so it is held out of the
+  // bucketing: in the last bucket it would otherwise win over yesterday's
+  // reading and swallow it.
+  const body=arr.slice(0,-1),last=arr[arr.length-1];
   const out=[];
-  for(let i=0;i<arr.length;i+=n)out.push(arr[i]);
-  if(out[out.length-1]!==arr[arr.length-1])out.push(arr[arr.length-1]);
+  for(let i=0;i<body.length;i+=n){
+    const bucket=body.slice(i,i+n);
+    let pick=null;
+    for(let j=bucket.length-1;j>=0;j--){ if(bucket[j]&&bucket[j].estimated===false){pick=bucket[j];break;} }
+    out.push(pick||bucket[bucket.length-1]);
+  }
+  out.push(last);
   return out;
 }
 function getFilteredHistory(){
@@ -3877,7 +3897,7 @@ function getFilteredHistory(){
   // readings there are, so a 1D view on an account recorded yesterday still
   // draws something true rather than nothing.
   const pts = win.length>=2 ? win : hist.slice(-2);
-  return sampleEveryNth(pts, nwStepForRange(currentPnlRange, pts.length));
+  return sampleForRange(pts, nwStepForRange(currentPnlRange, pts.length));
 }
 function nwYesterday(){if(!state.pnlHistory||state.pnlHistory.length<2)return null;const today=todayStr();const prev=[...state.pnlHistory].reverse().find(p=>p.date!==today);return prev?num(prev.netWorth):null;}
 // ════════ COUNT-UP ════════
