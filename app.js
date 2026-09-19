@@ -3181,7 +3181,6 @@ function goPage(p,dir){if(p===currentPage){window.scrollTo({top:0,behavior:'smoo
   nv.classList.add('active');nv.setAttribute('aria-selected','true');currentPage=p;
   positionNavIndicator(p);
   state.settings.lastPage=p;saveState();try{localStorage.setItem('paisafolio_lastpage',p);}catch(e){}
-  flashPageSkeleton(p);
   renderAnimated(()=>{if(p==='dash')renderDashboard();if(p==='assets')renderAssets();if(p==='spend')renderSpend();if(p==='debts')renderDebts();if(p==='plan')renderPlan();if(p==='analytics')renderAnalytics();if(p==='settings')renderSettings();});playPageArrival('page-'+p);}
 function restorePage(){let p;try{p=localStorage.getItem('paisafolio_lastpage');}catch(e){}if(!p)p=state.settings.lastPage;if(!p||p==='dash'||!el('page-'+p))return;
   document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
@@ -7193,6 +7192,21 @@ let modalStack=[],lastFocus=null;
 function renderTicker(){/* The price marquee was removed: it cost a permanent
   animation and a strip of every page to repeat coins already on the
   dashboard. Kept as a no-op so the several callers stay valid. */}
+// One sheet on screen at a time, however many are open. Sheets stack so that
+// closing one puts you back on the one you opened it from; without this they
+// would also all be VISIBLE at once, layered over each other, which is not
+// depth, it is a bug you can see through.
+function syncModalCover(){
+  const top=modalStack[modalStack.length-1];
+  modalStack.forEach(id=>{
+    const m=el(id);if(!m)return;
+    m.classList.toggle('covered',id!==top);
+    // A covered sheet is not just invisible, it is out of reach: nothing in
+    // it should take a tap, and a screen reader should not read it out from
+    // underneath the one in front.
+    m.setAttribute('aria-hidden',id===top?'false':'true');
+  });
+}
 function syncBodyScrollLock(){
   const anyOpen=modalStack.length>0||
     (el('lockScreen')&&el('lockScreen').classList.contains('open'))||
@@ -7269,7 +7283,7 @@ function justOpened(m){
   const t=m&&Number(m.dataset&&m.dataset.openedAt);
   return !!t&&(Date.now()-t)<400;
 }
-function openModal(id){const m=el(id);if(!m)return;flashSheetSkeleton(id);lastFocus=document.activeElement;/* A tap that opens a sheet also produces a synthetic click a moment later, and the overlay is under the finger by then. Stamp the open time so the overlay can ignore a click that belongs to the tap that opened it. */m.dataset.openedAt=String(Date.now());m.classList.add('open');m.setAttribute('aria-hidden','false');modalStack.push(id);haptic('tap');syncBodyScrollLock();pushModalHistory();
+function openModal(id){const m=el(id);if(!m)return;lastFocus=document.activeElement;/* A tap that opens a sheet also produces a synthetic click a moment later, and the overlay is under the finger by then. Stamp the open time so the overlay can ignore a click that belongs to the tap that opened it. */m.dataset.openedAt=String(Date.now());m.classList.add('open');m.setAttribute('aria-hidden','false');modalStack.push(id);syncModalCover();haptic('tap');syncBodyScrollLock();pushModalHistory();
   // Focus the sheet itself rather than its first field. Focusing an input
   // raises the keyboard before the person has seen what they opened, and on
   // a phone that covers most of what they came to read.
@@ -7279,7 +7293,7 @@ function openModal(id){const m=el(id);if(!m)return;flashSheetSkeleton(id);lastFo
     // scrolls sideways was measured at zero and cached as having nowhere to
     // go. Measure again once it is actually on screen.
     try{ bindScrollHints(m); }catch(e){}},120);}
-function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();if(id==='assetDetailModal')parkPnlCal();m.classList.remove('open');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
+function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();if(id==='assetDetailModal')parkPnlCal();m.classList.remove('open');m.classList.remove('covered');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncModalCover();syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
 // There used to be a swapModal here, which closed one sheet as it opened the
 // next. Every use of it was a drill-down - the account and a field of it, the
 // category list and one category, an asset and its ledger - and in a
@@ -8332,18 +8346,6 @@ function skelLines(n,opts){
   }
   return h;
 }
-// The shape of a chart rather than a grey slab, so what is coming is
-// recognisable before it gets here. Which shape depends on which chart: bars
-// where bars are coming, candles where candles are, a line where a line is.
-// A row of bars standing in for a candlestick chart is a different chart, and
-// it reads as one.
-function skelChart(height){
-  const H=height||190;
-  let bars='';
-  const hs=[46,68,38,82,55,74,30,62,88,50,70,42,78,58];
-  hs.forEach((v,i)=>{bars+=`<div class="skel skel-bar" style="height:${v}%;animation-delay:${(i*70)%900}ms"></div>`;});
-  return `<div class="skel-chart" style="height:${H}px" aria-hidden="true">${bars}</div>`;
-}
 // Small, fixed, and deliberately not Math.random: a placeholder that reshuffles
 // itself on every frame of a re-render draws the eye to the wait.
 function skelRand(seed){
@@ -8393,100 +8395,17 @@ function skelSpark(height){
   return `<div class="skel skel-spark" style="height:${H}px;clip-path:polygon(${pts},100% 100%,0 100%)" aria-hidden="true"></div>`;
 }
 
-// ── A page always arrives, never just appears ──────────────────────────────
-// Skeletons used to show only where something was genuinely being fetched,
-// which meant almost nowhere: everything else is in memory and paints in one
-// frame, so a tab switch was an instant swap of one dense screen for another.
-// Instant is not the same as smooth - there is no moment where the eye is
-// told what it is about to read, so every switch lands as a jolt.
+// A placeholder belongs where something is genuinely on its way and cannot
+// be shown yet. There were two of those: the candle chart, which is fetched
+// per timeframe over the network, and a person's shared figures in the
+// circle, which are fetched from their account.
 //
-// So every page now arrives through its own shape, briefly, whether or not
-// anything is being waited for. It is a deliberate beat, not a lie about
-// loading: it is the same length every time, it is shorter than the time it
-// takes to look down at the tab bar, and it is skipped entirely for anyone
-// who has asked for less motion, because to them it is a delay and nothing
-// else.
-const PAGE_SKEL_MS=400;
-function skelBox(h,w,r,mt){
-  return `<div class="skel" style="height:${h}px;width:${w||'100%'};border-radius:${r||12}px${mt?';margin-top:'+mt+'px':''}"></div>`;
-}
-function skelCardRow(n,h){
-  let out='';
-  for(let i=0;i<n;i++)out+=`<div class="skel" style="flex:1;height:${h||62}px;border-radius:14px"></div>`;
-  return `<div style="display:flex;gap:8px">${out}</div>`;
-}
-function skelListRows(n,h){
-  let out='';
-  for(let i=0;i<(n||4);i++)out+=`<div class="skel" style="height:${h||58}px;border-radius:14px;margin-top:8px"></div>`;
-  return out;
-}
-const PAGE_SKEL={
-  dash:()=>skelBox(150,'100%',18)+skelBox(34,'62%',10,14)+skelSpark(96)
-    +skelCardRow(3,66)+skelBox(16,'34%',6,18)+skelListRows(3),
-  assets:()=>skelBox(96,'100%',16)+skelBox(38,'100%',12,12)+skelListRows(5,64),
-  spend:()=>skelCardRow(2,82)+skelBox(18,'40%',6,18)+skelChart(120)+skelListRows(4,54),
-  debts:()=>skelCardRow(2,78)+skelBox(18,'38%',6,18)+skelListRows(4,66),
-  plan:()=>skelBox(18,'30%',6)+skelListRows(2,96)+skelBox(18,'36%',6,18)+skelBox(150,'100%',16,8),
-  analytics:()=>skelBox(18,'34%',6)+skelBox(170,'100%',16,8)+skelCardRow(2,70)+skelBox(190,'100%',16,14),
-  settings:()=>skelBox(72,'100%',16)+skelBox(16,'30%',6,18)+skelListRows(6,52),
-};
-// The same beat for a sheet, over its body rather than the page. Only the
-// sheets that open onto a screenful of something: a confirmation with two
-// buttons in it has nothing to be the shape of, and a placeholder there would
-// be a wait invented out of nothing.
-const SHEET_SKEL={
-  assetDetailModal:()=>skelBox(26,'52%',8)+skelBox(16,'34%',6,8)+skelCandles(170)
-    +skelBox(16,'30%',6,16)+skelListRows(3,52),
-  debtDetailModal:()=>skelBox(58,'100%',14)+skelBox(16,'34%',6,16)+skelListRows(3,58),
-  accountModal:()=>skelBox(62,'100%',14)+skelCardRow(4,54)+skelBox(14,'28%',6,16)+skelListRows(4,56),
-  syncCenterModal:()=>skelBox(14,'30%',6)+skelListRows(3,54),
-  circleModal:()=>skelBox(44,'100%',12)+skelBox(14,'30%',6,16)+skelListRows(3,58),
-  circleFriendModal:()=>skelBox(72,'100%',14)+skelBox(14,'32%',6,16)+skelListRows(2,84),
-  catMgrModal:()=>skelBox(36,'100%',11)+skelListRows(5,50),
-  spendModal:()=>skelBox(14,'30%',6)+skelListRows(4,52),
-  ledgerModal:()=>skelListRows(5,52),
-  backupsModal:()=>skelBox(14,'30%',6)+skelListRows(3,58),
-  habitCalModal:()=>skelBox(26,'44%',8)+skelBox(210,'100%',14,10),
-  currencyModal:()=>skelBox(36,'100%',11)+skelListRows(5,48),
-  globalSearchModal:()=>skelBox(40,'100%',12)+skelListRows(4,50),
-  assetEditPickerModal:()=>skelBox(14,'32%',6)+skelListRows(4,56),
-  editTxModal:()=>skelBox(56,'100%',13)+skelListRows(3,50),
-  exportWizardModal:()=>skelBox(14,'30%',6)+skelListRows(4,54),
-  importWizardModal:()=>skelBox(14,'30%',6)+skelListRows(4,54),
-};
-function flashSkelInto(host,html,ms){
-  if(!host)return;
-  if(state.settings&&state.settings.reduceMotion)return;
-  const old=host.querySelector(':scope > .skel-overlay');
-  if(old)old.remove();
-  clearTimeout(host._skelT);clearTimeout(host._skelT2);
-  const ov=document.createElement('div');
-  ov.className='skel-overlay';
-  ov.setAttribute('aria-hidden','true');
-  ov.innerHTML=html;
-  host.appendChild(ov);
-  // A sheet that renders its body after it opens would wipe this out on the
-  // way past. Put it back once, on the next frame, so the order the two
-  // happen in stops mattering.
-  requestAnimationFrame(()=>{if(ov.parentNode!==host&&host.isConnected)host.appendChild(ov);});
-  host._skelT=setTimeout(()=>{
-    ov.classList.add('gone');
-    host._skelT2=setTimeout(()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);},260);
-  },ms||PAGE_SKEL_MS);
-}
-function flashSheetSkeleton(id){
-  const make=SHEET_SKEL[id];if(!make)return;
-  const m=el(id);if(!m)return;
-  const body=m.querySelector('.modal-body');if(!body)return;
-  flashSkelInto(body,make(),PAGE_SKEL_MS);
-}
-function flashPageSkeleton(p){
-  // Someone who turned motion down asked for fewer beats, not more.
-  if(state.settings&&state.settings.reduceMotion)return;
-  const pg=el('page-'+p);if(!pg)return;
-  const make=PAGE_SKEL[p];if(!make)return;
-  flashSkelInto(pg,make(),PAGE_SKEL_MS);
-}
+// For a while there was a third kind, laid over every page and every sheet
+// on the way in, whether or not anything was being waited for. The idea was
+// that an instant swap of one dense screen for another lands as a jolt. The
+// answer to that is not to pretend to load: a placeholder that is not about
+// a wait is a wait, invented, several times a minute, for something that was
+// already there. It is gone.
 const _csNoHistory=new Set();
 const CS_DEFAULT_TF='1d';
 // N candles into one. A trailing partial group is kept, the way the current
@@ -15025,7 +14944,7 @@ async function init(){
   updateCurrLabels();renderAll();renderTicker();renderCurrGrid();renderSettings();updateSyncLabel();
   bindPnlPills();bindCatPills();bindModalOverlays();setupKeyboard();setupGestures();watchSwitchRows();setupModalDrag();setupRipple();setupAiBubble();syncAiEntryPoints();setupAuthKeyListeners();
   document.addEventListener('click',()=>{document.querySelectorAll('.custom-select-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.custom-select-dropdown.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.ccy-sel-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.ccy-sel-dropdown.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.coin-suggestions').forEach(s=>s.style.display='none');},{passive:true});
-  setTimeout(()=>{const sp=el('splash');if(sp)sp.classList.add('hide');flashPageSkeleton(currentPage);},650);
+  setTimeout(()=>{const sp=el('splash');if(sp)sp.classList.add('hide');},650);
   // After the first paint, not before it: a snapshot is worth a few hundred
   // milliseconds of somebody's morning only once the app is already up.
   setTimeout(()=>{syncBackupsSub();maybeAutoBackup().then(syncBackupsSub);},2500);

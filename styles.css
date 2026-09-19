@@ -874,6 +874,11 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* MODALS */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(5px);z-index:100;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s}
 .modal-overlay.open{opacity:1;pointer-events:all}
+/* Open, but with another sheet on top of it. It keeps its place in the stack
+   so closing the one in front brings it back; it is simply not drawn while
+   something else is. Without this two sheets show through each other, which
+   reads as a mistake rather than as depth. */
+.modal-overlay.open.covered{opacity:0;pointer-events:none}
 .modal-sheet{background:var(--glass-solid);border:1px solid var(--glass-border);border-top:1px solid var(--glass-border-hi);border-radius:20px 20px 0 0;width:100%;max-width:480px;margin:0 auto;padding:0 0 env(safe-area-inset-bottom);transform:translate3d(0,100%,0);will-change:transform;transition:transform .32s cubic-bezier(.32,.72,0,1);box-shadow:0 -8px 40px var(--shadow)}
 .modal-overlay.open .modal-sheet{transform:translate3d(0,0,0)}
 .modal-handle{width:38px;height:5px;background:var(--border2);border-radius:3px;margin:11px auto 0;cursor:grab;position:relative}
@@ -1153,8 +1158,6 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* Set inline by relaxScrollChaining() on anything that scrolls and was not
    named above, so a box styled inline is not a trap either. */
 
-.skel-chart{display:flex;align-items:flex-end;gap:4px;width:100%;padding:0 2px}
-.skel-bar{flex:1;border-radius:3px 3px 1px 1px;min-width:3px}
 /* A candlestick chart is coming, so this is the shape of one: a body with a
    wick through it, per column. A row of bars was a different chart. */
 .skel-cs{display:flex;align-items:stretch;gap:5px;width:100%;padding:0 2px}
@@ -1164,19 +1167,6 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* And where a line is coming, the silhouette of one. */
 .skel-spark{width:100%;border-radius:0}
 
-/* The shape of a page, laid over it while it arrives. It covers rather than
-   replaces: the real markup underneath keeps its ids and its scroll position,
-   and nothing has to be rebuilt when this goes. */
-.skel-overlay{position:absolute;inset:0;background:var(--bg);z-index:6;
-  padding:14px;pointer-events:none;overflow:hidden;
-  opacity:1;transition:opacity .24s ease}
-.skel-overlay.gone{opacity:0}
-/* A nearly empty page still gets a screenful of shape; inside a sheet the
-   body's own height is the right size and a minimum would give it a scrollbar
-   it does not need. */
-.page>.skel-overlay{min-height:62vh}
-.modal-body>.skel-overlay{padding:6px 0 10px;background:var(--glass-solid)}
-@media(prefers-reduced-motion:reduce){.skel-overlay{display:none}}
 
 .interest-section{background:var(--bg3);border:1px solid var(--border2);border-radius:11px;padding:13px;margin-bottom:11px}
 .accrued-box{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:11px 13px;margin-top:12px;display:none}
