@@ -3152,6 +3152,48 @@ function portfolioPnL(){
 }
 function getAssetPnLPct(a){const cp=getAssetCurrentPrice(a);if(cp===null||!a.buyPrice)return null;return((cp-a.buyPrice)/a.buyPrice)*100;}
 function debtRemaining(d){if(!d)return 0;const acc=num(calcAccrued(d)),paid=(d.payments||[]).reduce((s,p)=>s+num(p&&p.amount),0);return Math.max(0,num(d.amount)+acc-paid);}
+// The same figure, as it stood on some past day. Everything it needs is
+// dated: when each part was lent or borrowed, when each repayment landed,
+// and calcAccrued already takes an as-of date. So this is a replay rather
+// than an estimate - with one honest caveat, which is that editing a debt's
+// amount now rewrites what it says about then, because an edit leaves no
+// record of what the figure used to be.
+function debtRemainingAsOf(d,key){
+  if(!d)return 0;
+  const cut=parseDay(key);
+  if(isNaN(cut))return debtRemaining(d);
+  const lentD=d.lentDate?parseDay(d.lentDate):new Date(d.date);
+  // Same rule calcAccrued uses: trust lendHistory as the breakdown only when
+  // its parts add up to the total, otherwise the whole amount was there from
+  // the start.
+  const lends=(d.lendHistory||[]).filter(h=>h&&num(h.amount)>0)
+    .map(h=>({t:h.date?parseDay(h.date):lentD,amt:num(h.amount)}))
+    .filter(h=>!isNaN(h.t));
+  const lendSum=lends.reduce((x,h)=>x+h.amt,0);
+  let principal;
+  if(lends.length&&Math.abs(lendSum-num(d.amount))<0.01){
+    principal=lends.filter(h=>h.t<=cut).reduce((x,h)=>x+h.amt,0);
+  }else{
+    principal=(!isNaN(lentD)&&lentD>cut)?0:num(d.amount);
+  }
+  if(principal<=0)return 0;
+  const paid=(d.payments||[]).filter(pm=>{
+    if(!pm||!(num(pm.amount)>0))return false;
+    const t=pm.date?parseDay(pm.date):lentD;
+    return !isNaN(t)&&t<=cut;
+  }).reduce((x,pm)=>x+num(pm.amount),0);
+  return Math.max(0,principal+num(calcAccrued(d,cut))-paid);
+}
+// What was owed to you and what you owed, on a given day.
+function debtTotalsAsOf(key){
+  let owed=0,iowe=0;
+  (state.debts||[]).forEach(d=>{
+    if(!d)return;
+    const r=debtRemainingAsOf(d,key);
+    if(d.type==='owed')owed+=r;else iowe+=r;
+  });
+  return {owed,iowe};
+}
 // Coerce anything to a finite number. Every money path runs through this so a
 // single bad/blank/hand-edited field can't turn a total into NaN and blank out
 // the dashboard.
@@ -3480,15 +3522,37 @@ function dailyPnlSeries(scope){
   const list=pnlScopeAssets(scope);
   if(!list.length)return [];
   const ids=new Set(list.map(a=>a.id));
-  const hist=(state.pnlHistory||[]).filter(p=>p&&nwDayKey(p.date)&&p.assets)
+  const isAll=!scope||scope==='all';
+  // A reading only started carrying a value per holding recently. Every day
+  // before that has one number on it, the net worth - and for one holding or
+  // one category that is not enough, because a total cannot be taken apart.
+  //
+  // For EVERYTHING it is enough, though, and this is the difference between
+  // a card that fills in tomorrow and one that fills in across every day the
+  // app has ever recorded. Net worth is what the holdings are worth plus
+  // what is owed to you minus what you owe, and the debts are all dated:
+  // when each was taken on, when each repayment landed, what interest has
+  // run. So the two sides can be separated again:
+  //
+  //     holdings = net worth - owed to you + what you owe
+  //
+  // replayed for that day rather than guessed at.
+  const valOf=p=>{
+    if(p.assets){let v=0;ids.forEach(id=>{v+=num(p.assets[id]);});return v;}
+    if(!isAll)return null;
+    const k=nwDayKey(p.date);
+    const t=debtTotalsAsOf(k);
+    return num(p.netWorth)-t.owed+t.iowe;
+  };
+  const hist=(state.pnlHistory||[]).filter(p=>p&&nwDayKey(p.date)&&(p.assets||isAll))
     .slice().sort((a,b)=>a.date<b.date?-1:1);
   if(hist.length<2)return [];
   const flows=pnlFlowsByDay(ids);
-  const valOf=p=>{let v=0;ids.forEach(id=>{v+=num(p.assets[id]);});return v;};
   const out=[];
   for(let i=1;i<hist.length;i++){
     const k=nwDayKey(hist[i].date);
     const v=valOf(hist[i]),prev=valOf(hist[i-1]);
+    if(v==null||prev==null)continue;
     out.push({date:k,pnl:v-prev-num(flows[k]),value:v});
   }
   return out;
@@ -3518,13 +3582,56 @@ function pnlCellNum(v){
 // opens it on that holding alone. Two ways to read the same numbers: a month
 // at a glance, or a bar per day across the range the page is already set to.
 let pnlCalView='cal';        // 'cal' | 'bar'
+// Day, month, year. All three are the same daily numbers - a month is the
+// days in it added up, a year is the months - so they can never disagree
+// with each other, and a month's figure is the same whichever way you got
+// to it.
+//
+// There is no hour here, and it is worth saying why rather than leaving a
+// gap: readings between days are kept for 48 hours and carry one total
+// rather than a value per holding, so an hourly figure could only ever be
+// "everything, for the last two days". Day is the finest thing that is true
+// for every scope and every date.
+let pnlCalPeriod='d';        // 'd' | 'm' | 'y'
 let pnlCalScope='all';
 let pnlCalMonth=null;        // its own anchor, browsing here moves nothing else
 let pnlCalPicked=null;
 let pnlCalHost=null;         // which card is on screen: 'dash' or an asset id
+try{const _pp=localStorage.getItem('pf_pnlcal_period');if(_pp==='m'||_pp==='y'||_pp==='d')pnlCalPeriod=_pp;}catch(e){}
 function pnlCalAnchor(){
   if(!pnlCalMonth){const n=new Date();pnlCalMonth=new Date(n.getFullYear(),n.getMonth(),1);}
   return pnlCalMonth;
+}
+function setPnlCalPeriod(pp){
+  pnlCalPeriod=(pp==='m'||pp==='y')?pp:'d';
+  pnlCalPicked=null;
+  try{localStorage.setItem('pf_pnlcal_period',pnlCalPeriod);}catch(e){}
+  haptic('tap');renderPnlCal();
+}
+// Days added up into the buckets their dates fall in, newest last. `n` is how
+// many characters of the date name the bucket: 7 for 2026-09, 4 for 2026.
+function rollUpPnl(series,n){
+  const m=new Map();
+  (series||[]).forEach(p=>{
+    if(!p||!p.date)return;
+    const k=String(p.date).slice(0,n);
+    const e=m.get(k)||{date:k,pnl:0,days:0,up:0,down:0};
+    e.pnl+=num(p.pnl);e.days++;
+    if(p.pnl>0)e.up++;else if(p.pnl<0)e.down++;
+    e.value=p.value;
+    m.set(k,e);
+  });
+  return [...m.values()].sort((a,b)=>a.date<b.date?-1:1);
+}
+const PNL_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pnlPeriodLabel(key){
+  if(!key)return '';
+  if(key.length===4)return key;
+  if(key.length===7){
+    const y=key.slice(0,4),mi=Number(key.slice(5,7))-1;
+    return (PNL_MONTHS[mi]||key.slice(5,7))+' '+y;
+  }
+  return formatDate(key);
 }
 function setPnlCalView(v){
   pnlCalView=v==='bar'?'bar':'cal';
@@ -3600,19 +3707,38 @@ function renderPnlCal(){
   if(segCal)segCal.className=pnlCalView==='cal'?'on':'';
   if(segBar)segBar.className=pnlCalView==='bar'?'on':'';
 
+  // A month or a year is its days added up.
+  const rolled=pnlCalPeriod==='m'?rollUpPnl(series,7)
+              :pnlCalPeriod==='y'?rollUpPnl(series,4):series;
+  // A calendar of days only makes sense while the period IS days; for a
+  // month or a year there is one figure, and bars are the only reading of
+  // it that means anything.
+  const asCal=pnlCalPeriod==='d'&&pnlCalView==='cal';
+  const seg=el('pnlCalSeg');
+  if(seg)seg.hidden=pnlCalPeriod!=='d';
+  // The heading has to follow the period, or the card is telling you it is
+  // showing days while it draws months.
+  const ttl=el('pnlCalTitle');
+  if(ttl)ttl.textContent=pnlCalPeriod==='m'?'MONTHLY P&L':pnlCalPeriod==='y'?'YEARLY P&L':'DAILY P&L';
+  const perRow=el('pnlCalPeriods');
+  if(perRow){
+    perRow.innerHTML=[['d','Daily'],['m','Monthly'],['y','Yearly']].map(([k,lbl])=>
+      `<button type="button" class="pnl-per${pnlCalPeriod===k?' on':''}" onclick="setPnlCalPeriod('${k}')">${lbl}</button>`).join('');
+  }
+
   // The headline: the picked day, or the most recent one there is a reading for.
-  const latest=series.length?series[series.length-1]:null;
-  const shown=(pnlCalPicked&&byDay.get(pnlCalPicked))||latest;
+  const latest=rolled.length?rolled[rolled.length-1]:null;
+  const shown=(pnlCalPeriod==='d'&&pnlCalPicked&&byDay.get(pnlCalPicked))||latest;
   const dEl=el('pnlCalDate'),vEl=el('pnlCalVal');
-  if(dEl)dEl.textContent=shown?formatDate(shown.date):'—';
+  if(dEl)dEl.textContent=shown?(pnlCalPeriod==='d'?formatDate(shown.date):pnlPeriodLabel(shown.date)):'—';
   if(vEl){
     vEl.textContent=shown?((shown.pnl>=0?'+':'−')+fmt(Math.abs(shown.pnl))):'—';
     vEl.style.color=!shown?'var(--text3)':shown.pnl>0?'var(--green)':shown.pnl<0?'var(--red)':'var(--text)';
   }
 
   const calWrap=el('pnlCalGridWrap'),barWrap=el('pnlCalBarWrap');
-  if(calWrap)calWrap.hidden=pnlCalView!=='cal';
-  if(barWrap)barWrap.hidden=pnlCalView!=='bar';
+  if(calWrap)calWrap.hidden=!asCal;
+  if(barWrap)barWrap.hidden=asCal;
 
   const empty=el('pnlCalEmpty');
   if(!series.length){
@@ -3625,7 +3751,11 @@ function renderPnlCal(){
     // carrying one recently, so every day before that has the total and
     // nothing else.
     const days=(state.pnlHistory||[]).length;
-    const detailed=(state.pnlHistory||[]).filter(p=>p&&p.assets&&Object.keys(p.assets).length).length;
+    const isAll=!scope||scope==='all';
+    // Everything reads straight off the net worth on every day ever recorded,
+    // so for it the only thing that can be missing is days.
+    const detailed=isAll?days
+      :(state.pnlHistory||[]).filter(p=>p&&p.assets&&Object.keys(p.assets).length).length;
     if(empty){empty.hidden=false;
       empty.textContent=days<2
         ? 'Two days of readings and this fills in. One is taken every couple of hours the app is open, and in between if snapshots are set up.'
@@ -3646,8 +3776,8 @@ function renderPnlCal(){
   }
   if(empty)empty.hidden=true;
 
-  if(pnlCalView==='cal')renderPnlCalGrid(byDay);
-  else renderPnlCalBars(series);
+  if(asCal)renderPnlCalGrid(byDay);
+  else renderPnlCalBars(rolled,pnlCalPeriod);
 }
 function renderPnlCalGrid(byDay){
   const grid=el('pnlCalGrid');if(!grid)return;
@@ -3705,10 +3835,13 @@ function renderPnlCalGrid(byDay){
   }
 }
 let pnlCalChart=null;
-function renderPnlCalBars(series){
+function renderPnlCalBars(series,period){
   const c=el('pnlCalBarChart');if(!c||!window.Chart)return;
-  const days=pnlRangeDays();
-  const pts=series.slice(-Math.max(2,days));
+  // Days follow the range pills the page is already set to; months and years
+  // show a sensible span of their own, because "thirty months" is not a
+  // thing anybody asked the page for.
+  const keep=period==='m'?24:period==='y'?12:Math.max(2,pnlRangeDays());
+  const pts=series.slice(-keep);
   if(pnlCalChart){try{pnlCalChart.destroy();}catch(e){}pnlCalChart=null;}
   const css=getComputedStyle(document.documentElement);
   const green=css.getPropertyValue('--green').trim()||'#16d6a4';
@@ -3723,12 +3856,13 @@ function renderPnlCalBars(series){
         borderRadius:3,borderSkipped:false,barPercentage:.72,categoryPercentage:.9}]},
     options:{responsive:true,maintainAspectRatio:false,animation:{duration:260},
       plugins:{legend:{display:false},tooltip:{displayColors:false,
-        callbacks:{title:it=>formatDate(it[0].label),
+        callbacks:{title:it=>period==='d'?formatDate(it[0].label):pnlPeriodLabel(it[0].label),
           label:it=>(it.raw>=0?'+':'−')+fmt(Math.abs(it.raw))}}},
       scales:{
         x:{grid:{display:false},border:{display:false},
           ticks:{color:text3,font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:4,
-            callback:function(v,i){const d=this.getLabelForValue(v);return String(d).slice(5);}}},
+            callback:function(v,i){const d=String(this.getLabelForValue(v));
+              return period==='y'?d:(period==='m'?pnlPeriodLabel(d):d.slice(5));}}},
         y:{grid:{color:grid},border:{display:false},
           ticks:{color:text3,font:{size:9},maxTicksLimit:5,
             callback:v=>compactNum(num(v)*getCurrRate(currentCurrency.code))}}}}
@@ -3739,10 +3873,11 @@ function renderPnlCalBars(series){
     const up=pts.filter(p=>p.pnl>0).length,down=pts.filter(p=>p.pnl<0).length;
     const best=pts.reduce((b,p)=>!b||p.pnl>b.pnl?p:b,null);
     const col=sum>0?'var(--green)':sum<0?'var(--red)':'var(--text)';
-    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>over ${plural(pts.length,'day')}</span></div>`
+    const unit=period==='m'?'month':period==='y'?'year':'day';
+    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>over ${plural(pts.length,unit)}</span></div>`
       +`<div class="pnl-foot-cell"><b style="color:var(--green)">${up}</b><span>up</span></div>`
       +`<div class="pnl-foot-cell"><b style="color:var(--red)">${down}</b><span>down</span></div>`
-      +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best day</span></div>`:'');
+      +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best ${unit}</span></div>`:'');
   }
 }
 // The same colours the donut and category table already use, in one place so

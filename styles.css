@@ -3105,6 +3105,15 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 .pnl-cal-date{font-size:10.5px;color:var(--text3);margin-top:5px;font-weight:600}
 .pnl-cal-val{font-size:26px;font-weight:800;letter-spacing:-.7px;margin-top:1px;
   font-variant-numeric:tabular-nums;line-height:1.1}
+/* Day, month, year. Sits above the scope chips because it is the coarser
+   question: which span, then which holdings. */
+.pnl-periods{display:flex;gap:6px;margin:12px 0 0}
+.pnl-per{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;
+  padding:7px 4px;font-family:var(--font);font-size:11px;font-weight:700;color:var(--text2);
+  cursor:pointer;transition:background-color var(--dur-2),border-color var(--dur-2),color var(--dur-2)}
+.pnl-per.on{background:var(--accent-fill);border-color:transparent;color:var(--accent-ink)}
+.pnl-per:active{transform:scale(.97)}
+
 .pnl-scopes{display:flex;gap:6px;margin:11px 0 3px;overflow-x:auto;scrollbar-width:none;
   -webkit-overflow-scrolling:touch;padding-bottom:2px}
 .pnl-scopes::-webkit-scrollbar{display:none}
