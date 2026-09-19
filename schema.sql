@@ -1098,51 +1098,13 @@ create index if not exists valuation_recipes_captured_idx
 -- ═══════════════════════════════════════════════════════════════════════
 -- 15. THE SCHEDULE, every two hours
 -- ═══════════════════════════════════════════════════════════════════════
--- Run this block ONCE, after setting the two settings below. It is separate
--- from the rest of the file because it needs values only you have, and
--- because re-running the whole schema should not silently re-point a live
+-- It does not live in this file. `setup-snapshot.sql`, beside this one, is
+-- a ready-to-run file with two lines to fill in: your deployment URL and
+-- your CRON_SECRET. It also has the queries for checking it afterwards.
+--
+-- It is kept separate because this file is meant to be re-run whenever the
+-- schema changes, and re-running it should never silently re-point a live
 -- schedule at a different deployment.
---
---   1. In the Supabase dashboard: Database → Extensions → enable `pg_cron`
---      and `pg_net`.
---   2. In Vercel: add an environment variable CRON_SECRET, a long random
---      string (e.g. `openssl rand -hex 32`), then redeploy.
---   3. Run the block below with your own deployment URL and that same
---      secret. Both are stored in Postgres, readable only by the service
---      role, and never reach the browser.
---
--- To see what it has been doing:
---   select * from cron.job_run_details order by start_time desc limit 20;
--- To stop it:
---   select cron.unschedule('paisafolio-snapshot');
---
--- ── begin one-time block ──────────────────────────────────────────────
--- create extension if not exists pg_cron;
--- create extension if not exists pg_net;
---
--- alter database postgres set app.snapshot_url    = 'https://YOUR-APP.vercel.app/api/snapshot';
--- alter database postgres set app.snapshot_secret = 'YOUR-CRON-SECRET';
---
--- select cron.schedule(
---   'paisafolio-snapshot',
---   '0 */2 * * *',                      -- on the hour, every two hours, UTC
---   $$
---   select net.http_post(
---     url     := current_setting('app.snapshot_url'),
---     headers := jsonb_build_object(
---                  'Content-Type',  'application/json',
---                  'Authorization', 'Bearer ' || current_setting('app.snapshot_secret')),
---     body    := '{}'::jsonb,
---     timeout_milliseconds := 55000
---   );
---   $$
--- );
--- ── end one-time block ────────────────────────────────────────────────
---
--- Nepal is UTC+05:45, so '0 */2 * * *' lands at 05:45, 07:45, 09:45 and so
--- on local time. The slots the app itself records are two-hour buckets of
--- absolute time, so the two interleave without fighting: whichever of them
--- writes a given bucket last is the one that stands.
 
 
 -- ════════════════════════════════════════════════════════════════════════

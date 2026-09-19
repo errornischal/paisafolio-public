@@ -203,7 +203,7 @@ body.no-anim .aura b{animation:none}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(22,214,164,.45)}50%{box-shadow:0 0 0 5px rgba(22,214,164,0)}}
 
 .pages{position:relative;flex:1}
-.page{display:none;padding-bottom:80px;opacity:0;pointer-events:none;transform:translate3d(0,8px,0);will-change:opacity,transform;transition:opacity .26s ease,transform .26s ease;scroll-behavior:smooth}
+.page{position:relative;display:none;padding-bottom:80px;opacity:0;pointer-events:none;transform:translate3d(0,8px,0);will-change:opacity,transform;transition:opacity .26s ease,transform .26s ease;scroll-behavior:smooth}
 .page.active{display:block}
 .page::-webkit-scrollbar{display:none}
 .page.active{opacity:1;pointer-events:all;transform:translateY(0)}
@@ -871,7 +871,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .modal-title{font-size:16px;font-weight:800;color:var(--text)}
 .modal-close{width:30px;height:30px;background:var(--bg3);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border);color:var(--text2);transition:.18s}
 .modal-close:active{transform:scale(.88)}
-.modal-body{padding:4px 14px 16px;max-height:78vh;overflow-y:auto;scrollbar-width:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.modal-body{position:relative;padding:4px 14px 16px;max-height:78vh;overflow-y:auto;scrollbar-width:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .modal-body::-webkit-scrollbar{display:none}
 
 /* ── Context menu (long-press / right-click) ── */
@@ -1119,6 +1119,28 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
    staggered so it reads as loading rather than as data. */
 .skel-chart{display:flex;align-items:flex-end;gap:4px;width:100%;padding:0 2px}
 .skel-bar{flex:1;border-radius:3px 3px 1px 1px;min-width:3px}
+/* A candlestick chart is coming, so this is the shape of one: a body with a
+   wick through it, per column. A row of bars was a different chart. */
+.skel-cs{display:flex;align-items:stretch;gap:5px;width:100%;padding:0 2px}
+.skel-cs-c{flex:1;min-width:3px;position:relative}
+.skel-cs-wick{position:absolute;left:50%;margin-left:-1px;width:2px;border-radius:1px;opacity:.72}
+.skel-cs-body{position:absolute;left:0;right:0;border-radius:2px;min-height:5px}
+/* And where a line is coming, the silhouette of one. */
+.skel-spark{width:100%;border-radius:0}
+
+/* The shape of a page, laid over it while it arrives. It covers rather than
+   replaces: the real markup underneath keeps its ids and its scroll position,
+   and nothing has to be rebuilt when this goes. */
+.skel-overlay{position:absolute;inset:0;background:var(--bg);z-index:6;
+  padding:14px;pointer-events:none;overflow:hidden;
+  opacity:1;transition:opacity .24s ease}
+.skel-overlay.gone{opacity:0}
+/* A nearly empty page still gets a screenful of shape; inside a sheet the
+   body's own height is the right size and a minimum would give it a scrollbar
+   it does not need. */
+.page>.skel-overlay{min-height:62vh}
+.modal-body>.skel-overlay{padding:6px 0 10px;background:var(--glass-solid)}
+@media(prefers-reduced-motion:reduce){.skel-overlay{display:none}}
 
 .interest-section{background:var(--bg3);border:1px solid var(--border2);border-radius:11px;padding:13px;margin-bottom:11px}
 .accrued-box{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:11px 13px;margin-top:12px;display:none}

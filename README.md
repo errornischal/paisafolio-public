@@ -131,8 +131,8 @@ bank balance, land, a hand-typed price — carries its value unchanged.
 2. Re-run [`schema.sql`](schema.sql) so `valuation_recipes` exists
 3. Vercel, **Settings → Environment Variables**: add `CRON_SECRET`, a long
    random string (`openssl rand -hex 32`), apply to Production, redeploy
-4. Run the one-time block at the bottom of `schema.sql` (section 15) with your
-   deployment URL and that same secret
+4. Open `setup-snapshot.sql`, fill in the two lines marked `←` (your
+   deployment URL and that same secret) and run it in the Supabase SQL editor
 
 The Sync Center then says whether readings are actually being taken, so a
 setup that silently does nothing shows up there rather than as a flat line
