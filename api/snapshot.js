@@ -313,7 +313,11 @@ export default async function handler(req, res) {
     try {
       const [a, b] = await Promise.all([fp(CRON_SECRET), fp(got)]);
       hint = !bearer
-        ? 'No Authorization header. It must read: Bearer <your secret>'
+        ? (auth
+            ? 'An Authorization header arrived but does not start with "Bearer ". It must read exactly: Bearer <your secret>'
+            : 'No Authorization header arrived. `got` lists the header names that did, so you can see whether it was '
+              + 'dropped on the way or never sent. A redirect between the address you called and this function will '
+              + 'drop it; call the deployment directly, with no trailing slash.')
         : got.length !== CRON_SECRET.length
           ? 'Length differs: this deployment holds ' + CRON_SECRET.length +
             ' characters, you sent ' + got.length + '. Check for a missing character or a trailing space.'
@@ -323,7 +327,11 @@ export default async function handler(req, res) {
     } catch (e) {
       hint = 'Secret does not match the one this deployment was built with.';
     }
-    return res.status(401).json({ error: 'Unauthorized', hint, build: BUILD.commit });
+    // Header NAMES only, never their values: enough to tell "it never left"
+    // from "something ate it in transit", which are different problems with
+    // different fixes, and nothing that is worth keeping secret.
+    const arrived = Object.keys(req.headers || {}).sort().slice(0, 40);
+    return res.status(401).json({ error: 'Unauthorized', hint, got: arrived, build: BUILD.commit });
   }
 
   const started = Date.now();
