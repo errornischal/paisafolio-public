@@ -3582,56 +3582,13 @@ function pnlCellNum(v){
 // opens it on that holding alone. Two ways to read the same numbers: a month
 // at a glance, or a bar per day across the range the page is already set to.
 let pnlCalView='cal';        // 'cal' | 'bar'
-// Day, month, year. All three are the same daily numbers - a month is the
-// days in it added up, a year is the months - so they can never disagree
-// with each other, and a month's figure is the same whichever way you got
-// to it.
-//
-// There is no hour here, and it is worth saying why rather than leaving a
-// gap: readings between days are kept for 48 hours and carry one total
-// rather than a value per holding, so an hourly figure could only ever be
-// "everything, for the last two days". Day is the finest thing that is true
-// for every scope and every date.
-let pnlCalPeriod='d';        // 'd' | 'm' | 'y'
 let pnlCalScope='all';
 let pnlCalMonth=null;        // its own anchor, browsing here moves nothing else
 let pnlCalPicked=null;
 let pnlCalHost=null;         // which card is on screen: 'dash' or an asset id
-try{const _pp=localStorage.getItem('pf_pnlcal_period');if(_pp==='m'||_pp==='y'||_pp==='d')pnlCalPeriod=_pp;}catch(e){}
 function pnlCalAnchor(){
   if(!pnlCalMonth){const n=new Date();pnlCalMonth=new Date(n.getFullYear(),n.getMonth(),1);}
   return pnlCalMonth;
-}
-function setPnlCalPeriod(pp){
-  pnlCalPeriod=(pp==='m'||pp==='y')?pp:'d';
-  pnlCalPicked=null;
-  try{localStorage.setItem('pf_pnlcal_period',pnlCalPeriod);}catch(e){}
-  haptic('tap');renderPnlCal();
-}
-// Days added up into the buckets their dates fall in, newest last. `n` is how
-// many characters of the date name the bucket: 7 for 2026-09, 4 for 2026.
-function rollUpPnl(series,n){
-  const m=new Map();
-  (series||[]).forEach(p=>{
-    if(!p||!p.date)return;
-    const k=String(p.date).slice(0,n);
-    const e=m.get(k)||{date:k,pnl:0,days:0,up:0,down:0};
-    e.pnl+=num(p.pnl);e.days++;
-    if(p.pnl>0)e.up++;else if(p.pnl<0)e.down++;
-    e.value=p.value;
-    m.set(k,e);
-  });
-  return [...m.values()].sort((a,b)=>a.date<b.date?-1:1);
-}
-const PNL_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function pnlPeriodLabel(key){
-  if(!key)return '';
-  if(key.length===4)return key;
-  if(key.length===7){
-    const y=key.slice(0,4),mi=Number(key.slice(5,7))-1;
-    return (PNL_MONTHS[mi]||key.slice(5,7))+' '+y;
-  }
-  return formatDate(key);
 }
 function setPnlCalView(v){
   pnlCalView=v==='bar'?'bar':'cal';
@@ -3707,38 +3664,19 @@ function renderPnlCal(){
   if(segCal)segCal.className=pnlCalView==='cal'?'on':'';
   if(segBar)segBar.className=pnlCalView==='bar'?'on':'';
 
-  // A month or a year is its days added up.
-  const rolled=pnlCalPeriod==='m'?rollUpPnl(series,7)
-              :pnlCalPeriod==='y'?rollUpPnl(series,4):series;
-  // A calendar of days only makes sense while the period IS days; for a
-  // month or a year there is one figure, and bars are the only reading of
-  // it that means anything.
-  const asCal=pnlCalPeriod==='d'&&pnlCalView==='cal';
-  const seg=el('pnlCalSeg');
-  if(seg)seg.hidden=pnlCalPeriod!=='d';
-  // The heading has to follow the period, or the card is telling you it is
-  // showing days while it draws months.
-  const ttl=el('pnlCalTitle');
-  if(ttl)ttl.textContent=pnlCalPeriod==='m'?'MONTHLY P&L':pnlCalPeriod==='y'?'YEARLY P&L':'DAILY P&L';
-  const perRow=el('pnlCalPeriods');
-  if(perRow){
-    perRow.innerHTML=[['d','Daily'],['m','Monthly'],['y','Yearly']].map(([k,lbl])=>
-      `<button type="button" class="pnl-per${pnlCalPeriod===k?' on':''}" onclick="setPnlCalPeriod('${k}')">${lbl}</button>`).join('');
-  }
-
   // The headline: the picked day, or the most recent one there is a reading for.
-  const latest=rolled.length?rolled[rolled.length-1]:null;
-  const shown=(pnlCalPeriod==='d'&&pnlCalPicked&&byDay.get(pnlCalPicked))||latest;
+  const latest=series.length?series[series.length-1]:null;
+  const shown=(pnlCalPicked&&byDay.get(pnlCalPicked))||latest;
   const dEl=el('pnlCalDate'),vEl=el('pnlCalVal');
-  if(dEl)dEl.textContent=shown?(pnlCalPeriod==='d'?formatDate(shown.date):pnlPeriodLabel(shown.date)):'—';
+  if(dEl)dEl.textContent=shown?formatDate(shown.date):'—';
   if(vEl){
     vEl.textContent=shown?((shown.pnl>=0?'+':'−')+fmt(Math.abs(shown.pnl))):'—';
     vEl.style.color=!shown?'var(--text3)':shown.pnl>0?'var(--green)':shown.pnl<0?'var(--red)':'var(--text)';
   }
 
   const calWrap=el('pnlCalGridWrap'),barWrap=el('pnlCalBarWrap');
-  if(calWrap)calWrap.hidden=!asCal;
-  if(barWrap)barWrap.hidden=asCal;
+  if(calWrap)calWrap.hidden=pnlCalView!=='cal';
+  if(barWrap)barWrap.hidden=pnlCalView==='cal';
 
   const empty=el('pnlCalEmpty');
   if(!series.length){
@@ -3776,8 +3714,8 @@ function renderPnlCal(){
   }
   if(empty)empty.hidden=true;
 
-  if(asCal)renderPnlCalGrid(byDay);
-  else renderPnlCalBars(rolled,pnlCalPeriod);
+  if(pnlCalView==='cal')renderPnlCalGrid(byDay);
+  else renderPnlCalBars(series);
 }
 function renderPnlCalGrid(byDay){
   const grid=el('pnlCalGrid');if(!grid)return;
@@ -3835,13 +3773,10 @@ function renderPnlCalGrid(byDay){
   }
 }
 let pnlCalChart=null;
-function renderPnlCalBars(series,period){
+function renderPnlCalBars(series){
   const c=el('pnlCalBarChart');if(!c||!window.Chart)return;
-  // Days follow the range pills the page is already set to; months and years
-  // show a sensible span of their own, because "thirty months" is not a
-  // thing anybody asked the page for.
-  const keep=period==='m'?24:period==='y'?12:Math.max(2,pnlRangeDays());
-  const pts=series.slice(-keep);
+  const days=pnlRangeDays();
+  const pts=series.slice(-Math.max(2,days));
   if(pnlCalChart){try{pnlCalChart.destroy();}catch(e){}pnlCalChart=null;}
   const css=getComputedStyle(document.documentElement);
   const green=css.getPropertyValue('--green').trim()||'#16d6a4';
@@ -3856,13 +3791,12 @@ function renderPnlCalBars(series,period){
         borderRadius:3,borderSkipped:false,barPercentage:.72,categoryPercentage:.9}]},
     options:{responsive:true,maintainAspectRatio:false,animation:{duration:260},
       plugins:{legend:{display:false},tooltip:{displayColors:false,
-        callbacks:{title:it=>period==='d'?formatDate(it[0].label):pnlPeriodLabel(it[0].label),
+        callbacks:{title:it=>formatDate(it[0].label),
           label:it=>(it.raw>=0?'+':'−')+fmt(Math.abs(it.raw))}}},
       scales:{
         x:{grid:{display:false},border:{display:false},
           ticks:{color:text3,font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:4,
-            callback:function(v,i){const d=String(this.getLabelForValue(v));
-              return period==='y'?d:(period==='m'?pnlPeriodLabel(d):d.slice(5));}}},
+            callback:function(v,i){const d=this.getLabelForValue(v);return String(d).slice(5);}}},
         y:{grid:{color:grid},border:{display:false},
           ticks:{color:text3,font:{size:9},maxTicksLimit:5,
             callback:v=>compactNum(num(v)*getCurrRate(currentCurrency.code))}}}}
@@ -3873,11 +3807,10 @@ function renderPnlCalBars(series,period){
     const up=pts.filter(p=>p.pnl>0).length,down=pts.filter(p=>p.pnl<0).length;
     const best=pts.reduce((b,p)=>!b||p.pnl>b.pnl?p:b,null);
     const col=sum>0?'var(--green)':sum<0?'var(--red)':'var(--text)';
-    const unit=period==='m'?'month':period==='y'?'year':'day';
-    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>over ${plural(pts.length,unit)}</span></div>`
+    foot.innerHTML=`<div class="pnl-foot-cell"><b style="color:${col}">${sum>=0?'+':'−'}${fmt(Math.abs(sum))}</b><span>over ${plural(pts.length,'day')}</span></div>`
       +`<div class="pnl-foot-cell"><b style="color:var(--green)">${up}</b><span>up</span></div>`
       +`<div class="pnl-foot-cell"><b style="color:var(--red)">${down}</b><span>down</span></div>`
-      +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best ${unit}</span></div>`:'');
+      +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best day</span></div>`:'');
   }
 }
 // The same colours the donut and category table already use, in one place so

@@ -786,18 +786,19 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .recur-item.unsynced > *:not(.unsynced-badge),
 .spend-row.unsynced > *:not(.unsynced-badge),
 .tx-item.unsynced > *:not(.unsynced-badge){position:relative;z-index:1}
-/* A short row cannot hold a 44px mark without it bleeding past the edges,
-   and stacking words under it would bleed further, so those rows put the
-   label beside the cloud instead. */
-.spend-row.unsynced .unsynced-badge svg,
-.tx-item.unsynced .unsynced-badge svg,
-.recur-item.unsynced .unsynced-badge svg{width:22px;height:22px}
+/* On a ROW the mark is not drawn at all. A card has air around it and one
+   watermark; a list has a mark on every single row that is waiting, which is
+   most of them right after an edit - a cloud and the words NOT SYNCED laid
+   across every line of a list you are trying to read. The rail down the left
+   edge already says the same thing, in a place that can never collide with
+   anything, so the mark is left to the shapes that have room for it.
+
+   Kept for a screen reader, which has no rail to notice. */
 .spend-row.unsynced .unsynced-badge,
 .tx-item.unsynced .unsynced-badge,
-.recur-item.unsynced .unsynced-badge{flex-direction:row;gap:5px}
-.spend-row.unsynced .unsynced-badge-lbl,
-.tx-item.unsynced .unsynced-badge-lbl,
-.recur-item.unsynced .unsynced-badge-lbl{font-size:7.5px;letter-spacing:.7px}
+.recur-item.unsynced .unsynced-badge,
+.hb-row.unsynced .unsynced-badge{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:1;transform:none}
 /* A rail costs no layout, and a 1.5px dashed border in place of the card's
    own 1px one is half a pixel: neither needs padding compensation, which the
    2px version did. */
@@ -1083,6 +1084,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
    and a projection below it. Four fit; the rest scroll. */
 .goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
   scrollbar-width:thin;padding-right:2px}
+.goal-link-list>*{flex:none}   /* same trap as .spend-list, see the note there */
 .goal-link-list::-webkit-scrollbar{width:4px}
 .goal-link-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .icon-opt{width:100%;aspect-ratio:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.18s;color:var(--text2)}
@@ -2611,6 +2613,14 @@ body.no-anim .nav-item.active svg{animation:none}
 
 .spend-list{display:flex;flex-direction:column;max-height:420px;overflow-y:auto;
   scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+/* A column flex box with a height cap SHRINKS its children to fit before it
+   will let anything overflow, and a scroll box that is never overflowed
+   never scrolls. Past about eight entries every row was squeezed from 52px
+   to 22px, so each one clipped its own second line and the row below started
+   before the one above had finished - two entries drawn on top of each
+   other under one date. The rows are the right height and the list is what
+   scrolls. */
+.spend-list>*{flex:none}
 .spend-list::-webkit-scrollbar{width:4px}
 .spend-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .spend-row{display:flex;align-items:center;gap:10px;padding:9px 2px;background:none;border:none;width:100%;position:relative;
@@ -2787,6 +2797,7 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
    is bad at. */
 .tm-list{display:flex;flex-direction:column;gap:1px;max-height:420px;overflow-y:auto;
   scrollbar-width:thin;border-radius:10px}
+.tm-list>*{flex:none}   /* same trap as .spend-list, see the note there */
 .tm-list::-webkit-scrollbar{width:4px}
 .tm-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .tm-row{position:relative;display:flex;align-items:center;gap:9px;width:100%;
@@ -3105,15 +3116,6 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 .pnl-cal-date{font-size:10.5px;color:var(--text3);margin-top:5px;font-weight:600}
 .pnl-cal-val{font-size:26px;font-weight:800;letter-spacing:-.7px;margin-top:1px;
   font-variant-numeric:tabular-nums;line-height:1.1}
-/* Day, month, year. Sits above the scope chips because it is the coarser
-   question: which span, then which holdings. */
-.pnl-periods{display:flex;gap:6px;margin:12px 0 0}
-.pnl-per{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;
-  padding:7px 4px;font-family:var(--font);font-size:11px;font-weight:700;color:var(--text2);
-  cursor:pointer;transition:background-color var(--dur-2),border-color var(--dur-2),color var(--dur-2)}
-.pnl-per.on{background:var(--accent-fill);border-color:transparent;color:var(--accent-ink)}
-.pnl-per:active{transform:scale(.97)}
-
 .pnl-scopes{display:flex;gap:6px;margin:11px 0 3px;overflow-x:auto;scrollbar-width:none;
   -webkit-overflow-scrolling:touch;padding-bottom:2px}
 .pnl-scopes::-webkit-scrollbar{display:none}
