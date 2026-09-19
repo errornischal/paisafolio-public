@@ -57,6 +57,14 @@ function tidySecret(v) {
 }
 const CRON_SECRET = tidySecret(process.env.CRON_SECRET);
 
+// Which commit this deployment was built from, and when. It rides along on
+// every refusal, because the first question when a call is refused is not
+// "is the secret wrong" but "is this deployment even the one I just fixed".
+// A stale deployment also carries a stale environment variable, so the two
+// look identical from the outside: both say Unauthorized. Without this there
+// is no way to tell them apart from a phone.
+const BUILD = { commit: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'unknown' };
+
 // A recipe older than this describes holdings that may be nothing like what
 // is actually held now, and re-pricing it would draw a confident line about a
 // portfolio that no longer exists. Open the app and it refreshes.
@@ -274,9 +282,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   if (!configured()) {
+    const missing = [
+      !SUPABASE_URL && 'SUPABASE_URL',
+      !SERVICE_KEY && 'SUPABASE_SERVICE_ROLE_KEY',
+      !CRON_SECRET && 'CRON_SECRET',
+    ].filter(Boolean);
     return res.status(503).json({
       error: 'Not configured',
-      detail: 'Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and CRON_SECRET in the Vercel project, then redeploy.',
+      missing,
+      build: BUILD.commit,
+      detail: 'Add ' + missing.join(' and ') + ' to the Vercel project (Production), then REDEPLOY. ' +
+        'A new environment variable does not reach a deployment that is already running.',
     });
   }
   const auth = String(req.headers.authorization || '');
@@ -307,7 +323,7 @@ export default async function handler(req, res) {
     } catch (e) {
       hint = 'Secret does not match the one this deployment was built with.';
     }
-    return res.status(401).json({ error: 'Unauthorized', hint });
+    return res.status(401).json({ error: 'Unauthorized', hint, build: BUILD.commit });
   }
 
   const started = Date.now();
