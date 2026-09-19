@@ -7200,7 +7200,11 @@ function syncBodyScrollLock(){
     (el('authModal')&&el('authModal').classList.contains('open'))||
     (el('onbOverlay')&&el('onbOverlay').classList.contains('open'))||
     (el('cmdk')&&el('cmdk').classList.contains('open'));
+  // Both, deliberately: <html> carries `overflow-x:clip`, which makes the
+  // viewport scroll from <html> and ignore <body>'s overflow entirely. See
+  // the note beside the rule in styles.css.
   document.body.classList.toggle('modal-open',!!anyOpen);
+  document.documentElement.classList.toggle('modal-open',!!anyOpen);
 }
 // ════════ SHEETS AND THE BACK BUTTON ════════
 // Every open sheet owns one history entry, so Back closes it instead of
@@ -15088,8 +15092,31 @@ function updateScrollHint(node,vertical){
   const atStart=pos<=2,atEnd=pos>=slack-2;
   node.dataset.scroll=atStart?'end':(atEnd?'start':'middle');
 }
+// The stylesheet names every scroll box it knows about. This catches the
+// ones it cannot: a list given `overflow:auto` in a style attribute, built
+// by a render function, which no selector in the stylesheet ever sees. The
+// same rule applies to them - hand the gesture on when there is nothing left
+// to scroll - and the two exceptions stay exceptions: a sheet must not
+// scroll the page behind it, and the page must not rubber-band the document.
+const SCROLL_CHAIN_SKIP='.modal-body,.page,.modal-overlay,.cmdk';
+function relaxScrollChaining(root){
+  const scope=root&&root.querySelectorAll?root:document;
+  let nodes;
+  try{ nodes=scope.querySelectorAll('[style*="overflow"]'); }catch(e){ return; }
+  nodes.forEach(node=>{
+    if(node._scrollChained)return;
+    if(node.matches&&node.matches(SCROLL_CHAIN_SKIP))return;
+    if(node.closest&&node.closest('.cmdk'))return;
+    const cs=getComputedStyle(node);
+    const scrolls=/(auto|scroll)/.test(cs.overflowY)||/(auto|scroll)/.test(cs.overflowX);
+    if(!scrolls)return;
+    node._scrollChained=true;
+    node.style.overscrollBehaviorY='auto';
+  });
+}
 function bindScrollHints(root){
   const scope=root||document;
+  try{ relaxScrollChaining(root); }catch(e){}
   const wire=(sel,cls,vertical)=>scope.querySelectorAll(sel).forEach(node=>{
     node.classList.add(cls);
     if(!node._scrollHintBound){

@@ -95,8 +95,19 @@
 [hidden]{display:none!important}
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100%;
   overflow-x:hidden;overflow-x:clip}
-body.modal-open{overflow:hidden;touch-action:none}
-body.modal-open .modal-sheet,body.modal-open .modal-body{touch-action:auto}
+/* The lock that stops the page moving under an open sheet.
+   It has to be on <html> as well as <body>, and that is not belt and braces.
+   The line above gives <html> `overflow-x:clip`, so its overflow is no longer
+   `visible` - and that is exactly the condition under which the viewport
+   takes its scrolling from <html> and IGNORES whatever <body> says. So
+   `body.modal-open{overflow:hidden}` on its own locked nothing at all.
+   It looked like it worked because a sheet with more content than fits
+   contains the scroll itself; a short sheet has nothing to contain it with,
+   and the page behind quietly scrolled away under the finger. */
+html.modal-open,body.modal-open{overflow:hidden;touch-action:none}
+html.modal-open .modal-sheet,html.modal-open .modal-body,
+body.modal-open .modal-sheet,body.modal-open .modal-body,
+html.modal-open .cmdk-box,html.modal-open .cmdk-results{touch-action:auto}
 /* ── Motion tokens ────────────────────────────────────────────────────
    One vocabulary for every transition in the app, so timings stay in step
    instead of drifting apart across a thousand hand-written rules. */
@@ -1053,7 +1064,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* Every cash account you own, inside a sheet that still has a target date
    and a projection below it. Four fit; the rest scroll. */
 .goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
-  overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px}
+  scrollbar-width:thin;padding-right:2px}
 .goal-link-list::-webkit-scrollbar{width:4px}
 .goal-link-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .icon-opt{width:100%;aspect-ratio:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.18s;color:var(--text2)}
@@ -1117,6 +1128,31 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* The shape of a chart while the chart is on its way. Bars rather than a
    grey slab, so what is coming is recognisable before it gets here, and
    staggered so it reads as loading rather than as data. */
+/* ── Handing the scroll on ────────────────────────────────────────────────
+   A box with its own scrollbar is a box you can get stuck in. Reach the
+   bottom of the Activity list and the page behind it would not move: the
+   finger was already inside something that had declared it would not pass
+   the gesture on, so the only way to carry on down the page was to lift off
+   and put the finger somewhere else. Same with a wheel on a desktop.
+
+   `overscroll-behavior: contain` is what does that, and it is right in
+   exactly one place: a sheet, which must not scroll the page behind it while
+   it is open. Everywhere else it is a trap. So every inner scroller says so
+   explicitly, rather than inheriting a decision made for modals:
+
+     inner list  →  hands on to the page, or to the sheet it sits in
+     sheet       →  hands on to nothing; the page behind it stays put
+     page        →  hands on to nothing; no rubber-banding the document
+
+   Named one by one rather than left to whatever each rule happened to set,
+   because the failure is invisible until somebody's thumb is stuck. */
+.spend-list,.tm-list,.goal-link-list,.sync-pending-list,.admin-modellist,
+.curr-list,.ai-thread,.cmdk-results,.alloc-body,.assets-table-wrap,
+.habit-scroll,.ctx-body,.spend-cat-list,.hcal-body,
+.custom-select-dropdown,.ccy-sel-dropdown,.coin-suggestions{overscroll-behavior-y:auto}
+/* Set inline by relaxScrollChaining() on anything that scrolls and was not
+   named above, so a box styled inline is not a trap either. */
+
 .skel-chart{display:flex;align-items:flex-end;gap:4px;width:100%;padding:0 2px}
 .skel-bar{flex:1;border-radius:3px 3px 1px 1px;min-width:3px}
 /* A candlestick chart is coming, so this is the shape of one: a body with a
@@ -2570,7 +2606,7 @@ body.no-anim .nav-item.active svg{animation:none}
   border:none;border-radius:20px;padding:4px 9px;font-family:var(--font);font-size:10px;font-weight:700;cursor:pointer}
 .filter-chip:active{transform:scale(.94)}
 
-.spend-list{display:flex;flex-direction:column;max-height:420px;overflow-y:auto;overscroll-behavior:contain;
+.spend-list{display:flex;flex-direction:column;max-height:420px;overflow-y:auto;
   scrollbar-width:thin;-webkit-overflow-scrolling:touch}
 .spend-list::-webkit-scrollbar{width:4px}
 .spend-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
@@ -2747,7 +2783,7 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
    the same data with every name readable, which is the question the map
    is bad at. */
 .tm-list{display:flex;flex-direction:column;gap:1px;max-height:420px;overflow-y:auto;
-  overscroll-behavior:contain;scrollbar-width:thin;border-radius:10px}
+  scrollbar-width:thin;border-radius:10px}
 .tm-list::-webkit-scrollbar{width:4px}
 .tm-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
 .tm-row{position:relative;display:flex;align-items:center;gap:9px;width:100%;

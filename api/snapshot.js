@@ -48,7 +48,14 @@
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-const CRON_SECRET = (process.env.CRON_SECRET || '').trim();
+// Quotes around the value are the single most common way this is pasted
+// wrong: a lot of people wrap an environment variable in them out of habit,
+// and Vercel stores them as part of the value. Strip them here and on the way
+// in, so a secret that is right apart from its punctuation still works.
+function tidySecret(v) {
+  return String(v || '').trim().replace(/^["']|["']$/g, '').trim();
+}
+const CRON_SECRET = tidySecret(process.env.CRON_SECRET);
 
 // A recipe older than this describes holdings that may be nothing like what
 // is actually held now, and re-pricing it would draw a confident line about a
@@ -75,7 +82,7 @@ function configured() { return !!(SUPABASE_URL && SERVICE_KEY && CRON_SECRET); }
 // Constant-time compare, so a wrong secret cannot be found a character at a
 // time by timing the refusals.
 function secretMatches(given) {
-  const a = Buffer.from(String(given || ''), 'utf8');
+  const a = Buffer.from(tidySecret(given), 'utf8');
   const b = Buffer.from(CRON_SECRET, 'utf8');
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -274,8 +281,33 @@ export default async function handler(req, res) {
   }
   const auth = String(req.headers.authorization || '');
   const bearer = /^Bearer\s+(.+)$/i.exec(auth);
-  if (!bearer || !secretMatches(bearer[1].trim())) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!bearer || !secretMatches(bearer[1])) {
+    // Say enough to find the mistake, and nothing else. Lengths and a short
+    // hash prefix cannot be worked backwards into the secret, and between
+    // them they name every ordinary cause: a character lost on the way
+    // through a copy, a trailing space, a value that was never updated on
+    // one of the two sides.
+    const got = bearer ? tidySecret(bearer[1]) : '';
+    const fp = async (v) => {
+      if (!v) return '-';
+      const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+      return [...new Uint8Array(h)].slice(0, 3).map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+    let hint;
+    try {
+      const [a, b] = await Promise.all([fp(CRON_SECRET), fp(got)]);
+      hint = !bearer
+        ? 'No Authorization header. It must read: Bearer <your secret>'
+        : got.length !== CRON_SECRET.length
+          ? 'Length differs: this deployment holds ' + CRON_SECRET.length +
+            ' characters, you sent ' + got.length + '. Check for a missing character or a trailing space.'
+          : 'Same length, different value. This deployment holds a secret starting ' + a +
+            '…; you sent one starting ' + b + '… (first bytes of their hashes, not the secrets). ' +
+            'Update CRON_SECRET in Vercel and redeploy, or use the value this deployment already has.';
+    } catch (e) {
+      hint = 'Secret does not match the one this deployment was built with.';
+    }
+    return res.status(401).json({ error: 'Unauthorized', hint });
   }
 
   const started = Date.now();
