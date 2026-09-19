@@ -1018,6 +1018,14 @@ async function removeAvatar(){
   closeModal('photoModal');
 }
 function renderProfile(){
+  // The Circle row lives in this sheet now, so its subtitle and its
+  // waiting-to-connect badge have to be right when the sheet opens rather
+  // than only after somebody has been into Circle once. circleLoad caches,
+  // so this is a network call the first time and nothing after it.
+  try{
+    syncCircleBadge();
+    if(typeof circleLoad==='function')circleLoad().then(()=>{try{syncCircleBadge();}catch(e){}});
+  }catch(e){}
   const email = (supabaseUser && supabaseUser.email) || '';
   const name = displayName();
   const av = el('acctAvatarLg');
@@ -1497,6 +1505,24 @@ function checkRecoveryUrl(){
 }
 async function signOut() {
   if (!sbClient) return;
+  // Signing out is one tap away from a row you may have meant to tap the one
+  // above, and it swaps the whole app back to guest storage. Nothing is
+  // destroyed by it - but "where has all my data gone" is a horrible ten
+  // seconds to put somebody through by accident.
+  const waiting = typeof pendingChangeCount === 'function' ? pendingChangeCount() : 0;
+  const who = (supabaseUser && supabaseUser.email) ? ' from ' + supabaseUser.email : '';
+  const ok = await askConfirm({
+    title: 'Sign out?',
+    message: waiting
+      ? plural(waiting, 'change has', 'changes have') + ' not reached the cloud yet. Signing out now leaves '
+        + (waiting === 1 ? 'it' : 'them') + ' on this device only, and this device goes back to its guest data. '
+        + 'Sync first if you want ' + (waiting === 1 ? 'it' : 'them') + ' on your other devices.'
+      : 'This device goes back to the data it had before you signed in. Nothing in your account is deleted, '
+        + 'and signing back in brings it all with you.',
+    confirmText: 'Sign out' + (waiting ? ' anyway' : ''),
+    cancelText: 'Stay signed in',
+  });
+  if (!ok) return;
   closeModal('accountModal');
 
   // Preserve device prefs from the current session
