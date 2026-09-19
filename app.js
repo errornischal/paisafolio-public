@@ -3616,10 +3616,30 @@ function renderPnlCal(){
 
   const empty=el('pnlCalEmpty');
   if(!series.length){
+    // Three different reasons there is nothing to draw, and they were all
+    // saying the same thing: "nothing recorded for Everything", which reads
+    // as "your holdings have no history" when usually the history is there
+    // and it is the per-holding detail that is not. A day's P&L is the
+    // difference between two days' worth of each holding, so it needs a
+    // value per holding on two days running - and readings only started
+    // carrying one recently, so every day before that has the total and
+    // nothing else.
+    const days=(state.pnlHistory||[]).length;
+    const detailed=(state.pnlHistory||[]).filter(p=>p&&p.assets&&Object.keys(p.assets).length).length;
     if(empty){empty.hidden=false;
-      empty.textContent=(state.pnlHistory||[]).length<2
-        ? 'Two days of readings and this fills in. A reading is taken whenever you open the app.'
-        : 'Nothing recorded yet for '+pnlScopeLabel(scope)+'.';}
+      empty.textContent=days<2
+        ? 'Two days of readings and this fills in. One is taken every couple of hours the app is open, and in between if snapshots are set up.'
+        : detailed<2
+          ? (detailed===1
+              ? 'One day so far carries a value for each holding, which is what this is worked out from. Tomorrow gives it something to compare against.'
+              : 'This is worked out from a value per holding, which readings only started carrying recently. It fills in once two days have one.')
+          : !pnlScopeAssets(scope).length
+            ? 'You are not holding anything in '+pnlScopeLabel(scope)+'.'
+            : 'Nothing moved in '+pnlScopeLabel(scope)+' on the days recorded so far.';}
+    // Two dashes above an empty explanation is furniture, not information.
+    const dEl0=el('pnlCalDate'),vEl0=el('pnlCalVal');
+    if(dEl0)dEl0.textContent='';
+    if(vEl0)vEl0.textContent='';
     if(calWrap)calWrap.hidden=true;
     if(barWrap)barWrap.hidden=true;
     return;
