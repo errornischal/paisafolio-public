@@ -150,7 +150,7 @@ function displayName(){
 // The account sheet was a sync panel with a name on top. Sync now lives in
 // its own sheet, and this one does what a profile does: who you are, and the
 // three things you can change about the account.
-function openSyncCenter(){renderSyncCenter();swapModal('accountModal','syncCenterModal');}
+function openSyncCenter(){renderSyncCenter();openModal('syncCenterModal');}
 
 // An account can carry more than one way in. Signing up with Google left you
 // with no password, signing up with a password left you with no Google, and
@@ -232,7 +232,7 @@ function openChangeUsername(){
     : 'This is how you appear to anyone you share a portfolio with, and how a friend finds you. Letters, numbers and underscores.';
   el('credPass').value='';el('credError').style.display='none';
   el('credSubmit').textContent='Save username';
-  swapModal('accountModal','credModal');
+  openModal('credModal');
 }
 async function saveUsername(){
   el('credError').style.display='none';
@@ -298,7 +298,7 @@ function openChangeEmail(){
   el('credNote').textContent='We send a confirmation link to the new address. The change only takes effect once you open it, so the old address keeps working until then.';
   el('credPass').value='';el('credError').style.display='none';
   el('credSubmit').textContent='Send confirmation';
-  swapModal('accountModal','credModal');
+  openModal('credModal');
 }
 function openChangePassword(){
   credMode='password';
@@ -318,7 +318,7 @@ function openChangePassword(){
   const row=el('credPassRow');if(row)row.style.display=adding?'none':'';
   el('credPass').value='';el('credError').style.display='none';
   el('credSubmit').textContent=adding?'Add password':'Change password';
-  swapModal('accountModal','credModal');
+  openModal('credModal');
 }
 function credFail(msg){const e=el('credError');e.textContent=msg;e.style.display='';haptic('error');}
 async function submitCredChange(){
@@ -712,7 +712,7 @@ function openCircleFriend(id){
   circleViewId=id;
   el('circleFriendTitle').textContent=circleName(id);
   renderCircleFriend(id);
-  swapModal('circleModal','circleFriendModal');
+  openModal('circleFriendModal');   // the list stays behind it, to come back to
   circleFetchShared(id).then(d=>{ if(circleViewId===id)renderCircleFriend(id,d); });
 }
 function renderCircleFriend(id,shared){
@@ -782,33 +782,52 @@ function circleSharedHtml(id,d){
     html+='</div>';
   }
   if(theirs.includes('habits')){
-    const hs=d.habits||[];
-    html+='<div class="circle-card"><div class="circle-card-lbl">HABITS</div>';
-    html+=hs.length?hs.slice(0,8).map(h=>{
-      const log=h.log||{};
-      let streak=0;const dd=new Date();dd.setHours(12,0,0,0);
-      if(!log[dayKey(dd)])dd.setDate(dd.getDate()-1);
-      while(log[dayKey(dd)]){streak++;dd.setDate(dd.getDate()-1);}
-      // Thirty squares instead of one word. "not today" says nothing about
-      // whether somebody has kept a habit for a month or has never started.
-      const col=esc(h.color||'#f5a623');
-      let strip='',done=0;
-      const d0=new Date();d0.setHours(12,0,0,0);
-      for(let i=29;i>=0;i--){
-        const dd=new Date(d0);dd.setDate(dd.getDate()-i);
-        const on=!!log[dayKey(dd)];
-        if(on)done++;
-        strip+=`<i class="circle-hb-cell${on?' on':''}" style="${on?'background:'+col:''}"></i>`;
-      }
-      return `<div class="circle-goal"><div class="circle-goal-top">
-        <span><span class="hb-swatch" style="background:${col};display:inline-block;margin-right:6px"></span>${esc(h.name||'Habit')}</span>
-        <span class="circle-meta">${streak?plural(streak,'day','days')+' running':'not today'}</span></div>
-        <div class="circle-hb-strip" title="${done} of the last 30 days">${strip}</div>
-        <div class="circle-meta" style="margin-top:3px">${done} of the last 30 days</div></div>`;
-    }).join(''):'<div class="circle-meta">Nothing yet.</div>';
-    html+='</div>';
+    html+='<div class="circle-card"><div class="circle-card-lbl">HABITS</div>'
+      +circleHabitChart(d.habits||[])+'</div>';
   }
   return html||'<div class="circle-meta" style="padding:8px 2px">Nothing came back.</div>';
+}
+const CIRCLE_HB_DAYS=30;
+function circleHabitChart(hs){
+  const list=(hs||[]).slice(0,12);
+  if(!list.length)return '<div class="circle-meta">Nothing yet.</div>';
+  const d0=new Date();d0.setHours(12,0,0,0);
+  const days=[];
+  for(let i=CIRCLE_HB_DAYS-1;i>=0;i--){const dd=new Date(d0);dd.setDate(dd.getDate()-i);days.push(dayKey(dd));}
+  const perDay=days.map(k=>list.reduce((n,h)=>n+((h&&h.log&&h.log[k])?1:0),0));
+  const maxV=Math.max(1,...perDay);
+  const kept=perDay.reduce((a,b)=>a+b,0);
+  const possible=list.length*CIRCLE_HB_DAYS;
+  const today=perDay[perDay.length-1];
+  // Longest run any one of them is on, which is the fact a streak is for.
+  let best=0;
+  list.forEach(h=>{
+    const log=(h&&h.log)||{};
+    let n=0;const dd=new Date(d0);
+    if(!log[dayKey(dd)])dd.setDate(dd.getDate()-1);
+    while(log[dayKey(dd)]){n++;dd.setDate(dd.getDate()-1);}
+    if(n>best)best=n;
+  });
+  const W=300,H=58;
+  const path=hbSmoothPath(perDay,W,H,maxV);
+  const area=path?path+`L${W},${H}L0,${H}Z`:'';
+  const gid='chb'+Math.random().toString(36).slice(2,8);
+  const legend=list.map(h=>`<span class="circle-hb-key"><i style="background:${esc(h.color||'#f5a623')}"></i>${esc(h.name||'Habit')}</span>`).join('');
+  return `<div class="circle-hb-top">
+      <div><b>${today}</b><span>of ${list.length} today</span></div>
+      <div><b>${best}</b><span>day streak</span></div>
+      <div><b>${possible?Math.round(kept/possible*100):0}%</b><span>kept, 30 days</span></div>
+    </div>
+    <svg class="circle-hb-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Habits kept each day over the last 30 days">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity=".30"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${area?`<path d="${area}" fill="url(#${gid})"/>`:''}
+      ${path?`<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`:''}
+    </svg>
+    <div class="circle-hb-cap"><span>30 days ago</span><span>peak ${maxV} of ${list.length}</span><span>today</span></div>
+    <div class="circle-hb-keys">${legend}</div>`;
 }
 // A line, no axes, no numbers: the shape of someone's year is the most that
 // belongs in a card about somebody else.
@@ -914,7 +933,11 @@ async function adoptGoogleAvatar(force){
   }catch(e){return false;}   // offline, blocked, an expired URL: keep the initial
 }
 // The circle is the same element either way; it just stops being a letter.
-function paintAvatarInto(node,letter){
+// Only the two places you go to look at your own picture open it full size:
+// the Account sheet and the Profile Photo sheet. The one in the header and
+// the one on the Settings card are buttons that lead somewhere, and a photo
+// sitting on top of where you were going is an interruption, not a feature.
+function paintAvatarInto(node,letter,tap){
   if(!node)return;
   const src=avatarSrc();
   node.classList.toggle('has-photo',!!src);
@@ -922,14 +945,16 @@ function paintAvatarInto(node,letter){
     const img=node.querySelector('img');
     if(img){if(img.src!==src)img.src=src;}
     else node.innerHTML='<img alt="" src="'+esc(src)+'"/>';
-    // Your own picture opens at its real size too, the same as anyone
-    // else's in your circle.
+  }else{
+    node.textContent=(letter||'?');
+  }
+  if(src&&tap==='view'){
     node.setAttribute('role','button');
     node.setAttribute('tabindex','0');
     node.setAttribute('title','View photo');
     node.onclick=(e)=>{e.stopPropagation();openPhotoView(avatarSrc(),displayName());};
   }else{
-    node.textContent=(letter||'?');
+    // No handler of its own: the click belongs to whatever this sits inside.
     node.removeAttribute('role');node.removeAttribute('tabindex');node.removeAttribute('title');
     node.onclick=null;
   }
@@ -956,7 +981,7 @@ function profilePhotoAction(){
   if(g)html+=row('useGoogleAvatar()',goog,'Use my Google photo','The picture on your Google account');
   if(has)html+=row('removeAvatar()',bin,'Remove photo','Go back to your initial',true);
   body.innerHTML=html;
-  paintAvatarInto(el('photoModalAvatar'),(displayName()||'?').trim()[0].toUpperCase()||'?');
+  paintAvatarInto(el('photoModalAvatar'),(displayName()||'?').trim()[0].toUpperCase()||'?','view');
   openModal('photoModal');
 }
 function pickAvatarFile(){const f=el('avatarFileInput');if(f){f.value='';f.click();}}
@@ -996,7 +1021,7 @@ function renderProfile(){
   const email = (supabaseUser && supabaseUser.email) || '';
   const name = displayName();
   const av = el('acctAvatarLg');
-  paintAvatarInto(av, (name || email || '?').trim()[0].toUpperCase() || '?');
+  paintAvatarInto(av, (name || email || '?').trim()[0].toUpperCase() || '?', 'view');
   if (el('profPhotoSub')) el('profPhotoSub').textContent = avatarSrc()
     ? 'Set · tap to change or remove'
     : (hasGoogleAvatar() ? 'Upload one, or use your Google photo'
@@ -1054,7 +1079,7 @@ function openChangeDisplayName(){
   el('credNote').textContent='What the app calls you, and what anyone in your circle sees. Leave it empty to go back to your email name.';
   el('credPass').value='';el('credError').style.display='none';
   el('credSubmit').textContent='Save name';
-  swapModal('accountModal','credModal');
+  openModal('credModal');
 }
 function saveDisplayNameFromSheet(){
   const v=(el('credNew').value||'').trim().slice(0,60);
@@ -1525,7 +1550,7 @@ function updateAuthUI() {
     const initials = (supabaseUser.email || '?')[0].toUpperCase();
     let av = inner.querySelector('.acct-avatar');
     if (!av) { inner.innerHTML = '<div class="acct-avatar"></div>'; av = inner.querySelector('.acct-avatar'); }
-    paintAvatarInto(av, initials);
+    paintAvatarInto(av, initials);   // no preview: this button opens the Account sheet
     // Fire and forget: the first time a Google session shows up, go and get
     // the picture. It guards itself against running twice.
     adoptGoogleAvatar();
@@ -1544,7 +1569,7 @@ function updateAuthUI() {
       acctSection.style.display = 'block';
       signInSection.style.display = 'none';
       const email = supabaseUser.email || '';
-      paintAvatarInto(el('settingsAcctAvatar'), email[0]?.toUpperCase() || '?');
+      paintAvatarInto(el('settingsAcctAvatar'), email[0]?.toUpperCase() || '?');   // ditto
       if (el('settingsAcctEmail')) el('settingsAcctEmail').textContent = email;
     } else {
       acctSection.style.display = 'none';
@@ -4913,10 +4938,10 @@ function openAssetEditPicker(id){
   }
   const sec=document.querySelector('#assetEditPickerModal .settings-sec-lbl');if(sec)sec.style.display=(!txs.length||a.category==='liquidity')?'none':'block';
   const delBtn=el('deleteAllTxBtn');if(delBtn)delBtn.style.display=(!txs.length||a.category==='liquidity')?'none':'block';
-  swapModal('assetDetailModal','assetEditPickerModal');
+  openModal('assetEditPickerModal');
 }
 function openEditTxFromPicker(txId){openEditTx(txId);}
-function openEditAssetDetailsFromPicker(){const id=ctxAssetId;closeModal('assetEditPickerModal',true);setTimeout(()=>openEditAsset(id),200);}
+function openEditAssetDetailsFromPicker(){const id=ctxAssetId;closeModal('assetEditPickerModal');setTimeout(()=>openEditAsset(id),200);}
 async function deleteAllPickerTx(){const a=state.assets.find(x=>x.id===ctxAssetId);if(!a)return;const txs=txsForAsset(a);if(!txs.length){toast('No transactions to delete');return;}if(!await askConfirm({title:'Delete all transactions?',message:'All '+txs.length+' transaction'+(txs.length>1?'s':'')+' for '+a.name+'? The asset will remain with zero holdings.',confirmText:'Delete all'}))return;const txIds=new Set(txs.map(t=>t.id));
   // Undoable, like deleting one is. Emptying a ledger rewrites the holding's
   // quantity and cost, which is the most destructive thing this sheet can do,
@@ -6771,7 +6796,7 @@ function openRateEditor(code){
   const cur=customRateFor(code);
   el('rateInput').value=cur?String(+cur.toFixed(6)):(live?live.toFixed(2):'');
   onRateInput();
-  swapModal('currencyModal','rateModal');
+  openModal('rateModal');
 }
 function onRateInput(){
   const v=parseFloat(el('rateInput').value);
@@ -7152,18 +7177,12 @@ function openModal(id){const m=el(id);if(!m)return;lastFocus=document.activeElem
     // go. Measure again once it is actually on screen.
     try{ bindScrollHints(m); }catch(e){}},120);}
 function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();if(id==='assetDetailModal')parkPnlCal();m.classList.remove('open');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
-function swapModal(closeId,openId){
-  // Replace one open modal with another without disturbing the browser history depth -
-  // pressing back afterwards should return to whatever was open before the FIRST modal, not stack an extra entry.
-  const cm=el(closeId);if(cm){cm.classList.remove('open');cm.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==closeId);}
-  const om=el(openId);if(!om)return;lastFocus=lastFocus||document.activeElement;om.classList.add('open');om.setAttribute('aria-hidden','false');modalStack.push(openId);haptic('tap');syncBodyScrollLock();
-  // Same as openModal: focus the sheet, not its first field. Focusing an input
-  // raises the keyboard before you have seen what you opened, and the first
-  // control in the markup is often one this sheet is currently hiding.
-  setTimeout(()=>{const f=om.querySelector('.modal-sheet')||om;
-    try{f.setAttribute('tabindex','-1');f.focus({preventScroll:true});}catch(e){}
-    try{ bindScrollHints(om); }catch(e){}},120);
-}
+// There used to be a swapModal here, which closed one sheet as it opened the
+// next. Every use of it was a drill-down - the account and a field of it, the
+// category list and one category, an asset and its ledger - and in a
+// drill-down the thing you came from is exactly what you want back when you
+// close what you opened. It took that away every time, so it is gone: sheets
+// stack, and closing one uncovers the one beneath.
 function popModalHistoryIfNeeded(){
   if(_suppressHistoryPop)return;
   const want=_modalHistIds.pop();
@@ -7802,7 +7821,7 @@ function openEditAsset(id){const a=state.assets.find(x=>x.id===id);if(!a)return;
   const isTotalMode=(a.category==='crypto'||a.category==='commodity'||a.category==='property');el('assetBuyPrice').value=a.buyPrice?((isTotalMode?a.buyPrice*(a.qty||1):a.buyPrice)*getCurrRate(currentCurrency.code)).toFixed(2):'';el('assetDate').value=a.date||'';el('assetNotes').value=a.notes||'';el('assetCurrentPrice').value=a.currentPrice?(a.currentPrice*getCurrRate(currentCurrency.code)).toFixed(2):'';
   if(a.category==='liquidity'){el('liquidityName').value=a.name;el('liquidityValue').value=a.value?(a.value*getCurrRate(currentCurrency.code)).toFixed(2):'';el('liquidityInterest').value=a.interest||'';el('liquidityMaturity').value=a.maturity||'';el('liquidityNotes').value=a.notes||'';}
   if(a.coinId&&livePrices[a.coinId]){el('cryptoPriceHint').style.display='block';el('cryptoPriceHint').textContent='Live: '+fmt(usdToNpr(livePrices[a.coinId].usd))+' per unit';}
-  updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=!isTotalMode;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);syncLedgerLock(a);swapModal('assetDetailModal','addAssetModal');}
+  updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=!isTotalMode;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);syncLedgerLock(a);openModal('addAssetModal');}
 
 
 
@@ -12398,7 +12417,7 @@ function openCatEdit(id){
   el('catEditHint').textContent=!cat?'It joins the list straight away and Folio can file notes under it.'
     :removable?(used?'Deleting it moves its '+plural(used,'entry','entries')+' to Other.':'Nothing is filed here, so deleting it changes nothing else.')
     :'A built-in category. You can rename and restyle it; it cannot be removed.';
-  if(id)swapModal('catMgrModal','catEditModal');else openModal('catEditModal');
+  openModal('catEditModal');
 }
 function syncCatEditIcon(){
   const p=el('catEditIcoPrev');if(p){p.innerHTML=svgIcon(catEditIcon,18);p.style.background=catEditColor+'22';p.style.color=catEditColor;}
@@ -12439,7 +12458,7 @@ function saveCatEdit(){
   }
   editingCatId=null;
   saveState();renderAll();haptic('success');
-  swapModal('catEditModal','catMgrModal');renderCatManager();
+  closeModal('catEditModal');renderCatManager();
   toast('Category saved','success');
 }
 async function deleteCatEdit(){
@@ -12461,7 +12480,7 @@ async function deleteCatEdit(){
   rebuildCats();saveState();
   editingCatId=null;
   renderAll();haptic('tap');
-  swapModal('catEditModal','catMgrModal');renderCatManager();
+  closeModal('catEditModal');renderCatManager();
   toast(moved?'Deleted, '+plural(moved,'entry','entries')+' moved to Other':'Category deleted','success');
 }
 // An invented category that nothing was ever filed under is clutter. Drop it
