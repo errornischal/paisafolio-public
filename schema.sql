@@ -1035,10 +1035,124 @@ create trigger trg_touch_ai_providers before update on public.ai_providers
   for each row execute function public.touch_updated_at();
 
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- 14. VALUATION RECIPES, so the chart keeps moving with the app closed
+-- ═══════════════════════════════════════════════════════════════════════
+-- A snapshot used to happen only while the app was open, which meant a day
+-- you never opened it had no reading and the line ran straight across it.
+--
+-- The app writes one row here on every sync: for each holding, the price
+-- reading it last used and what that holding was worth at that reading, plus
+-- one `fixed` number covering everything with no live price (bank balances,
+-- land, debts). The scheduled job in api/snapshot.js re-reads the same feeds
+-- and scales each leg by newPrice / oldPrice, which is enough to re-value the
+-- whole portfolio without a second copy of how any of it is worked out.
+--
+-- This holds no names, no notes, no transactions: a currency code, a total,
+-- and a list of (asset id, feed key, two numbers).
+create table if not exists public.valuation_recipes (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  base_ccy    text not null default 'NPR',
+  net_worth   numeric not null default 0,
+  fixed       numeric not null default 0,
+  legs        jsonb not null default '[]',
+  captured_at timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.valuation_recipes enable row level security;
+
+drop policy if exists "recipes_select_own" on public.valuation_recipes;
+create policy "recipes_select_own" on public.valuation_recipes
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "recipes_insert_own" on public.valuation_recipes;
+create policy "recipes_insert_own" on public.valuation_recipes
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "recipes_update_own" on public.valuation_recipes;
+create policy "recipes_update_own" on public.valuation_recipes
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "recipes_delete_own" on public.valuation_recipes;
+create policy "recipes_delete_own" on public.valuation_recipes
+  for delete using (auth.uid() = user_id);
+
+drop trigger if exists trg_touch_valuation_recipes on public.valuation_recipes;
+create trigger trg_touch_valuation_recipes before update on public.valuation_recipes
+  for each row execute function public.touch_updated_at();
+
+-- A recipe goes stale: if the app has not synced for a fortnight the holdings
+-- behind it may be nothing like what is actually held, and a job that keeps
+-- re-pricing it is drawing a line about a portfolio that no longer exists.
+-- The job skips anything older than this; the index is what makes that cheap.
+create index if not exists valuation_recipes_captured_idx
+  on public.valuation_recipes(captured_at);
+
+-- The row the job writes into carries today's per-holding values and today's
+-- two-hourly readings, so the existing pull picks both up with no change.
+-- `snapshot_date <= current_date` on networth_history is deliberate and still
+-- correct here: the job only ever writes today.
+
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- 15. THE SCHEDULE, every two hours
+-- ═══════════════════════════════════════════════════════════════════════
+-- Run this block ONCE, after setting the two settings below. It is separate
+-- from the rest of the file because it needs values only you have, and
+-- because re-running the whole schema should not silently re-point a live
+-- schedule at a different deployment.
+--
+--   1. In the Supabase dashboard: Database → Extensions → enable `pg_cron`
+--      and `pg_net`.
+--   2. In Vercel: add an environment variable CRON_SECRET, a long random
+--      string (e.g. `openssl rand -hex 32`), then redeploy.
+--   3. Run the block below with your own deployment URL and that same
+--      secret. Both are stored in Postgres, readable only by the service
+--      role, and never reach the browser.
+--
+-- To see what it has been doing:
+--   select * from cron.job_run_details order by start_time desc limit 20;
+-- To stop it:
+--   select cron.unschedule('paisafolio-snapshot');
+--
+-- ── begin one-time block ──────────────────────────────────────────────
+-- create extension if not exists pg_cron;
+-- create extension if not exists pg_net;
+--
+-- alter database postgres set app.snapshot_url    = 'https://YOUR-APP.vercel.app/api/snapshot';
+-- alter database postgres set app.snapshot_secret = 'YOUR-CRON-SECRET';
+--
+-- select cron.schedule(
+--   'paisafolio-snapshot',
+--   '0 */2 * * *',                      -- on the hour, every two hours, UTC
+--   $$
+--   select net.http_post(
+--     url     := current_setting('app.snapshot_url'),
+--     headers := jsonb_build_object(
+--                  'Content-Type',  'application/json',
+--                  'Authorization', 'Bearer ' || current_setting('app.snapshot_secret')),
+--     body    := '{}'::jsonb,
+--     timeout_milliseconds := 55000
+--   );
+--   $$
+-- );
+-- ── end one-time block ────────────────────────────────────────────────
+--
+-- Nepal is UTC+05:45, so '0 */2 * * *' lands at 05:45, 07:45, 09:45 and so
+-- on local time. The slots the app itself records are two-hour buckets of
+-- absolute time, so the two interleave without fighting: whichever of them
+-- writes a given bucket last is the one that stands.
+
+
 -- ════════════════════════════════════════════════════════════════════════
 -- DONE (part two). Tables now: profiles, assets, debts, goals, recurring,
 -- transactions, spends, habits, settings, networth_history, friendships,
--- portfolio_shares, ai_providers. Every one RLS-locked to auth.uid(); the only way anyone
+-- portfolio_shares, ai_providers, valuation_recipes. Every one RLS-locked to
+-- auth.uid(); the only way anyone
 -- else reads a row is an accepted friendship plus an explicit share, and
--- that path is SELECT only.
+-- that path is SELECT only. The scheduled snapshot job reads recipes and
+-- writes networth_history with the service role, which bypasses RLS: it is
+-- the only thing that ever touches another user's row, it reads no names and
+-- no notes, and it is reachable only with CRON_SECRET.
 -- ════════════════════════════════════════════════════════════════════════

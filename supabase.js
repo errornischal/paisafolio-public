@@ -653,9 +653,41 @@ async function pushToCloud(bypassWipeGuard = false) {
           // never asked for `data`), so it was a growing write-only blob:
           // harmless while it held one number per day, several hundred
           // kilobytes per sync once each day carries a value per holding.
-          data: { assets: (((state.pnlHistory || []).find(x => x && x.date === today) || {}).assets) || {} },
+          data: {
+            assets: (((state.pnlHistory || []).find(x => x && x.date === today) || {}).assets) || {},
+            // The two-hourly readings for today, from both sides: a pull put
+            // the job's slots into state.intraday, so writing it back keeps
+            // them. Older slots have already aged out of the ring.
+            intraday: (state.intraday || []).filter(x => x && Number(x.t) > 0),
+          },
         }, { onConflict: 'user_id,snapshot_date' });
       if (nwErr) throw nwErr;
+    }
+
+    // What the scheduled snapshot job re-prices while the app is closed: the
+    // feed reading behind each holding and what it was worth at that reading.
+    // See valuationRecipe() in app.js and api/snapshot.js for why that is
+    // enough. A failure here must not fail the sync - it costs the two-hourly
+    // readings until the next push, not any of the data above.
+    try {
+      if (typeof valuationRecipe === 'function') {
+        const recipe = valuationRecipe();
+        if (recipe && Array.isArray(recipe.legs)) {
+          const { error: recErr } = await sbClient
+            .from('valuation_recipes')
+            .upsert({
+              user_id: uid,
+              base_ccy: recipe.base || 'NPR',
+              net_worth: recipe.nw,
+              fixed: recipe.fixed,
+              legs: recipe.legs,
+              captured_at: recipe.at,
+            }, { onConflict: 'user_id' });
+          if (recErr) throw recErr;
+        }
+      }
+    } catch (e) {
+      console.warn('[sync] valuation recipe not stored, snapshots while closed will pause:', e && e.message ? e.message : e);
     }
 
     // The profile is the account-level record: who you are, and the choices
@@ -700,6 +732,42 @@ function computeNetWorthForSync() {
     if (typeof calcNetWorth === 'function') return calcNetWorth();
   } catch (e) {}
   return null;
+}
+
+// The most recent reading the scheduled job took. Null means it has never
+// written for this account: either it is not set up, or it has not run yet.
+function lastCronAt(rows) {
+  let best = null;
+  for (const r of (rows || []).slice(-4)) {
+    const d = r && r.data;
+    if (!d || d.src !== 'cron') continue;
+    const t = Date.parse(d.at || '');
+    if (Number.isFinite(t) && (best === null || t > best)) best = t;
+  }
+  return best ? new Date(best).toISOString() : null;
+}
+
+// The two-hourly readings live on the day they belong to, so the last two
+// days of rows are where the 48-hour ring is. Union them with whatever this
+// device recorded for itself, newest write per slot winning, because both
+// sides are writing into the same absolute two-hour buckets.
+function cloudIntraday(rows) {
+  const KEEP = 48 * 3600 * 1000;
+  const floor = Date.now() - KEEP;
+  const bySlot = new Map();
+  for (const x of (typeof state !== 'undefined' && Array.isArray(state.intraday) ? state.intraday : [])) {
+    const t = x && Number(x.t);
+    if (Number.isFinite(t) && t >= floor) bySlot.set(t, Number(x.v) || 0);
+  }
+  for (const r of (rows || []).slice(-3)) {
+    const list = r && r.data && r.data.intraday;
+    if (!Array.isArray(list)) continue;
+    for (const x of list) {
+      const t = x && Number(x.t);
+      if (Number.isFinite(t) && t >= floor) bySlot.set(t, Number(x.v) || 0);
+    }
+  }
+  return [...bySlot.entries()].sort((a, b) => a[0] - b[0]).map(([t, v]) => ({ t, v }));
 }
 
 async function pullFromCloud(fromSignIn = false) {
@@ -785,11 +853,18 @@ async function pullFromCloud(fromSignIn = false) {
           if (av && typeof av === 'object' && Object.keys(av).length) pt.assets = av;
           return pt;
         }),
+        // The 1D view is drawn from these. Most of them were taken by the
+        // scheduled job, at hours this device was not running.
+        intraday: cloudIntraday(nwRes.data),
+        // When that job last wrote anything, so the Sync Center can say
+        // whether it is running at all rather than leaving it a mystery.
+        cronSeenAt: lastCronAt(nwRes.data),
         settings: settingsRes.data ? { ...settingsRes.data.data } : state.settings,
         lastUpdated: new Date().toISOString(),
       };
       // Same list as loadCloudCache, from the same place: a pull must not hand
       // this device another device's view preferences.
+      // (cloudIntraday is defined below, beside the other row readers.)
       const keepLocal = {};
       const keys = (typeof DEVICE_PREF_KEYS !== 'undefined' && DEVICE_PREF_KEYS)
         || ['theme','hideBalance','haptics','reduceMotion'];

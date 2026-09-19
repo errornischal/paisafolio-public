@@ -1748,11 +1748,43 @@ function renderSyncCenter() {
     html += `<div class="sync-center-row" style="border:1px solid var(--border);border-radius:12px;padding:10px"><span class="sync-center-row-ico" style="color:var(--green)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></span><div><div class="sync-center-row-name">Everything's synced</div><div class="sync-center-row-sub">All your data matches the cloud</div></div></div>`;
   }
 
+  // Whether readings are still being taken while the app is closed. Without
+  // this the scheduled job is invisible: set up wrong, it does nothing and
+  // says nothing, and the first sign is a flat line weeks later.
+  html += `<div class="sync-center-section-lbl">WHILE THE APP IS CLOSED</div>`;
+  html += snapshotJobRow();
+
   body.innerHTML = html;
   // The pending list is freshly created here, so re-wire its scroll hint:
   // without this the fade never appears on the first open and the count in
   // the header silently disagrees with what is visible.
   if (typeof bindScrollHints === 'function') bindScrollHints(body);
+}
+
+// Readings are taken every two hours by the job in api/snapshot.js, so a day
+// the app is never opened still has a shape. It is a separate piece of setup
+// (schema.sql section 15), so this reports honestly whether it is happening.
+function snapshotJobRow() {
+  const at = state.cronSeenAt ? Date.parse(state.cronSeenAt) : null;
+  const fresh = Number.isFinite(at) && (Date.now() - at) < 6 * 3600 * 1000;
+  const ok = Number.isFinite(at);
+  const ico = fresh ? 'check' : ok ? 'clock' : 'alert';
+  const col = fresh ? 'var(--green)' : ok ? 'var(--accent)' : 'var(--text3)';
+  const name = fresh ? 'Snapshots are running'
+    : ok ? 'Snapshots have paused' : 'Snapshots are not set up';
+  const sub = fresh
+    ? 'Every two hours, so a day you never open this still has a line. Last one ' + relTime(at) + '.'
+    : ok ? ('Last one ' + relTime(at) + '. Until it runs again, only the times you open the app are recorded.')
+         : 'Right now a reading is only taken while the app is open. See section 15 of schema.sql to turn it on.';
+  const svg = ico === 'check'
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>'
+    : ico === 'clock'
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>'
+    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16" x2="12" y2="16.01"/></svg>';
+  return `<div class="sync-center-row" style="border:1px solid var(--border);border-radius:12px;padding:10px">
+    <span class="sync-center-row-ico" style="color:${col}">${svg}</span>
+    <div><div class="sync-center-row-name">${name}</div>
+    <div class="sync-center-row-sub">${sub}</div></div></div>`;
 }
 
 // Handle enter key in auth inputs
@@ -2836,9 +2868,9 @@ function csCandlesFromSeries(series,bucketMs){
 // rupees and only for holdings actually worth something, which keeps a year
 // of thirty holdings around a hundred kilobytes rather than a megabyte.
 //
-// There is no server taking these. A snapshot happens when the app is open,
-// so a day it is never opened has no reading, and the series says so rather
-// than inventing one.
+// A snapshot also happens while the app is closed, every two hours, taken by
+// the scheduled job in api/snapshot.js. See valuationRecipe() below for what
+// that job is given to work with.
 function assetValueSnapshot(){
   const m={};
   (state.assets||[]).forEach(a=>{
@@ -2847,6 +2879,72 @@ function assetValueSnapshot(){
     if(v)m[a.id]=v;
   });
   return m;
+}
+// ── What the scheduled job needs to value this portfolio without the app ──
+//
+// Prices are the only thing that moves while the app is closed. Nothing else
+// can: no transaction is entered, no holding is added, no account is opened.
+// So the job does not need to know how any of this is valued - it needs to
+// know which numbers came from a price feed, and what they were worth when
+// they were last read.
+//
+// Each priced holding contributes a leg: the feed reading it used (`p`) and
+// what the holding was worth at that reading (`v`). The job re-reads the same
+// feed and scales: v x (newP / p). That ratio cancels every constant in
+// between - quantity, unit conversion, the exchange rate into your base
+// currency, the Nepali tola rate - which is why the job can get the right
+// answer without carrying a second copy of how any of it is worked out.
+// Anything with no live price (a bank balance, land, a hand-typed price)
+// carries its value unchanged, and everything left over - debts, accrued
+// interest - is one `fixed` number.
+//
+// This is a copy of the branches in getAssetCurrentPrice(), and has to stay
+// one: it names the exact feed field that function read.
+function assetPriceLeg(a){
+  if(!a)return null;
+  if(a.coinId&&livePrices[a.coinId]){
+    const lp=livePrices[a.coinId];
+    if(a.category==='commodity'&&lp.nepalTolaNpr&&baseCode()==='NPR'){
+      const u=a.unit||'troy oz';
+      // gram and kg are quoted per gram when the feed gives a gram rate;
+      // everything else is derived from the tola rate.
+      if((u==='gram'||u==='kg')&&lp.nepalGramNpr)
+        return {k:'coin:'+a.coinId+':nepalGramNpr',p:num(lp.nepalGramNpr)};
+      return {k:'coin:'+a.coinId+':nepalTolaNpr',p:num(lp.nepalTolaNpr)};
+    }
+    return {k:'coin:'+a.coinId+':usd',p:num(lp.usd)};
+  }
+  const q=nepseQuote(a);
+  if(q&&num(q.price)>0)return {k:'nepse:'+nepseSym(a)+':price',p:num(q.price)};
+  return null;
+}
+function valuationRecipe(){
+  const legs=[];
+  let priced=0;
+  (state.assets||[]).forEach(a=>{
+    if(!a||!a.id)return;
+    const v=num(getAssetCurrentValue(a));
+    const leg=assetPriceLeg(a);
+    if(leg&&leg.p>0&&v){
+      legs.push({id:a.id,k:leg.k,p:leg.p,v:Math.round(v*100)/100});
+      priced+=v;
+    }else if(v){
+      // No feed behind it, so the job leaves it exactly as it is.
+      legs.push({id:a.id,v:Math.round(v*100)/100});
+      priced+=v;
+    }
+  });
+  const nw=num(calcNetWorth());
+  return {
+    v:1,
+    base:baseCode(),
+    nw:Math.round(nw),
+    // Net worth is assets minus what is owed. Everything the legs do not
+    // cover - the debts, and any holding worth nothing - is this one number.
+    fixed:Math.round((nw-priced)*100)/100,
+    legs,
+    at:new Date().toISOString(),
+  };
 }
 const PNL_HIST_DAYS=365;
 // ── Today, in more detail than once ──

@@ -16,9 +16,10 @@ the folder, and it runs.
 - [Setup](#setup)
   - [1. Deploy it](#1-deploy-it)
   - [2. Accounts and sync (optional)](#2-accounts-and-sync-optional)
-  - [3. The assistant (optional)](#3-the-assistant-optional)
-  - [4. Make yourself admin (optional)](#4-make-yourself-admin-optional)
-  - [5. Nepal share prices (optional)](#5-nepal-share-prices-optional)
+  - [3. Snapshots while the app is closed (optional)](#3-snapshots-while-the-app-is-closed-optional)
+  - [4. The assistant (optional)](#4-the-assistant-optional)
+  - [5. Make yourself admin (optional)](#5-make-yourself-admin-optional)
+  - [6. Nepal share prices (optional)](#6-nepal-share-prices-optional)
 - [How the pieces fit](#how-the-pieces-fit)
 - [Where your data actually lives](#where-your-data-actually-lives)
 - [What is safe to put in which file](#what-is-safe-to-put-in-which-file)
@@ -107,7 +108,47 @@ Optional, under **Authentication → Sign In / Providers → Email**: turn
 an unverified-email warning until the link is clicked. Leave it on and an
 account cannot be used until the link is clicked. The app handles both.
 
-### 3. The assistant (optional)
+### 3. Snapshots while the app is closed (optional)
+
+A reading of your net worth is taken whenever prices refresh, and prices only
+refresh while the app is open. On its own that means a day you never opened it
+has no reading at all: the chart draws a straight line across it and the Daily
+P&L calendar has nothing for it.
+
+[`api/snapshot.js`](api/snapshot.js) closes that gap. Every two hours it
+re-prices every account and writes a reading, with nobody looking.
+
+It does not carry a second copy of how a holding is valued — that would drift
+from the first and quietly draw a wrong chart. The app leaves it a recipe in
+`valuation_recipes` on every sync: per holding, the exact price-feed reading
+the app last used and what that holding was worth at that reading. The job
+re-reads the same feed and scales by `newPrice / oldPrice`, and that ratio
+cancels quantity, unit conversion, the rate into your base currency and the
+Nepali retail tola rate all at once. Anything with no live price behind it — a
+bank balance, land, a hand-typed price — carries its value unchanged.
+
+1. Supabase, **Database → Extensions**: enable `pg_cron` and `pg_net`
+2. Re-run [`schema.sql`](schema.sql) so `valuation_recipes` exists
+3. Vercel, **Settings → Environment Variables**: add `CRON_SECRET`, a long
+   random string (`openssl rand -hex 32`), apply to Production, redeploy
+4. Run the one-time block at the bottom of `schema.sql` (section 15) with your
+   deployment URL and that same secret
+
+The Sync Center then says whether readings are actually being taken, so a
+setup that silently does nothing shows up there rather than as a flat line
+weeks later.
+
+Vercel's own cron is not used: on the Hobby plan it runs at most once a day,
+and once a day is the problem rather than the fix. The schedule lives in
+Postgres instead, which is free and runs as often as you like.
+
+`/api/snapshot` sends no CORS headers and is not reachable from the app.
+`CRON_SECRET` is the only thing that may run it; without one the route answers
+503 and never touches the database. It reads two tables — the recipes, and its
+own last row per user — neither of which holds a name, a note, a transaction
+or a category, and it answers with counts only.
+
+### 4. The assistant (optional)
 
 The Assistant button is disabled until at least one AI provider has a key.
 Keys go in environment variables, never in the app files. See
@@ -127,7 +168,7 @@ The assistant also does the category-picking on the spending page. Without a
 key that still works, using an offline keyword table instead, and the category
 field becomes a dropdown you choose from.
 
-### 4. Make yourself admin (optional)
+### 5. Make yourself admin (optional)
 
 The admin page at `/admin.html` manages AI providers and their keys, lists
 users, and shows what is in the database. It is not linked from anywhere and
@@ -146,7 +187,7 @@ is invisible to normal accounts.
    so it belongs in an environment variable and nowhere else, ever.
 4. Reload. A row appears at the bottom of Settings.
 
-### 5. Nepal share prices (optional)
+### 6. Nepal share prices (optional)
 
 Only if you track NEPSE-listed shares. Set `NEPSE_API_URL` or
 `NEPSE_SCRAPE_URL` to a source you have access to. Without them you type
