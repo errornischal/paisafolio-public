@@ -1,35 +1,8 @@
-// api/ai.js, Vercel Serverless Function
-// Proxies chat requests to Google's Gemini API.
-//
-// WHY THIS EXISTS AT ALL, rather than calling Gemini from app.js:
-// Paisafolio is a static PWA served to the public. Anything in app.js is
-// readable by anyone who opens DevTools on the deployed site, so an API key
-// put there is a published API key, no matter how private the git repo is.
-// The key lives in a Vercel environment variable and never leaves the server.
-//
-// SET IT UP:
-//   Vercel dashboard -> your project -> Settings -> Environment Variables
-//   Name:  GEMINI_API_KEY
-//   Value: <your key>
-//   Apply to Production + Preview, then redeploy.
-// Locally: `vercel env pull` or export GEMINI_API_KEY before `vercel dev`.
-
-// Google retires these faster than an app gets redeployed: gemini-2.0-flash is
-// already gone and gemini-2.5-flash is closed to new callers, both returning a
-// 404 that would look to a user like the assistant is simply broken. So this is
-// a list, tried in order, and a retired or momentarily overloaded model falls
-// through to the next instead of surfacing as an error. GEMINI_MODEL overrides
-// the whole chain when you want to pin one.
-// Providers, keys and routing now live in their own modules. The list of
-// models is no longer written here at all: ids rot (Groq retired its Llama
-// models in 2026, the second time a hard-coded id in this repo went dead),
-// so each provider is asked what it can run and the admin picks from that.
+// Chat proxy. Keys live in server env/db and never reach app.js, which anyone can read.
 const { callProvider, PROVIDERS } = require('./_providers.js');
 const { loadConfig, planFor, markFailed, markOk } = require('./_aiconfig.js');
 
-// Walks the plan for a job, trying each provider's models in turn, and
-// returns the first real answer. Everything the caller needs to know about
-// which key served it comes back in `via`.
+// First real answer across the job's providers and models; `via` says which key served it.
 async function runAI(job, request, timeoutMs) {
   const config = await loadConfig();
   const plan = planFor(job, config);
@@ -50,9 +23,7 @@ async function runAI(job, request, timeoutMs) {
         lastMsg = err.message || '';
         console.error('[ai]', job, row.id, model, lastStatus, String(lastMsg).slice(0, 200));
         markFailed(row.id, lastStatus);
-        // A request we malformed will fail the same way on every model here,
-        // so move to the next provider rather than grinding through this
-        // one's whole list.
+        // A malformed request fails the same on every model; move to the next provider.
         if (!err.retriable) break;
       }
     }
@@ -68,9 +39,7 @@ const DEFAULT_ORIGINS = [
   'http://nepbytebazaar.kesug.com',
 ];
 
-// Vercel gives every deployment of every project a *.vercel.app hostname, so
-// a bare endsWith('.vercel.app') would let anyone's page spend this project's
-// AI quota. Scope it to this project's own deployments.
+// Only this project's own *.vercel.app deployments, not anyone's.
 function projectPreviewHost(host) {
   const prod = (process.env.VERCEL_PROJECT_PRODUCTION_URL || '').trim().toLowerCase();
   if (!host.endsWith('.vercel.app')) return false;
@@ -92,9 +61,7 @@ function allowedOrigin(origin) {
   return null;
 }
 
-// One shared bucket per instance. Not a real rate limiter (serverless spreads
-// across instances) but enough to blunt a runaway loop in the client, which is
-// the failure this is actually guarding against.
+// Per-instance limiter; blunts a runaway client loop.
 const HITS = new Map();
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 20;
@@ -107,12 +74,7 @@ function overLimit(key) {
   return hits.length > MAX_PER_WINDOW;
 }
 
-// A second, much smaller job on the same key: put one line of free text into
-// one of the app's spending categories. People write "khaja", "chiya with sn",
-// "petrol bike", "recharge ncell", a keyword table gets the common ones and
-// misses everything else, and it cannot read Nepali, romanised Nepali, or a
-// typo. The model can. It answers with an id and nothing else, so the reply is
-// cheap to produce and impossible to misread.
+// Classify one line of free text (incl. romanised Nepali) into an app category id.
 const CATEGORISE_SYSTEM = [
   'You sort one short expense or income note into exactly one category.',
   'The user is in Nepal. Notes may be in English, Nepali, romanised Nepali, or a mix,',
@@ -291,12 +253,10 @@ module.exports = async function handler(req, res) {
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
   if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Bad request body.' });
 
-  // ── Categorise one note ────────────────────────────────────────────
-  // Same key, same rate limit, its own prompt and a tiny token budget.
+  // Categorise one note
   if (String(body.task || '') === 'categorise') {
     const note = String(body.note || '').slice(0, 160).trim();
-    // The client sends the list, so adding a category to the app never needs a
-    // matching change here, and the answer can only ever be one the app knows.
+    // The client sends its categories, so the answer can only be one it knows.
     const cats = Array.isArray(body.categories) ? body.categories.slice(0, 40) : [];
     const clean = cats
       .map((c) => ({ id: String((c && c.id) || '').slice(0, 40), label: String((c && c.label) || '').slice(0, 60) }))
@@ -305,9 +265,6 @@ module.exports = async function handler(req, res) {
 
     const listed = clean.map((c) => `${c.id}: ${c.label}`).join('\n');
     try {
-      // 'quick' rather than 'chat': one line in, one word out, and it is
-      // waiting in front of someone who is still typing. The router sends it
-      // to whichever key is fastest and leaves the big-context ones alone.
       const out = await runAI('quick', {
         system: CATEGORISE_SYSTEM,
         turns: [{ role: 'user', text: `Categories:\n${listed}\n\nNote: ${note}` }],
@@ -316,19 +273,14 @@ module.exports = async function handler(req, res) {
       }, 8_000);
       const raw = String(out.text || '').trim();
       const answer = raw.toLowerCase();
-      // An existing id is the normal answer, and has to be one that went out:
-      // a sentence, an id we never sent, or an empty reply is no answer.
       const hit = clean.find((x) => x.id.toLowerCase() === answer);
       if (hit) return res.status(200).json({ category: hit.id, via: out.via });
-      // A proposal for a new one. Only the shape is checked here; whether it
-      // is really new, or just another word for something the app already has,
-      // is decided on the client where the full list lives.
+      // Only the shape is checked here; the client decides if it is really new.
       const m = /^new\s*:\s*([^|\n]{2,40})(?:\|\s*([a-z]*))?(?:\s*\|\s*([a-z]*))?/i.exec(raw);
       if (m) {
         const label = m[1].trim().replace(/["'`.]+$/g, '');
         const group = (m[2] || '').trim().toLowerCase();
-        // The icon is a hint, not a contract: the client checks it against the
-        // icons it actually has and falls back on its own table otherwise.
+        // A hint; the client falls back to its own icons.
         const icon = (m[3] || '').trim().toLowerCase().slice(0, 20);
         if (label && /[a-z]/i.test(label) && label.length <= 28) {
           return res.status(200).json({ category: null, propose: { label, group, icon }, via: out.via });
@@ -348,14 +300,11 @@ module.exports = async function handler(req, res) {
   let snapshot = '';
   if (body.snapshot != null) {
     snapshot = typeof body.snapshot === 'string' ? body.snapshot : JSON.stringify(body.snapshot);
-    // Last resort only. The client trims its own lists to stay well under
-    // this, because slicing a JSON string mid-object hands the model
-    // something it cannot parse and it answers from the fragment anyway.
+    // Last resort: slicing JSON mid-object gives the model a fragment.
     if (snapshot.length > MAX_SNAPSHOT_BYTES) snapshot = snapshot.slice(0, MAX_SNAPSHOT_BYTES) + '…(TRUNCATED, this JSON is incomplete, say so rather than guessing)';
   }
 
-  // Prior turns, so a follow-up like "and last month?" has something to attach
-  // to. Only role and text survive; anything else the client sends is dropped.
+  // Prior turns, role and text only.
   const history = Array.isArray(body.history) ? body.history.slice(-MAX_TURNS) : [];
   const turns = [];
   for (const turn of history) {
@@ -369,15 +318,10 @@ module.exports = async function handler(req, res) {
   });
 
   try {
-    // 'chat': a whole snapshot plus a real question. The router prefers the
-    // providers with the context window and the reasoning for it, and only
-    // falls to the fast ones if those are rate limited.
     const out = await runAI('chat', {
       system: SYSTEM,
       turns,
-      // Headroom, not a target. On the thinking models this budget covers the
-      // reasoning as well as the reply, and the visible answers stay short
-      // because the prompt asks for short.
+      // Covers reasoning tokens on thinking models too.
       maxTokens: 4000,
       temperature: 0.4,
     }, 25_000);
@@ -391,8 +335,7 @@ module.exports = async function handler(req, res) {
       });
     }
     const status = (err && err.status) || 502;
-    // Upstream messages can name the key or the project. Log the detail,
-    // return only a short reason.
+    // Upstream errors can name the key; log the detail, return a short reason.
     const reason =
       status === 429 ? 'Every AI provider is rate limiting right now. Try again shortly.'
       : status === 408 ? 'The AI service took too long. Try again.'

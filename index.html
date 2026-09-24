@@ -3,20 +3,15 @@
 <head>
 <meta charset="UTF-8"/>
 <script>
-/* Runs before any stylesheet is parsed, so the first paint is already the
-   right theme. The <html> tag used to hard-code data-theme="dark", which
-   meant a light-theme user got a dark flash on every single load while
-   app.js downloaded, parsed and finally corrected it.
-   Device preferences live in their own key, deliberately outside the synced
-   state blob, see loadDevicePrefs() in app.js for why. */
+/* Apply the saved theme before CSS parses, so there is no flash. Device prefs have
+   their own key (see loadDevicePrefs() in app.js). */
 (function(){
   var t = "dark";
   try {
     var raw = localStorage.getItem("paisafolio_device_prefs");
     if (raw) { t = (JSON.parse(raw) || {}).theme || "dark"; }
     else {
-      /* Existing installs have no prefs key yet; fall back to whichever
-         state blob this device last wrote so they see no change. */
+      /* Older installs: fall back to the last state blob this device wrote. */
       var keys = ["paisafolio_local"], i;
       for (i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
@@ -36,11 +31,8 @@
   document.documentElement.dataset.theme = (t === "light") ? "light" : "dark";
 })();
 </script>
-<!-- interactive-widget=resizes-content makes the on-screen keyboard shrink the
-     LAYOUT viewport, not just the visual one. A position:fixed sheet then sits
-     on top of the keyboard by itself, with no JavaScript measuring anything.
-     Two hand-rolled attempts at that arithmetic both got it wrong; this is what
-     the platform provides for exactly this problem. -->
+<!-- interactive-widget=resizes-content: the keyboard shrinks the layout viewport,
+     so fixed sheets sit above it without JS. -->
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#0e0e0e" id="metaTheme"/>
 <meta name="color-scheme" content="dark light"/>
@@ -54,44 +46,21 @@
 <link rel="apple-touch-icon" href="icon.svg"/>
 <title>Paisafolio - Net Worth & Portfolio Tracker</title>
 <link rel="preload" href="app.js" as="script"/>
-<!-- Poppins is self-hosted (fonts/*.woff2). It used to come from the Google Fonts
-     CDN, which meant the app silently fell back to the system sans whenever that
-     CDN was slow, blocked, or simply unreachable, including every offline PWA
-     launch, since the stylesheet was never part of the precached shell.
-     Self-hosting makes the typeface a first-party asset that ships with the app. -->
+<!-- Self-hosted Poppins, so offline launches and blocked CDNs keep the typeface. -->
 <link rel="preload" href="fonts/poppins-400-latin.woff2" as="font" type="font/woff2" crossorigin/>
 <link rel="preload" href="fonts/poppins-700-latin.woff2" as="font" type="font/woff2" crossorigin/>
 <link rel="preload" href="fonts/poppins-800-latin.woff2" as="font" type="font/woff2" crossorigin/>
 <!-- ₹ (U+20B9) lives in the latin-ext subset, so it is critical for a rupee-first app. -->
 <link rel="preload" href="fonts/poppins-700-latin-ext.woff2" as="font" type="font/woff2" crossorigin/>
-<!-- Chart.js and supabase-js are vendored into vendor/ rather than pulled from
-     cdn.jsdelivr.net. The CDN is blocked on some networks and hosts, and when
-     it was, charts silently vanished and sign-in failed outright with
-     "Couldn’t load the sign-in library". Same reasoning as the fonts: a
-     dependency the app cannot start without should ship with the app. -->
+<!-- Chart.js and supabase-js are vendored: CDNs are blocked on some networks. -->
 <script defer src="vendor/chart.umd.js" onerror="console.warn('chart.umd.js failed to load, charts will be unavailable')"></script>
 <script src="sb-config.js"></script>
 <script src="vendor/supabase-js.umd.js" onerror="console.warn('supabase-js.umd.js failed to load, cloud sync will be unavailable')"></script>
 <script src="supabase.js" onerror="console.warn('supabase.js failed to load, running fully offline/local-only')"></script>
 <script>
-// Fallback shim: if supabase.js didn't load (e.g. file missing, blocked CDN,
-// or you're just previewing index.html standalone without that file present),
-// these no-op stand-ins keep the app fully functional in local-only mode
-// instead of throwing "X is not defined" errors.
-// IMPORTANT: everything here is assigned via window.xxx (never `var`/`const`)
-// so this block can NEVER throw "already been declared", even if a stale
-// cached copy of this file or of supabase.js ends up loaded alongside a
-// newer one (e.g. a service worker serving an old supabase.js while a fresh
-// index.html loads, or vice versa).
-// These are declared with `var` (not `let`/`const`) specifically because
-// `var` is safely re-declarable across sibling <script> tags sharing the
-// same top-level scope, unlike `let`/`const` (which would throw
-// "already been declared" if supabase.js declares them again). This
-// guarantees the bare identifiers below always exist, so if supabase.js
-// fails to load/execute for any reason (missing file, blocked by host,
-// wrong MIME type, an HTML error page served instead of the real file -
-// all seen on some free hosts), index.html's own references to `sbClient`
-// etc. resolve to a safe default instead of throwing ReferenceError.
+// Offline stand-ins for when supabase.js does not load, so the app runs local-only.
+// Assigned on window (and `var` for sbClient) so a stale duplicate can never throw
+// "already been declared".
 var sbClient = null;
 if (typeof window.STORE_KEY === 'undefined') window.STORE_KEY = 'paisafolio_local';
 if (typeof window.cloudKey === 'undefined') window.cloudKey = function (uid) { return 'paisafolio_cloud_' + uid; };

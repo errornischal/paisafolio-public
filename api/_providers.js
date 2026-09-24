@@ -1,29 +1,12 @@
-// ════════════════════════════════════════════════════════════════════════
-// AI PROVIDERS
-// ════════════════════════════════════════════════════════════════════════
-// Seven free tiers, one interface. Five of them speak OpenAI's chat shape,
-// so they share an adapter; Google and Cohere each get their own.
-//
-// WHY NO HARD-CODED MODEL LIST:
-// Groq retired llama-3.3-70b-versatile and llama-3.1-8b-instant in 2026,
-// which is the second time a model id baked into this repo has gone dead.
-// Every provider therefore exposes a models endpoint, the admin page reads
-// it live, and what gets called is whatever the admin picked from that list.
-// The ids below are only a starting suggestion for a fresh install.
-//
-// WHY THE KEYS ARE NOT HERE:
-// They live in the `ai_providers` table, read server-side with the service
-// role. Supabase's anon key is public by design, so anything the browser can
-// read is public too. See api/_adminAuth.js.
+// AI providers: seven free tiers behind one interface. Model ids come from each
+// provider's models endpoint via the admin page, since hard-coded ids keep being
+// retired. Keys live in the ai_providers table, read server-side only.
 
 const OPENAI_SHAPE = 'openai';
 const GOOGLE_SHAPE = 'google';
 const COHERE_SHAPE = 'cohere';
 
-// `jobs` is what a provider is actually good for, which is how the router
-// spreads load instead of hammering one key:
-//   chat      a long snapshot and a real question, wants context and reasoning
-//   quick     one line in, one word out, wants latency above all
+// `jobs`: chat = long context and reasoning; quick = lowest latency.
 const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
@@ -74,8 +57,7 @@ const PROVIDERS = {
     note: 'One key, many models. Free ones end in :free. Useful as a catch-all.',
     jobs: { chat: 50, quick: 50 },
     suggest: [],
-    // OpenRouter asks callers to identify themselves; it also affects which
-    // free models are served.
+    // OpenRouter asks callers to identify themselves.
     extraHeaders: (cfg) => ({
       // OpenRouter wants to know which site the request is for. Yours, not
       // the one this code happened to be written on: Vercel sets the project
@@ -108,17 +90,12 @@ const PROVIDERS = {
 };
 const PROVIDER_IDS = Object.keys(PROVIDERS);
 
-// ── Calling one ────────────────────────────────────────────────────────
-// Every adapter takes the same thing and returns the same thing, so the
-// router never has to know which provider it is talking to.
-//   { system, turns:[{role:'user'|'model', text}], maxTokens, temperature }
-//   -> { text }  or throws { status, retriable, message }
+// Adapters: { system, turns, maxTokens, temperature } -> { text } or throw { status, retriable, message }.
 
 function httpError(status, message) {
   const e = new Error(message || ('HTTP ' + status));
   e.status = status;
-  // Worth moving to the next provider for: gone, busy, rate limited, broken,
-  // or refusing this key. Not worth it for a request we malformed ourselves.
+  // Gone, busy, rate limited or refused: try the next provider.
   e.retriable = status === 404 || status === 408 || status === 409 ||
     status === 429 || status === 401 || status === 403 || status >= 500;
   return e;
@@ -165,8 +142,7 @@ async function callGoogleShape(pv, cfg, model, req, signal) {
     contents,
     generationConfig: {
       temperature: req.temperature == null ? 0.7 : req.temperature,
-      // On the flash models this budget has to cover the model's own thinking
-      // as well as the reply, which is why it is not a tight fit.
+      // Also covers the flash models' thinking tokens.
       maxOutputTokens: req.maxTokens || 1200,
     },
   };
@@ -186,8 +162,7 @@ async function callGoogleShape(pv, cfg, model, req, signal) {
   const cand = data && data.candidates && data.candidates[0];
   const parts = (cand && cand.content && cand.content.parts) || [];
   const text = parts.map((p) => p && p.text).filter(Boolean).join('').trim();
-  // A truncated thinking budget comes back as a candidate with no text at all,
-  // which is a retry-worthy failure rather than a real answer.
+  // A truncated thinking budget returns no text; retry elsewhere.
   if (!text) throw httpError(502, 'Empty reply (' + ((cand && cand.finishReason) || 'no reason') + ')');
   return { text };
 }
@@ -240,8 +215,6 @@ async function callProvider(providerId, cfg, model, req, timeoutMs) {
   try {
     return await SHAPES[pv.shape](pv, cfg, model, req, ctrl.signal);
   } catch (e) {
-    // An abort is a timeout, and a timeout is the clearest possible signal
-    // that this provider should not get the next request either.
     if (e && e.name === 'AbortError') throw httpError(408, 'Timed out');
     throw e;
   } finally {
@@ -249,8 +222,7 @@ async function callProvider(providerId, cfg, model, req, timeoutMs) {
   }
 }
 
-// ── Asking a provider what it can actually run ─────────────────────────
-// This is the answer to model ids going stale: never guess, ask.
+// Asking a provider what it can actually run
 async function listModels(providerId, cfg) {
   const pv = PROVIDERS[providerId];
   if (!pv) throw httpError(400, 'Unknown provider');
@@ -279,8 +251,7 @@ async function listModels(providerId, cfg) {
   }
 }
 
-// Every provider names its list something different. Flatten them all to
-// { id, label, free, context } so the admin page renders one table.
+// Normalise every provider's list to { id, label, free, context }.
 function normaliseModels(providerId, pv, data) {
   let raw = [];
   if (pv.shape === GOOGLE_SHAPE) raw = (data && data.models) || [];
@@ -292,15 +263,13 @@ function normaliseModels(providerId, pv, data) {
     let id = m.id || m.name || m.model;
     if (!id) return;
     id = String(id);
-    // Google returns "models/gemini-flash-latest"; the call site wants the
-    // bare id back.
+    // Google returns "models/<id>".
     if (pv.shape === GOOGLE_SHAPE) id = id.replace(/^models\//, '');
     const entry = { id, label: m.display_name || m.displayName || id };
     const ctx = m.context_length || m.context_window || m.inputTokenLimit ||
       (m.context_length_tokens) || null;
     if (ctx) entry.context = ctx;
-    // What "free" means differs per provider, so only say so where the API
-    // actually tells us rather than guessing.
+    // Only mark free where the API says so.
     if (providerId === 'openrouter') {
       const pr = m.pricing || {};
       entry.free = /:free$/.test(id) ||

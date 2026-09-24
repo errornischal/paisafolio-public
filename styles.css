@@ -1,10 +1,5 @@
-/* Paisafolio, application stylesheet.
-   Extracted from the inline <style> block in index.html. Kept as one file:
-   it is served once, cached, and the browser can parse it in parallel with
-   the markup instead of after it. */
-/* ── Typeface ─────────────────────────────────────────────────────────────
-   Self-hosted Poppins. Each face is unicode-range scoped so the browser only
-   downloads the subsets a page actually paints. */
+/* Paisafolio stylesheet. */
+/* Typeface */
 @font-face{font-family:'Poppins';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/poppins-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 @font-face{font-family:'Poppins';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/poppins-400-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
 @font-face{font-family:'Poppins';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/poppins-500-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
@@ -15,9 +10,7 @@
 @font-face{font-family:'Poppins';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/poppins-700-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
 @font-face{font-family:'Poppins';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/poppins-800-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 @font-face{font-family:'Poppins';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/poppins-800-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
-/* Metric-matched fallback: overrides make the system face occupy the exact same
-   box as Poppins, so the swap at font-load time causes zero layout shift (CLS 0)
-   instead of the text visibly re-flowing. */
+/* Metric-matched fallback so the Poppins swap causes no layout shift. */
 @font-face{font-family:'Poppins Fallback';src:local('Arial'),local('Helvetica Neue'),local('Roboto'),local('Segoe UI');size-adjust:112%;ascent-override:93.75%;descent-override:31.25%;line-gap-override:8.84%}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
 :root{--accent-fill:#f5a623;--accent-fill2:#e8940e}
@@ -30,36 +23,23 @@
   --blue:#5aa6ff;--blue-bg:rgba(74,158,255,.1);
   --purple:#b39bff;--purple-bg:rgba(167,139,250,.1);
   --orange:#ff7b3a;--teal:#00d4c8;
-  /* text3 carries every small label in the app, section titles, chip
-     captions, table headers, sub-lines. At #6f6f6f it sat at 3.2-3.5:1 on
-     the cards, under the 4.5:1 normal-size text needs. #888 clears it on
-     both card shades while staying clearly a third step below text2. */
+  /* #888 keeps small labels above 4.5:1 on both card shades. */
   --text:#f2f2f2;--text2:#a6a6a6;--text3:#888888;
   --glass:rgba(20,20,20,.72);--shadow:rgba(0,0,0,.5);--skel:#222;--skel2:#2b2b2b;
   --aura1:rgba(245,166,35,.16);--aura2:rgba(74,158,255,.10);--aura3:rgba(167,139,250,.08);
   --radius:14px;--radius2:9px;--font:'Poppins','Poppins Fallback',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
-  /* Numbers can take their own face. Defaults to the text font, so nothing
-     changes until someone picks one in Settings. */
+  /* Number face; defaults to the text font. */
   --font-num:var(--font);
   --glass-card:rgba(255,255,255,.045);--glass-card-hi:rgba(255,255,255,.09);
   --glass-solid:#191919;
   --glass-border:rgba(255,255,255,.09);--glass-border-hi:rgba(255,255,255,.16);
-  /* The inset pair here drew a lit line along the top edge of every glass
-     card and a dark one along the bottom, which read as an embossed rim that
-     the flat cards elsewhere on the same screen do not have. Just the drop
-     shadow now, so a card lifts off the page without being moulded. */
   --glass-shadow:0 8px 32px rgba(0,0,0,.38);
   --glass-shadow-hi:0 14px 44px rgba(0,0,0,.46);
 }
 [data-theme=light]{
   --bg:#eef1f6;--bg2:#ffffff;--bg3:#f1f3f7;
   --card:#ffffff;--card2:#f6f8fb;--border:#e2e6ee;--border2:#d3d9e4;
-  /* Back to the original hues. Deepening them for contrast made the whole
-     light theme read as muddy, and the orange is the theme’s signature.
-     The one real problem the deepening solved was the white label on an
-     orange button (2.9:1), and that is fixed instead by inking the label
-     near-black, the same way the dark theme has always done it, which
-     leaves the orange itself exactly as it was. */
+  /* Light theme keeps the original orange; accent buttons use a near-black label for contrast. */
   --accent:#d9820a;--accent2:#b96d00;--accent-ink:#231400;--accent-glow:rgba(217,130,10,.14);
   --green:#0a9d73;--green-bg:rgba(10,157,115,.1);
   --red:#dc2f4d;--red-bg:rgba(220,47,77,.1);
@@ -71,46 +51,24 @@
   --aura1:rgba(217,130,10,.14);--aura2:rgba(37,99,235,.08);--aura3:rgba(124,92,240,.07);
   --glass-card:rgba(255,255,255,.6);--glass-card-hi:rgba(255,255,255,.85);
   --glass-solid:#ffffff;
-  /* A white hairline is what makes glass read as glass over a dark ground,
-     and it is what the dark theme uses. Over a near-white one it is simply
-     not there, the header buttons, the cards, the tiles and the sheet all
-     drew a border nobody could see, and only their shadows were holding
-     them apart. Light gets a real hairline instead, the same weight as the
-     solid --border beside it. */
+  /* Light theme needs a real hairline; white borders vanish on a light ground. */
   --glass-border:rgba(23,32,54,.13);--glass-border-hi:rgba(23,32,54,.22);
   --glass-shadow:0 8px 28px rgba(20,30,60,.08);
   --glass-shadow-hi:0 14px 38px rgba(20,30,60,.12);
 }
-/* `clip`, not `hidden`. Both stop sideways overflow, but `hidden` makes the
-   element a scroll container, and that quietly broke the sticky header: it
-   had position:sticky all along and still slid off the top of the screen on
-   a phone. `clip` clips without becoming a scroller, so the header holds its
-   place the way the bottom bar does. The `hidden` line stays first as the
-   fallback for anything too old to know `clip`. */
-/* `hidden` has to win. The attribute only carries the UA’s display:none,
-   which any class rule of ours outranks, so .ledger-locked{display:flex}
-   quietly showed a notice on the Add sheets that was written for the Edit
-   ones, however carefully the JS set .hidden. One rule, once, rather than
-   remembering it at every element that ever gets hidden this way. */
+/* `clip`, not `hidden`: `hidden` makes html a scroll container and breaks the sticky header.
+   `hidden` stays first as a fallback. */
+/* The [hidden] attribute must beat class display rules. */
 [hidden]{display:none!important}
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100%;
   overflow-x:hidden;overflow-x:clip}
-/* The lock that stops the page moving under an open sheet.
-   It has to be on <html> as well as <body>, and that is not belt and braces.
-   The line above gives <html> `overflow-x:clip`, so its overflow is no longer
-   `visible` - and that is exactly the condition under which the viewport
-   takes its scrolling from <html> and IGNORES whatever <body> says. So
-   `body.modal-open{overflow:hidden}` on its own locked nothing at all.
-   It looked like it worked because a sheet with more content than fits
-   contains the scroll itself; a short sheet has nothing to contain it with,
-   and the page behind quietly scrolled away under the finger. */
+/* Scroll lock for open sheets. Needs html too: html's overflow-x:clip makes the
+   viewport scroll from html and ignore body. */
 html.modal-open,body.modal-open{overflow:hidden;touch-action:none}
 html.modal-open .modal-sheet,html.modal-open .modal-body,
 body.modal-open .modal-sheet,body.modal-open .modal-body,
 html.modal-open .cmdk-box,html.modal-open .cmdk-results{touch-action:auto}
-/* ── Motion tokens ────────────────────────────────────────────────────
-   One vocabulary for every transition in the app, so timings stay in step
-   instead of drifting apart across a thousand hand-written rules. */
+/* Motion tokens */
 :root{
   --ease-out:cubic-bezier(.22,1,.36,1);      /* entrances, expansions */
   --ease-in-out:cubic-bezier(.4,0,.2,1);     /* colour + size changes */
@@ -121,12 +79,7 @@ html.modal-open .cmdk-box,html.modal-open .cmdk-results{touch-action:auto}
   --dur-3:.26s;  /* page + card transitions */
   --dur-4:.34s;  /* sheets */
 }
-/* Theme switching used to put a transition on `*`, every element on the
-   page, permanently, with !important. That made every class change anywhere
-   animate, and forced ~25 follow-up rules below to fight it back off again.
-   The transition is only ever wanted for the ~350ms of an actual theme swap,
-   so it is scoped to a class that applyTheme() adds and then removes. Each
-   component keeps its own transition the rest of the time. */
+/* Theme transition only during a swap (applyTheme adds and removes the class). */
 :root.theme-anim *,:root.theme-anim *::before,:root.theme-anim *::after{
   transition:
     background-color .3s var(--ease-in-out),
@@ -159,11 +112,7 @@ body.no-anim *{transition:none !important}
 /* ambient backdrop */
 .aura{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;contain:strict;transform:translateZ(0)}
 .aura b{position:absolute;border-radius:50%;filter:blur(70px);opacity:.9;animation:float 16s ease-in-out infinite;will-change:transform;transform:translateZ(0);backface-visibility:hidden}
-/* A large blur radius on a permanently-animating layer is the single most
-   expensive thing on this page for a phone GPU, it forces a full re-blur of
-   a 400px surface every frame, forever, which is what makes the device get
-   hot. Phones get a much cheaper blur, and on small screens the second orb
-   is dropped entirely since it's mostly offscreen decoration anyway. */
+/* Cheaper blur on phones; drop the second orb. */
 @media(max-width:480px){
   .aura b{filter:blur(28px);opacity:.75;will-change:auto}
   .aura b:nth-child(2){display:none}
@@ -188,10 +137,7 @@ body.no-anim .aura b{animation:none}
 .brand-wrap .sub{font-size:8.5px;color:var(--text3);font-weight:600;letter-spacing:1.8px;text-transform:uppercase;line-height:1}
 .brand-wrap .name{font-size:15.5px;font-weight:800;color:var(--text);letter-spacing:.2px;line-height:1.2}
 .hdr-right{display:flex;align-items:center;gap:6px;flex:none}
-/* The brand yields, the buttons do not. Without this the header simply got
-   wider than the screen on a small phone once it had five buttons in it,
-   and the whole page scrolled sideways. Now the name truncates instead,
-   and only when it genuinely cannot fit. */
+/* The brand truncates so header buttons never overflow. */
 .hdr-brand{min-width:0}
 .brand-wrap{min-width:0;overflow:hidden}
 .brand-wrap .name,.brand-wrap .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -233,17 +179,11 @@ body.no-anim .aura b{animation:none}
 .sec-pad{padding:10px 12px}
 .sec-title{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.8px;text-transform:uppercase}
 .card{background:var(--glass-card);backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);border:1px solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--glass-shadow)}
-/* Glass-surface perf isolation: every frosted card gets its own compositing
-   layer (contain + transform) so the browser doesn't have to re-evaluate
-   layout/paint for the whole page every time one of these blurs updates
-   (theme toggle, scroll, list re-render). Pure performance, zero visual
-   change on capable devices. */
+/* Isolate each glass card in its own layer. */
 .card,.nw-card,.alloc-card,.stat-card,.recent-card,.mover,
 .asset-item,.debt-item,.goal-card,.debt-sum-card,.plan-stat,.d-tab,
 .hdr-btn,.modal-sheet{contain:layout style paint;transform:translateZ(0)}
-/* On devices that report a save-data / reduced-transparency preference,
-   or that don't support backdrop-filter at all, fall back to a solid tint
-   instead of a blur, keeps the app fully readable and fast everywhere. */
+/* No backdrop-filter support: solid tint. */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   .card,.nw-card,.alloc-card,.stat-card,.recent-card,.mover,
   .asset-item,.debt-item,.goal-card,.debt-sum-card,.plan-stat,.d-tab,
@@ -254,13 +194,8 @@ body.no-anim .aura b{animation:none}
   .asset-item,.debt-item,.goal-card,.debt-sum-card,.plan-stat,.d-tab,
   .hdr-btn,.modal-sheet{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;background:var(--card) !important}
 }
-/* ── MOBILE PERFORMANCE ──
-   backdrop-filter is by far the most expensive effect here: each layer makes
-   the GPU re-sample and re-blur everything behind it, every frame, and this
-   layout stacks ~30 of them on screen at once. While scrolling that is what
-   makes the page stutter and the phone heat up. At phone size the glass
-   effect is barely perceptible anyway, so drop it entirely below 700px and
-   use the solid card colour instead. Desktop keeps the full look. */
+/* MOBILE PERFORMANCE
+   No backdrop-filter below 700px; solid card colour instead. */
 @media(max-width:700px){
   .hdr,.bnav,.card,.nw-card,.alloc-card,.stat-card,.recent-card,
   .mover,.asset-item,.debt-item,.goal-card,.debt-sum-card,.plan-stat,.d-tab,
@@ -269,8 +204,7 @@ body.no-anim .aura b{animation:none}
   }
   .hdr,.bnav{background:var(--card)}
   .card,.alloc-card,.stat-card,.recent-card,.mover{background:var(--card)}
-  /* Shadows on every card are another per-frame compositing cost for very
-     little visual gain on a small screen. */
+  /* No card shadows on phones. */
   .card,.alloc-card,.stat-card,.recent-card,.mover{box-shadow:none}
 }
 .row{display:flex;align-items:center}
@@ -278,10 +212,7 @@ body.no-anim .aura b{animation:none}
 
 /* entrance */
 .enter{animation:enter .45s cubic-bezier(.22,1,.36,1) both}
-/* Lists are re-rendered wholesale on every update (including background price
-   refreshes), so each item replays this stagger every time, the whole list
-   visibly re-animates for no reason and it costs a lot of compositing on a
-   phone. Keep it on desktop, skip it on mobile. */
+/* No list stagger on phones. */
 @media(max-width:700px){.enter{animation:none}}
 @keyframes enter{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
 .pop{animation:pop .4s cubic-bezier(.22,1,.36,1) both}
@@ -296,9 +227,7 @@ body.no-anim .aura b{animation:none}
 .conn-banner-retry{background:rgba(255,255,255,.08);border:none;border-radius:7px;padding:4px 9px;font-family:var(--font);font-size:10.5px;font-weight:700;color:inherit;cursor:pointer;flex-shrink:0}
 .conn-banner-retry:active{transform:scale(.94)}
 @keyframes slideDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
-/* Unverified email. Amber, not red: the account works, it just has no way
-   back if the password goes. Sits above the connection banner because it is
-   about the account rather than about this minute's network. */
+/* Unverified email: amber, not red. */
 .verify-banner{display:flex;align-items:center;gap:9px;margin:10px 12px 0;padding:9px 11px;border-radius:11px;background:var(--accent-glow);border:1px solid rgba(245,166,35,.28);color:var(--accent);animation:slideDown .25s ease}
 .vb-ico{width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .vb-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;line-height:1.35}
@@ -320,10 +249,7 @@ body.no-anim .nw-card::before{animation:none;display:none}
 @media(prefers-reduced-motion:reduce){.nw-card::before{animation:none;display:none}}
 .nw-lbl{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.8px;text-transform:uppercase;margin-bottom:5px;display:flex;align-items:center;gap:6px}
 .nw-amount{font-size:32px;font-weight:800;color:var(--text);letter-spacing:-.8px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
-/* The change and its percentage belong next to the number they describe.
-   Sitting them on the Assets/Liab line put them a whole row away from the
-   figure they are a change in, and left that row reading as one sentence
-   when it was three separate facts. */
+/* Change and percentage beside the figure they describe. */
 .nw-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .nw-since{font-size:10.5px;color:var(--text3);font-weight:600;margin-top:5px}
 .nw-meta{display:flex;align-items:center;justify-content:space-between;margin-top:7px}
@@ -331,14 +257,9 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .nw-sub .dot{width:4px;height:4px;background:var(--text3);border-radius:50%;margin:0 5px}
 .nw-badge{border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:3px}
 .nw-badge.pos{background:var(--green-bg);color:var(--green)}.nw-badge.neg{background:var(--red-bg);color:var(--red)}
-/* Percent and amount sit on one line. The badge already carries the
-   direction in colour and arrow, so the rupee figure stays neutral
-   rather than competing with it, and keeps its own sign so the
-   direction survives without colour. */
+/* Percent and amount on one line; amount keeps its sign. */
 .nw-change-wrap{display:flex;align-items:center;gap:7px;min-width:0}
-/* Grey on a gain read as "nothing good happened" beside a green badge
-   saying the opposite. It is the same fact as the badge, so it takes the
-   same colour. */
+/* Same colour as the badge. */
 .nw-change{font-size:12.5px;font-weight:800;letter-spacing:-.1px;white-space:nowrap;color:var(--text2)}
 .nw-change.pos{color:var(--green)}
 .nw-change.neg{color:var(--red)}
@@ -350,15 +271,8 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .chart-tooltip{position:absolute;background:var(--glass);backdrop-filter:blur(8px);border:1px solid var(--border2);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:700;color:var(--accent);pointer-events:none;opacity:0;transition:opacity .12s;white-space:nowrap;transform:translateX(-50%);z-index:5}
 .chart-tooltip.show{opacity:1}
 
-/* overflow-x:auto with overflow-y left at visible is coerced by CSS to auto
-   on both axes, so this strip of nine pills could be dragged up and down
-   inside itself as well as sideways. The tap target on a pill is 44px and
-   taller than the row was, so the row is given that height to hold rather
-   than clipping it away, and touch-action says out loud that a vertical
-   drag here belongs to the page. The 44px goes in the content box, not
-   in padding above it: a top padding pushes the pill down and its
-   centred tap target off the bottom edge, which is vertical overflow
-   again. The gap above the row is a margin instead. */
+/* overflow-x:auto forces overflow-y auto too; a 44px content height holds the tap targets,
+   and touch-action gives vertical drags to the page. */
 .pnl-filter-row{display:flex;align-items:center;gap:5px;padding:0 12px;margin-top:5px;min-height:44px;
   overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;
   overscroll-behavior-x:contain}
@@ -376,13 +290,10 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .mover:active{transform:scale(.96)}
 .mover-top{display:flex;align-items:center;gap:6px;margin-bottom:5px}
 .mover-top img{width:18px;height:18px;border-radius:50%}
-/* The name was being cut to six characters in the markup, so Bitcoin came
-   out as "Bitcoi" on a card with room to spare. It sizes to the name now,
-   up to a limit past which an ellipsis is the honest answer. */
+/* Sized to the name, ellipsis at the limit. */
 .mover-sym{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;min-width:0}
-/* Price and change on one line. On its own row the percentage cost a third
-   of the card's height to say five characters. */
+/* Price and change on one line. */
 .mover-row{display:flex;align-items:baseline;gap:7px;min-width:0}
 .mover-price{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap}
 .mover-chg{font-size:10px;font-weight:700;white-space:nowrap}
@@ -412,10 +323,7 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .stat-val{font-size:18px;font-weight:800;line-height:1}
 .stat-sub{font-size:9.5px;color:var(--text3);margin-top:4px}
 
-/* Several of these tiles are <button>, and a button with no colour of its own
-   inherits the UA's buttontext, black. On a dark card the spending figure was
-   being painted black on near-black, at 1.1:1: there, but invisible. The
-   colour classes on the other tiles hid how many did not have one. */
+/* Buttons need an explicit colour (UA buttontext is black). */
 
 .recent-card{background:var(--glass-card);backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);border:1px solid var(--glass-border);border-radius:var(--radius);margin:10px 12px 0;overflow:hidden;box-shadow:var(--glass-shadow)}
 .recent-hdr{display:flex;align-items:center;justify-content:space-between;padding:11px 12px 7px}
@@ -450,9 +358,7 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .ledger-filter-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none;margin:0 -2px}
 .ledger-pill{flex-shrink:0;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--text2);cursor:pointer;transition:.15s;font-family:var(--font)}
 .ledger-pill.active{background:var(--accent-fill);color:var(--accent-ink);border-color:var(--accent-fill);font-weight:700}
-/* Two spans pushed apart wrapped the moment the right one grew, leaving
-   "61 transactions" broken over two lines beside a run-on sentence of
-   figures. Same labelled cells as the asset sheet, one scrolling line. */
+/* Labelled cells on one scrolling line. */
 .ledger-summary{background:var(--bg3);border-radius:10px;padding:9px 0;margin-bottom:10px;
   overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .ledger-summary::-webkit-scrollbar{display:none}
@@ -471,10 +377,8 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .ledger-amt.income{color:var(--accent)}
 .cat-pill:active{transform:scale(.93)}
 .assets-list{padding:0 12px;display:flex;flex-direction:column;gap:7px}
-/* ── ASSET GROUPS (accordion) ──────────────────────────────────────────
-   Grouped, the list is a column of sections whatever the screen: the card
-   grid moves down onto .ag-items, inside each group, so a wide screen still
-   gets two or three cards abreast without the groups themselves tiling. */
+/* ASSET GROUPS (accordion)
+   Groups stack; the card grid lives inside .ag-items. */
 .assets-list.grouped{display:flex;flex-direction:column;gap:8px}
 .ag-group{border:1px solid var(--glass-border);border-radius:var(--radius);background:var(--glass-card);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);overflow:hidden}
 .ag-head{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;background:none;border:0;cursor:pointer;font-family:var(--font);text-align:left;color:var(--text);-webkit-tap-highlight-color:transparent}
@@ -488,21 +392,11 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .ag-val{font-size:13px;font-weight:800;color:var(--text);white-space:nowrap}
 .ag-chev{color:var(--text3);flex-shrink:0;transition:transform var(--dur-2) var(--ease-out)}
 .ag-group.open .ag-chev{transform:rotate(180deg)}
-/* 0fr to 1fr animates to the content's own height, which max-height cannot do
-   without guessing a number that is wrong for somebody. */
+/* 0fr→1fr animates to the content's own height. */
 .ag-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-3,.28s) var(--ease-out)}
 .ag-group.open .ag-body{grid-template-rows:1fr}
 .ag-body>.ag-items{overflow:hidden;min-height:0}
-/* A card inside a card is one surface too many: every asset was drawn with
-   its own background, border, radius and shadow, inside a section that
-   already had all four. Inside a group they are rows.
-   
-   Flat rows alone were not enough either: stripped of their card they read
-   exactly like the header above them, so an open Liquidity section looked
-   like five Liquidity headers in a row. The contents are set apart from the
-   title the way contents are: recessed onto a darker ground, indented past a
-   rail in the category's own colour, and set in smaller type with smaller
-   icons. The header stays the heading. */
+/* Inside a group assets are rows, recessed and indented past a category-coloured rail. */
 .ag-group.open>.ag-head{border-bottom:1px solid var(--glass-border)}
 .ag-body{background:var(--ag-body-bg)}
 :root{--ag-body-bg:rgba(0,0,0,.22)}
@@ -513,18 +407,15 @@ body.no-anim .nw-card::before{animation:none;display:none}
   border:0;border-radius:0;box-shadow:none;padding:9px 12px 9px 11px}
 .ag-items>.asset-item+.asset-item{border-top:1px solid var(--glass-border)}
 .ag-items>.asset-item:hover{background:var(--glass-card-hi);box-shadow:none}
-/* A row that shrinks pulls away from the rows it is sitting against, which
-   reads as a gap opening up rather than as a press. */
+/* No shrink on press: it opens gaps between rows. */
 .ag-items>.asset-item:active{transform:none;background:var(--glass-card-hi)}
-/* Smaller than the header's, so the eye reads title then contents rather
-   than two things of equal weight. */
+/* Smaller icons than the header. */
 .ag-items .asset-ico{width:30px;height:30px;border-radius:9px}
 .ag-items .asset-ico img{width:21px;height:21px}
 .ag-items .asset-ico svg{width:15px;height:15px}
 .ag-items .asset-name{font-size:12px}
 .ag-items .asset-val{font-size:12px}
-/* Waiting to sync still marks the row, but on the rail rather than as a
-   dashed box floating among flush rows. */
+/* Pending rows are marked on the rail. */
 .ag-items>.asset-item.unsynced{border:0!important;border-radius:0!important;
   box-shadow:inset 3px 0 0 var(--sync-mark)}
 .ag-items>.asset-item.unsynced+.asset-item{border-top:1px solid var(--glass-border)}
@@ -563,13 +454,8 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .debt-sum-lbl{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 .debt-sum-sub{font-size:9px;color:var(--text3);margin-top:3px}
 .debt-sum-sub:empty{display:none}
-/* One lend or one repayment, opened on its own. A row, not a card: it sits
-   inside a section that already has a surface. */
-/* ── Debt detail sheet ──
-   A debt is a relationship, so the sheet opens with the person: their face,
-   their name, and which way the money runs. Below that it is two ledgers in
-   two boxes — what was handed over, and what has come back — because reading
-   a lend and a repayment as one undifferentiated list never once helped. */
+/* Debt entry row. */
+/* Debt detail sheet: the person first, then lends and repayments in two boxes. */
 .debt-hdr{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
 .debt-hdr .debt-avatar{width:36px;height:36px;font-size:13px}
 .debt-hdr-txt{min-width:0}
@@ -594,27 +480,16 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .dcard-ft .form-lbl{margin-bottom:5px}
 .dcard-ft .form-row-2{margin-bottom:8px}
 .dcard-ft .ghost-btn{padding:9px;font-size:12px}
-/* Cancel and the action are one pair, so they get one shape. Cancel was
-   pinned to 92px while the action took everything left over, which on a
-   phone made one of them two and a half times the other.
-   Both selectors carry the class twice: .ghost-btn and .submit-btn are
-   defined far below this point, so a single-class rule here loses to them
-   on source order no matter how right it is. The stray bottom margin is
-   reset for the same reason — stretch equalises the MARGIN box, so 12px
-   under one of them came straight off its height to make the two match. */
+/* Cancel and action share one shape. Doubled classes beat .ghost-btn/.submit-btn defined
+   later; margin reset because stretch equalises margin boxes. */
 .dcard-acts{display:flex;gap:8px;align-items:stretch}
 .dcard-acts .ghost-btn,.dcard-acts .submit-btn{
   flex:1 1 0;min-width:0;width:auto;margin:0;
   padding:12px 10px;font-size:13px;font-weight:700;border-radius:11px;
   display:flex;align-items:center;justify-content:center;line-height:1.25}
-/* A transparent border of the same width as Cancel's. With flex-basis:0 the
-   free space is split between the two CONTENT boxes and each one's border
-   is added on top, so a button with a border ends up wider than one without
-   by exactly that border: 163 against 161. Matching the borders matches the
-   buttons. */
+/* Transparent border so both buttons get equal widths. */
 .dcard-acts .submit-btn{box-shadow:none;font-weight:800;border:1px solid transparent}
-/* One row of the ledger: direction on the left as a chip, the money on the
-   right, and the small print underneath. Tapping it opens that one entry. */
+/* Ledger row: direction chip left, amount right, details below. */
 .dtx{display:flex;align-items:center;gap:10px;width:100%;padding:11px 13px;text-align:left;
   background:none;border:0;border-top:1px solid var(--border);color:inherit;font:inherit;cursor:pointer;
   -webkit-tap-highlight-color:transparent}
@@ -647,8 +522,7 @@ body.no-anim .nw-card::before{animation:none;display:none}
   padding:2px 6px;border-radius:999px;background:var(--bg3);color:var(--text3);white-space:nowrap}
 .debt-pill.over{background:rgba(255,77,106,.14);color:var(--red)}
 .debt-note{font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Inside a flex name row this must never wrap: "2% /month" breaking over two
-   lines made the whole card taller than the amount beside it. */
+/* Never wrap. */
 .debt-int-badge{flex:none;display:inline-block;font-size:8px;font-weight:700;padding:2px 6px;
   border-radius:999px;background:var(--accent-glow);color:var(--accent);
   margin-left:0;vertical-align:middle;white-space:nowrap}
@@ -731,29 +605,9 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .about-ver{font-size:11px;color:var(--text3);margin-top:2px}
 .about-tag{font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5}
 
-/* UNSYNCED ITEM INDICATOR, tiny corner dot + a thin border tint on any
-   asset/debt/goal/recurring card whose item hasn't been confirmed pushed to
-   the cloud yet. No background wash (was being misread as a status color);
-   just a quiet outline + dot. Higher specificity than .done/.overdue/etc
-   so it always wins regardless of what other state classes a card has. */
-/* An item waiting to sync is not an error, so it should not look like one.
-   A solid amber border plus a bright dot read as a warning. A dashed neutral
-   edge reads as provisional, which is exactly what it is, and the icon says
-   what is happening without relying on colour alone. */
-/* Three tries at this. Green shouted; --border2 on --card vanished; a corner
-   badge sat on top of the value and clipped at the card edge. A watermark
-   solves all three: it cannot collide with any text because it is behind the
-   text, it cannot clip because it is centred, and it is unmistakable without
-   being loud. The dashed edge stays as the second signal. */
-/* ══ WAITING TO SYNC ══════════════════════════════════════════════════
-   Two shapes, because two situations. A card with air around it can carry a
-   full dashed outline and still read as one object. A row in a stacked list
-   cannot: each row drew its own outline, so where two pending rows met their
-   facing edges stacked into a band twice as thick as a real divider. Those
-   get a rail down the left edge instead, which can never double no matter
-   how many neighbours are pending.
-
-   The accent carries the mark, as it did originally. */
+/* WAITING TO SYNC
+   A dashed edge plus a watermark behind the content: provisional, not an error. */
+/* Cards get a dashed outline; stacked rows get a left rail instead (outlines would double up). */
 :root{--sync-mark:var(--accent)}
 
 /* Cards, which sit apart from each other. */
@@ -761,11 +615,7 @@ body.no-anim .nw-card::before{animation:none;display:none}
   position:relative;overflow:hidden;
   border:1.5px dashed var(--sync-mark)!important}
 
-/* Rows, which sit against each other.
-   Drawn as a pseudo-element rather than an inset box-shadow: a shadow follows
-   the element's own border-radius, so on a row with rounded corners the rail
-   curved away at both ends and read as a bracket. A block with square corners
-   cannot do that, and the row gains the padding to sit clear of it. */
+/* Rows: a square-cornered rail pseudo-element (an inset shadow curves with the radius). */
 .recur-item.unsynced,.spend-row.unsynced,.tx-item.unsynced,.hb-row.unsynced{
   position:relative;overflow:hidden;padding-left:11px}
 .recur-item.unsynced::before,.spend-row.unsynced::before,
@@ -786,33 +636,15 @@ body.no-anim .nw-card::before{animation:none;display:none}
 .recur-item.unsynced > *:not(.unsynced-badge),
 .spend-row.unsynced > *:not(.unsynced-badge),
 .tx-item.unsynced > *:not(.unsynced-badge){position:relative;z-index:1}
-/* On a ROW the mark is not drawn at all. A card has air around it and one
-   watermark; a list has a mark on every single row that is waiting, which is
-   most of them right after an edit - a cloud and the words NOT SYNCED laid
-   across every line of a list you are trying to read. The rail down the left
-   edge already says the same thing, in a place that can never collide with
-   anything, so the mark is left to the shapes that have room for it.
-
-   Kept for a screen reader, which has no rail to notice. */
+/* Rows show the rail only; the badge stays for screen readers. */
 .spend-row.unsynced .unsynced-badge,
 .tx-item.unsynced .unsynced-badge,
 .recur-item.unsynced .unsynced-badge,
 .hb-row.unsynced .unsynced-badge{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
   overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:1;transform:none}
-/* A rail costs no layout, and a 1.5px dashed border in place of the card's
-   own 1px one is half a pixel: neither needs padding compensation, which the
-   2px version did. */
-/* A table row cannot hold an absolutely-positioned child the way a card can,
-   and a dashed border on a <tr> breaks the column grid. It can carry a
-   background image though, so the same cloud is drawn as one, a real
-   watermark centred behind the row, rather than the little pill that used to
-   sit off to one side and read as a column of its own. Stroke colour is baked
-   into the data URI, so it is set per theme just below. */
+/* Table rows: rail plus a cloud watermark (a data URI, coloured per theme below). */
 tr.unsynced{box-shadow:inset 3px 0 0 var(--sync-mark)}
-/* The cloud rides the first CELL, not the row: a row is as wide as the whole
-   scrollable table, so anything centred or measured against it ends up
-   off-screen. Against the right edge of the first cell it stays beside the
-   name at any scroll position. */
+/* The cloud rides the first cell so it stays beside the name when scrolled. */
 tr.unsynced td:first-child{position:relative;
   background-repeat:no-repeat;background-position:right 6px center;background-size:20px 20px}
 tr.unsynced td:first-child::after{content:'Not synced';position:absolute;right:4px;bottom:1px;
@@ -875,21 +707,9 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* MODALS */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(5px);z-index:100;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s}
 .modal-overlay.open{opacity:1;pointer-events:all}
-/* Open, but with another sheet on top of it. It keeps its place in the stack
-   so closing the one in front brings it back; the SHEET is simply not drawn
-   while something else is in front of it, because two sheets showing through
-   each other reads as a mistake rather than as depth.
-
-   Only the sheet, though. Hiding the whole overlay took its dimming with it,
-   and dimming is not decoration: it is the thing that separates what you are
-   looking at from the page behind. With two sheets open there used to be two
-   of these tints over the page and now there was one, so opening a field
-   from the Account sheet made the dashboard behind it visibly brighter - the
-   sheet stopped looking like it was on top of anything. */
-/* Below the sheet in front of it, too. Every overlay sits at the same
-   z-index, so which one paints on top came down to which happened to be
-   later in the markup - and the Account sheet is, so its tint fell across
-   the field you had just opened and greyed it out. */
+/* A covered sheet stays in the stack but is not drawn; its dim stays so the page
+   behind doesn't brighten. */
+/* Below the top sheet: overlays share a z-index, so DOM order would decide. */
 .modal-overlay.open.covered{pointer-events:none;z-index:99}
 .modal-overlay.open.covered .modal-sheet{opacity:0;
   transition:opacity .2s ease,transform .32s cubic-bezier(.32,.72,0,1)}
@@ -904,7 +724,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .modal-body{position:relative;padding:4px 14px 16px;max-height:78vh;overflow-y:auto;scrollbar-width:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .modal-body::-webkit-scrollbar{display:none}
 
-/* ── Context menu (long-press / right-click) ── */
+/* Context menu (long-press / right-click) */
 .ctx-sheet{max-width:420px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
 .ctx-header{padding:14px 18px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
 .ctx-header-ico{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -955,8 +775,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:11px}
 .form-hint{font-size:10px;color:var(--text3);margin-top:5px}
 .form-hint.green{color:var(--green)}.form-hint.red{color:var(--red)}.form-hint.blue{color:var(--blue)}
-/* How old the quote is, beside it. The price is the point; its age is the
-   footnote, so it does not compete for the same colour. */
+/* Quote age, quieter than the price. */
 .form-hint .hint-age{color:var(--text3);font-weight:500}
 
 .asset-type-row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;margin-bottom:10px}
@@ -1021,8 +840,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .coin-sug-sym{font-size:10px;color:var(--text3);margin-top:1px}
 
 .icon-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:10px}
-/* A row that says what is chosen and opens the choice, instead of every
-   option laid out before the sheet has even asked what the goal is. */
+/* Shows the choice; tapping opens the picker. */
 .pick-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;
   background:var(--bg3);border:1px solid var(--border2);border-radius:10px;cursor:pointer;
   font-family:var(--font);color:inherit;text-align:left;transition:.16s}
@@ -1034,7 +852,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .pick-sub{font-size:10.5px;color:var(--text3);text-transform:capitalize}
 .pick-chev{color:var(--text3);flex:none}
 .ip-empty{text-align:center;font-size:12px;color:var(--text3);padding:22px 0}
-/* ══ CATEGORIES ══════════════════════════════════════════════════════ */
+/* CATEGORIES */
 .cat-mgr-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;
   background:var(--card2);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;
   cursor:pointer;font-family:var(--font);color:inherit;text-align:left;transition:.15s}
@@ -1046,9 +864,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .cat-mgr-tag{flex:none;font-size:8px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
   color:var(--accent);background:var(--accent-glow);border-radius:5px;padding:2px 5px}
 .cat-mgr-sub{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* ══ PHOTO ═══════════════════════════════════════════════════════════
-   Not a sheet: a picture on a dark ground, the way every other app shows
-   one, so it does not read as another form to fill in. */
+/* PHOTO */
 .photo-view{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:24px}
 .photo-view .photo-view-inner{position:relative;max-width:min(520px,100%);width:100%;
@@ -1065,8 +881,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .photo-view-x:active{transform:scale(.92)}
 .acct-avatar.has-photo[role=button],.acct-avatar-lg.has-photo[role=button]{cursor:zoom-in}
 /* Thirty days of a habit, as a strip rather than a sentence about today. */
-/* One line for the whole month, the same one the habit tracker draws for
-   you, with the three numbers worth knowing above it and the names below. */
+/* Circle habit chart: stats, line, legend. */
 .circle-hb-top{display:flex;gap:8px;margin:2px 0 8px}
 .circle-hb-top>div{flex:1;min-width:0;background:var(--card2);border:1px solid var(--border);
   border-radius:11px;padding:8px 6px;text-align:center}
@@ -1080,8 +895,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .circle-hb-key{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text2)}
 .circle-hb-key i{width:8px;height:8px;border-radius:50%;flex:none}
 
-/* Every cash account you own, inside a sheet that still has a target date
-   and a projection below it. Four fit; the rest scroll. */
+/* Four fit; the rest scroll. */
 .goal-link-list{display:flex;flex-direction:column;gap:6px;max-height:232px;overflow-y:auto;
   scrollbar-width:thin;padding-right:2px}
 .goal-link-list>*{flex:none}   /* same trap as .spend-list, see the note there */
@@ -1112,16 +926,13 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .tx-hist-qty{font-size:11px;color:var(--text2);margin-top:1px}
 .tx-hist-val{font-size:12px;font-weight:700;color:var(--text);text-align:right}
 
-/* The holding's value and what it is up or down, on one line, the gain
-   belongs against the number it is a gain on. */
+/* Value and gain on one line. */
 .ad-value-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:3px}
 .ad-value{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
 .ad-price-row{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:12px}
 .ad-pl{font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums}
 .ad-pl.up{color:var(--green)}
 .ad-pl.dn{color:var(--red)}
-/* Two plain facts about the holding. They were loose 11px lines that read as
-   leftovers; as a labelled pair they look like something someone chose. */
 .ad-facts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
 .ad-fact{flex:1 1 130px;min-width:0;background:var(--card2);border:1px solid var(--border);
   border-radius:10px;padding:8px 10px}
@@ -1131,8 +942,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
   font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cs-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:12px}
 .cs-canvas{width:100%;height:190px;display:block;touch-action:pan-y;cursor:crosshair}
-/* The OHLC strip above the chart. Reserved height, so nothing jumps when a
-   candle is selected and the row fills in. */
+/* Reserved height so nothing jumps. */
 .cs-readout{min-height:15px;display:flex;flex-wrap:wrap;align-items:center;gap:2px 9px;
   font-size:9.5px;font-weight:600;color:var(--text2);margin-bottom:5px;
   font-variant-numeric:tabular-nums;opacity:0;transition:opacity .12s}
@@ -1145,36 +955,16 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .cs-meta{font-size:9px;color:var(--text3);text-align:center;margin-top:6px}
 .cs-range{display:flex;gap:5px;margin-top:8px;justify-content:center}
 .cs-loading{min-height:190px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
-/* The shape of a chart while the chart is on its way. Bars rather than a
-   grey slab, so what is coming is recognisable before it gets here, and
-   staggered so it reads as loading rather than as data. */
-/* ── Handing the scroll on ────────────────────────────────────────────────
-   A box with its own scrollbar is a box you can get stuck in. Reach the
-   bottom of the Activity list and the page behind it would not move: the
-   finger was already inside something that had declared it would not pass
-   the gesture on, so the only way to carry on down the page was to lift off
-   and put the finger somewhere else. Same with a wheel on a desktop.
-
-   `overscroll-behavior: contain` is what does that, and it is right in
-   exactly one place: a sheet, which must not scroll the page behind it while
-   it is open. Everywhere else it is a trap. So every inner scroller says so
-   explicitly, rather than inheriting a decision made for modals:
-
-     inner list  →  hands on to the page, or to the sheet it sits in
-     sheet       →  hands on to nothing; the page behind it stays put
-     page        →  hands on to nothing; no rubber-banding the document
-
-   Named one by one rather than left to whatever each rule happened to set,
-   because the failure is invisible until somebody's thumb is stuck. */
+/* Scroll chaining
+   Inner lists hand the gesture on at their ends; sheets and pages contain it.
+     inner list → page or sheet;  sheet → nothing;  page → no rubber-band */
 .spend-list,.tm-list,.goal-link-list,.sync-pending-list,.admin-modellist,
 .curr-list,.ai-thread,.cmdk-results,.alloc-body,.assets-table-wrap,
 .habit-scroll,.ctx-body,.spend-cat-list,.hcal-body,
 .custom-select-dropdown,.ccy-sel-dropdown,.coin-suggestions{overscroll-behavior-y:auto}
-/* Set inline by relaxScrollChaining() on anything that scrolls and was not
-   named above, so a box styled inline is not a trap either. */
+/* Set inline by relaxScrollChaining() on scrollers not named above. */
 
-/* A candlestick chart is coming, so this is the shape of one: a body with a
-   wick through it, per column. A row of bars was a different chart. */
+/* Candlestick skeleton. */
 .skel-cs{display:flex;align-items:stretch;gap:5px;width:100%;padding:0 2px}
 .skel-cs-c{flex:1;min-width:3px;position:relative}
 .skel-cs-wick{position:absolute;left:50%;margin-left:-1px;width:2px;border-radius:1px;opacity:.72}
@@ -1209,19 +999,12 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .empty-cta:active{transform:scale(.94)}
 
 /* TOAST */
-/* A sentence longer than the screen used to run straight off both edges,
-   because the toast refused to wrap and had no width to stay inside. It now
-   stops short of the edges and wraps onto as many lines as it needs; the
-   icon stays on the first line rather than centring itself against a
-   three-line block. */
+/* Wraps within the screen; the icon stays on the first line. */
 .toast{position:fixed;bottom:88px;left:50%;transform:translate3d(-50%,20px,0);background:var(--card);
   border:1px solid var(--border);border-radius:11px;padding:11px 15px;font-size:12px;font-weight:600;
   color:var(--text);opacity:0;transition:.28s;z-index:500;pointer-events:none;
   box-shadow:0 6px 24px var(--shadow);display:flex;align-items:flex-start;gap:9px;
-  /* width:max-content matters. A fixed box with left:50% and no width is
-     shrink-to-fit against the space LEFT of it, half the screen, so the
-     max-width below never got a say and long text wrapped into a narrow
-     column instead of using the width it was allowed. */
+  /* max-content so max-width applies (left:50% would shrink-wrap to half the screen). */
   width:max-content;max-width:min(360px,calc(100vw - 32px));text-align:left;line-height:1.45;
   overflow-wrap:anywhere}
 .toast svg{flex:none;margin-top:1px}
@@ -1251,10 +1034,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .lock-aura b:nth-child(3){width:280px;height:280px;background:var(--aura3);top:55%;left:50%;animation-delay:-11s}
 .lock-close-btn{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;z-index:5;width:36px;height:36px;border-radius:50%;background:var(--card);border:1px solid var(--border);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;backdrop-filter:blur(10px)}
 .lock-close-btn:active{transform:scale(.9);background:var(--bg3)}
-/* The lock screen is already a dedicated full-screen surface, so wrapping
-   its contents in a second panel drew a box inside a box. The content now
-   sits directly on the background, the ambient orbs read as one continuous
-   surface behind the keypad instead of being cut off by a card edge. */
+/* Lock screen content sits directly on the background. */
 .lock-card{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;width:100%;max-width:320px;padding:0;background:none;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;animation:lockCardIn .5s cubic-bezier(.22,1,.36,1)}
 /* Without a card to scale in, the entrance is a plain rise-and-fade. */
 @keyframes lockCardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
@@ -1304,17 +1084,11 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 [data-theme=light] .ripple{background:rgba(0,0,0,.12)}
 @keyframes ripple{to{transform:scale(2.6);opacity:0}}
 /* hover lift */
-/* will-change was set on EVERY list item here, which promotes each one to its
-   own permanent compositor layer. With a few dozen rows on screen that is
-   dozens of layers held in GPU memory at all times, a large, constant cost
-   to avoid a cheap one-off paint. Promote only while the row is actually
-   being pressed, which is the only moment it transforms. */
+/* will-change only while pressed. */
 .stat-card:active,.asset-item:active,.debt-item:active,
 .goal-card:active,.mover:active,.s-item:active{will-change:transform}
 
-/* Rows scrolled out of view still cost layout and paint on every re-render.
-   content-visibility lets the browser skip all of that for offscreen rows;
-   contain-intrinsic-size keeps the scrollbar honest so nothing jumps. */
+/* Skip layout/paint for off-screen rows. */
 .asset-item,.debt-item,.goal-card,.tx-item{content-visibility:auto;contain-intrinsic-size:auto 64px}
 @media(hover:hover){.stat-card:hover,.asset-item:hover,.debt-item:hover,.goal-card:hover,.mover:hover{transform:translate3d(0,-2px,0);box-shadow:0 8px 22px var(--shadow)}}
 
@@ -1326,17 +1100,9 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .chip-txt{display:flex;flex-direction:column;line-height:1.2}
 .chip-lbl{font-size:8px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase}
 .chip-val{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap}
-/* The parenthetical on a chip is context, not the number itself. Full weight
-   made the P&L chip half again as wide as its neighbours and read as two
-   equally important figures. */
+/* Parenthetical context, lighter. */
 .chip-sub{font-size:10.5px;font-weight:600;color:var(--text3);margin-left:3px}
-/* The alerts card carries its own bottom margin, so the strip drops its top
-   padding when that card is there — and only then. Written as an adjacency,
-   this matched whether or not the card was displayed, because display:none
-   does not remove an element from its siblings. The strip therefore ran
-   permanently flush against the net-worth card above it, with no seam at all
-   on the one screen that needs the most air. The card sets a flag on the page
-   when it is actually shown, and the rule keys off that instead. */
+/* Set by JS only when the alerts card is really shown (display:none keeps siblings). */
 .dash-has-needs .insights{padding-top:0}
 
 
@@ -1371,8 +1137,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .act-pill{flex:1;border:1px solid var(--border2);border-radius:10px;padding:10px;font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:.18s;background:var(--bg3);color:var(--text2)}
 .act-pill:active{transform:scale(.96)}
 .act-pill.buy{color:var(--blue)}.act-pill.sell{color:var(--green)}.act-pill.add{color:var(--accent)}
-/* Three actions on a cash account, so each one gets less room and the label
-   has to survive a 360px phone. */
+/* Labels must fit three across at 360px. */
 .act-pill.xfer{color:var(--purple)}
 .mini-actions .act-pill{min-width:0;padding:10px 6px}
 .mini-actions .act-pill svg{flex:none}
@@ -1383,13 +1148,11 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .contribute-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .preset-btn{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:6px 11px;font-size:11px;font-weight:600;color:var(--text2);cursor:pointer;font-family:var(--font)}
 .preset-btn:active{transform:scale(.93)}
-/* The goal target date sits in a two-up row with PER MONTH, so its quick
-   picks ride above the pair rather than inside the half-width cell, where
-   four buttons would wrap and push the two inputs out of line. */
+/* Quick picks above the two-up row. */
 .goal-date-quick{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:7px}
 .gdq-lbl{font-size:10px;color:var(--text3);margin-right:2px}
 .goal-date-quick .freq-btn:active{transform:scale(.93)}
-/* ════ AUTH MODAL ════ */
+/* AUTH MODAL */
 .auth-overlay{position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .3s}
 .auth-overlay.open{opacity:1;pointer-events:all}
 .auth-card{background:var(--bg2);border:1px solid var(--border2);border-radius:22px;width:100%;max-width:360px;padding:26px 22px 22px;box-shadow:0 24px 70px rgba(0,0,0,.55);transform:scale(.94) translateY(10px);transition:transform .3s cubic-bezier(.22,1,.36,1)}
@@ -1466,7 +1229,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 .sync-dot.error{background:var(--red);color:#fff}
 .sync-dot.offline{background:var(--text3);color:var(--bg)}
 
-/* ── Sync Center: grouped pending list ── */
+/* Sync Center: grouped pending list */
 .sync-group{border:1px solid var(--border);border-radius:11px;overflow:hidden;margin-bottom:7px;background:var(--card)}
 .sync-group-head{display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--card2)}
 .sync-group-ico{display:flex;color:var(--accent);flex:none}
@@ -1483,8 +1246,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 /* settings account section */
 .acct-info-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
 .acct-avatar-lg{width:42px;height:42px;border-radius:50%;background:var(--accent-glow);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;flex-shrink:0}
-/* With a picture in it the circle is just a frame: no tint behind it, no
-   letter, and the image cropped square so a wide photo is not squashed. */
+/* Photo avatars: no tint, cropped square. */
 .acct-avatar.has-photo,.acct-avatar-lg.has-photo{background:none;overflow:hidden;padding:0}
 .acct-avatar img,.acct-avatar-lg img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 .acct-email{font-size:12px;font-weight:600;color:var(--text);word-break:break-all}
@@ -1495,7 +1257,7 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 @keyframes acctspin{to{transform:rotate(360deg)}}
 
 
-/* ════════ ASSETS TABLE VIEW ════════ */
+/* ASSETS TABLE VIEW */
 .view-seg{display:inline-flex;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px;flex-shrink:0}
 .view-seg button{background:none;border:none;font-family:var(--font);font-size:11px;font-weight:600;color:var(--text3);padding:6px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:4px}
 .view-seg button.on{background:var(--accent-fill);color:var(--accent-ink)}
@@ -1508,36 +1270,20 @@ tr.unsynced td:first-child{background-image:var(--sync-cloud)}
 @media(max-width:879px){.assets-table-wrap{scrollbar-width:thin}}
 table.atable{width:100%;border-collapse:collapse;font-size:12px}
 table.tx-history-table{min-width:640px}
-/* Every history now sizes its columns to what is in them. A cash account's
-   is four columns, not eight, so it needs no 640px floor to look right; but
-   fixing its columns at a percentage of the sheet made a long account name
-   or a long note wrap and the row grow to two or three lines, while the
-   investment table beside it fitted everything on one. Auto layout, a lower
-   floor, and the notes column capped — the same treatment, everywhere. */
+/* Auto column widths; notes capped. */
 table.tx-history-table.tx-narrow{min-width:0}
 table.tx-narrow .atype-chip{letter-spacing:.2px;padding:2px 5px;font-size:8.5px}
 table.tx-narrow td,table.tx-narrow th{padding-left:9px;padding-right:9px}
-/* A remark can be a sentence. It gets a fixed share of the row and an
-   ellipsis, with the whole of it on the title, rather than setting the
-   height of every row it appears in. */
+/* Notes truncate with an ellipsis. */
 .tx-note-cell{font-size:10px;color:var(--text3);font-weight:500}
 .tx-note{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(min-width:560px){.tx-note{max-width:240px}}
-/* The summary describes the holding; it is not a row of column totals, so it
-   is neither laid out like one nor kept inside the table. Sitting in a tfoot
-   it took the table's scrolling width and pushed its last figures past the
-   right edge. Out here it is the width of the sheet and wraps onto a second
-   line when the numbers are long. */
-/* Its own card with air above it, not welded to the bottom of the table:
-   these are figures about the holding, and reading them as a last row of
-   the transaction list is the thing that was wrong with them originally. */
+/* Holding summary: its own card below the table. */
 .tx-summary{background:var(--card2);border:1px solid var(--border);
   border-radius:var(--radius2);padding:11px 0;margin:10px 0 0;
   overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tx-summary::-webkit-scrollbar{display:none}
-/* One line that scrolls, rather than five cells wrapping onto two rows at a
-   different width on every screen. Each figure keeps its own width and the
-   order stays the order. */
+/* One scrolling line. */
 .tx-summary-grid{display:flex;gap:24px;align-items:flex-start;justify-content:space-between;
   padding:0 13px;width:max-content;min-width:100%}
 .tx-sum-cell{flex:none}
@@ -1547,9 +1293,7 @@ table.tx-narrow td,table.tx-narrow th{padding-left:9px;padding-right:9px}
 .tx-summary-sub{display:block;font-size:8.5px;font-weight:600;color:var(--text3);margin-top:3px;
   white-space:nowrap;line-height:1.35}
 
-/* Wide enough that a crore-scale number still fits its column. The table
-   scrolls inside its wrapper either way, so extra width costs nothing, while
-   a column too narrow silently slices the figure in half. */
+/* Wide enough for crore-scale figures; the wrapper scrolls. */
 table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 .atable colgroup col.col-cat{width:22%}
 .atable colgroup col.col-num{width:15.6%}
@@ -1577,10 +1321,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 .an-stat .v{font-size:18px;font-weight:800;margin-top:4px;letter-spacing:-.3px}
 .an-stat .s{font-size:10px;font-weight:600;margin-top:2px}
 .an-row-2{margin:8px 12px}
-/* A flex container does not let its children's margins collapse, so the 8px
-   each card carried stacked with the 8px on the card above and opened a
-   16px seam here that appeared nowhere else on the page. The container
-   owns the spacing now: one gap between the cards, one margin outside. */
+/* The container owns spacing (flex children's margins don't collapse). */
 .an-charts-2col{display:flex;flex-direction:column;gap:8px;margin:8px 12px}
 .an-charts-2col>.chart-card{margin:0}
 .forecast-card{margin:8px 12px 0}
@@ -1589,7 +1330,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 .forecast-stat .l{font-size:8px;font-weight:700;color:var(--text3);letter-spacing:.8px;text-transform:uppercase}
 .forecast-stat .v{font-size:13.5px;font-weight:800;margin-top:3px}
 
-/* ════════ TABLET ════════ */
+/* TABLET */
 @media(min-width:560px) and (max-width:879px){
   #app{width:94%;max-width:900px;margin:0 auto}
   .stat-grid{grid-template-columns:repeat(4,1fr);padding-left:16px;padding-right:16px}
@@ -1605,7 +1346,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .goals-list>.goal-card:last-child:nth-child(odd){grid-column:1/-1}
 }
 
-/* ════════ DESKTOP, sidebar + true multi-column app shell ════════ */
+/* DESKTOP, sidebar + true multi-column app shell */
 @media(min-width:880px){
   html,body{font-size:14.5px}
   #app{
@@ -1620,9 +1361,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .hdr{grid-area:head;padding:16px 32px;position:relative}
   .pages{grid-area:main;overflow:hidden;position:relative}
   .page{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:block!important;opacity:0;pointer-events:none}
-  /* The pages are stacked, not swapped, so a hidden one is still under the
-     cursor. Anything inside it that sets pointer-events on itself would
-     otherwise be clickable through the page you are actually looking at. */
+  /* Hidden pages are stacked underneath; keep them unclickable. */
   .page:not(.active) *,.page:not(.active) *::before,.page:not(.active) *::after{pointer-events:none!important}
   .page.active{opacity:1;pointer-events:all}
   .page::-webkit-scrollbar{display:none}
@@ -1642,7 +1381,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .bnav .nav-item.active svg,.bnav .nav-item.active span{color:var(--accent)}
   .bnav .nav-item.active::before{display:none}
 
-  /* ── content max-width, left-aligned to the sidebar so there's no dead gap between them ── */
+  /* content max-width, left-aligned to the sidebar so there's no dead gap between them */
   .page{padding-bottom:34px}
   .page-hdr{padding:20px 0 8px;max-width:1280px;margin-left:0;margin-right:auto;width:calc(100% - 64px);box-sizing:content-box}
 
@@ -1661,7 +1400,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .an-charts-2col>.chart-card{flex:1;margin:0!important}
   .forecast-stats{grid-template-columns:repeat(3,1fr);max-width:420px}
 
-  /* ── DASHBOARD: real grid using the full width ── */
+  /* DASHBOARD: real grid using the full width */
   #page-dash{display:block;max-width:1280px;margin-left:0;margin-right:auto;padding:8px 32px 36px;width:100%;box-sizing:border-box}
   #page-dash>*{margin-left:0!important;margin-right:0!important;width:auto!important;max-width:none!important}
   #page-dash>.nw-card{margin:10px 0 0!important;overflow:visible}
@@ -1678,12 +1417,10 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .nw-amount{font-size:40px}
   .mini-chart{height:130px}
 
-  /* ── ASSETS: responsive card grid instead of one narrow column ── */
+  /* ASSETS: responsive card grid instead of one narrow column */
   .assets-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:9px}
   .assets-list.grouped{display:flex}
-  /* Wider rows, not more of them abreast: a category section reads as a list
-     of what is in it, and three cards per line inside a box inside a page is
-     the nesting this was meant to stop. */
+  /* One card per line inside groups. */
   .ag-items{margin-left:17px}
   .ag-items>.asset-item{padding:10px 16px 10px 14px}
   .assets-summary-scroll{overflow-x:visible;margin-left:0;margin-right:0}
@@ -1692,21 +1429,21 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .assets-table-wrap{width:100%}
   .an-row-2 .assets-table-wrap{width:100%}
 
-  /* ── DEBTS: card grid ── */
+  /* DEBTS: card grid */
   .debt-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:9px}
   .debt-summary{display:grid;grid-template-columns:repeat(3,1fr)}
 
-  /* ── PLAN: goals grid ── */
+  /* PLAN: goals grid */
   .goals-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
   .plan-top-stats{display:grid;grid-template-columns:repeat(3,1fr)}
 
   .assets-list:has(>.empty-state),.debt-list:has(>.empty-state),.goals-list:has(>.empty-state){display:block}
   .assets-list>.empty-state,.debt-list>.empty-state,.goals-list>.empty-state{max-width:420px;margin:40px auto}
 
-  /* ── ANALYTICS: 4-up stats ── */
+  /* ANALYTICS: 4-up stats */
   .an-stats{grid-template-columns:repeat(4,1fr)}
 
-  /* ── SETTINGS: constrain to a readable column, don't stretch full width ── */
+  /* SETTINGS: constrain to a readable column, don't stretch full width */
   #page-settings .settings-body{max-width:920px;margin:0 auto;padding:10px 32px}
   #page-settings .page-hdr{max-width:984px;margin:0 auto;width:calc(100% - 64px)}
 
@@ -1726,10 +1463,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 }
 
 
-/* ════════ CONFIRM DIALOG ════════
-   Themed replacement for window.confirm(). Uses the same tokens as the rest
-   of the app so a destructive question doesn't suddenly look like a browser
-   chrome prompt in the middle of a finance app. */
+/* CONFIRM DIALOG */
 .confirm-overlay{position:fixed;inset:0;z-index:6000;display:none;align-items:center;justify-content:center;
   padding:24px;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .confirm-overlay.open{display:flex;animation:confirmFade .16s ease}
@@ -1756,11 +1490,8 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   .confirm-overlay.open,.confirm-box{animation:none}
 }
 
-/* ════════ KEYBOARD ACCESSIBILITY ════════
-   The app had exactly one :focus-visible rule across ~870 CSS rules, so
-   tabbing through it was effectively invisible. This gives every interactive
-   element a consistent, high-contrast focus ring without affecting mouse
-   users (:focus-visible only fires for keyboard/AT navigation). */
+/* KEYBOARD ACCESSIBILITY
+   One focus ring for every interactive element (keyboard only). */
 :where(button,a,input,select,textarea,[tabindex],[role="button"],[role="tab"],[role="switch"]):focus-visible{
   outline:2px solid var(--accent);
   outline-offset:2px;
@@ -1772,8 +1503,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 /* Never remove the ring entirely; if a component sets outline:none, restore it. */
 :focus-visible{outline-color:var(--accent)}
 
-/* Respect the OS "reduce transparency" setting: heavy blur is a readability
-   problem for some people, not just an aesthetic. */
+/* Respect reduced transparency. */
 @media (prefers-reduced-transparency:reduce){
   .confirm-overlay{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(0,0,0,.85)}
 }
@@ -1789,21 +1519,16 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
   clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 
-/* ════════ HABIT TRACKER ════════
-   Spreadsheet grid: habits down the left, days across the top, progress on the
-   right. Name+goal column is sticky left, progress column sticky right, so on
-   a phone you can scroll the days while both anchors stay put. */
+/* HABIT TRACKER
+   Habits down, days across; name and progress columns stick left and right. */
 .habit-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin:10px 12px 0;padding:12px 0 12px;overflow:hidden}
 .habit-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px 10px}
 .habit-nav{display:flex;align-items:center;gap:4px}
 .habit-navbtn{background:var(--card2);border:1px solid var(--border);border-radius:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;flex:none}
 .habit-navbtn:disabled{opacity:.3;cursor:default}
-/* 86px was sized for "September 2026"; the header shows "Sep 2026" now, and
-   the spare 12px is what pushed this row off a 320px screen. */
+/* Fits "Sep 2026". */
 .habit-month{font-size:11px;font-weight:800;color:var(--text);min-width:72px;text-align:center}
-/* On the narrowest phones the section label is the one thing here that is
-   purely decorative, the card is plainly the habit tracker, so it gives up
-   its letter-spacing before any control has to shrink. */
+/* Smallest phones: drop the label's letter-spacing first. */
 @media(max-width:360px){
   .habit-hdr{padding-left:8px;padding-right:8px;gap:4px}
   .habit-hdr .sec-title{letter-spacing:.6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1827,11 +1552,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 .hb-trend{width:100%;height:54px;display:block;overflow:visible}
 .hb-trend-cap{display:flex;justify-content:space-between;font-size:8.5px;color:var(--text3);margin-top:2px}
 
-/* x only. On both axes this also swallows a plain vertical drag that starts
-   over the grid, and the page then cannot be scrolled from a card that
-   fills most of the screen. The vertical half of the problem, a sideways
-   pull at the end of the month leaking into the page, is handled where the
-   pull is measured and can be told apart from a scroll. */
+/* x only, so vertical drags over the grid still scroll the page. */
 .habit-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:2px;
   overscroll-behavior-x:contain}
 .habit-grid{display:inline-block;min-width:100%}
@@ -1851,11 +1572,7 @@ table.atable.atable-fixed{table-layout:fixed;min-width:600px}
 .hb-dh.today .hb-dnum,.hb-dh.today .hb-dow{color:var(--accent)}
 .hb-cell{width:26px;min-width:26px;height:34px;background:transparent;border:0;padding:3px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;position:relative}
-/* The box is a pseudo-element so the tap target stays a comfortable 26x34
-   while the visible cell stays small and grid-like. A tick reads as 'done';
-   a filled block reads as a heatmap value, and a month of them is a wall of
-   colour you have to decode before you can count. The outline stays so the
-   grid is still a grid, and the tick carries the habit's colour. */
+/* Small visible box, larger tap target; a tick in the habit's colour. */
 .hb-cell::after{content:'';position:absolute;inset:6px 0;border-radius:0;background:transparent;
   border:1.5px dashed var(--border2);transition:transform .12s ease,border-color .16s,background-color .16s}
 .hb-tick{position:relative;z-index:1;width:14px;height:14px;color:currentColor;
@@ -1893,21 +1610,14 @@ body.no-anim .hb-tick{transition:none}
 .habit-summary{padding:12px 12px 0}
 .hb-rings{display:flex;gap:8px}
 .hb-ring{flex:1;min-width:0;background:var(--card2);border-radius:11px;padding:9px 4px 8px;text-align:center;position:relative}
-/* The dial is its own box, exactly the size of the ring, so the number
-   centres on the ring rather than on a hand-tuned offset from the top of
-   the card. */
+/* Dial box the size of the ring, so the number centres on it. */
 .hb-ring-dial{position:relative;width:52px;height:52px;margin:0 auto}
 .hb-ring svg{width:52px;height:52px;display:block;transform:rotate(-90deg)}
 .hb-ring-bg{fill:none;stroke:var(--border);stroke-width:6}
 .hb-ring-fg{fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset .45s ease}
 .hb-ring-val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:12.5px;font-weight:800;line-height:1}
-/* Two things want to be centred here and they cannot both be: the digits,
-   which is what the eye reads, and the whole label including the per-cent
-   sign. Counting the sign in full puts the digits 3.6px left of the ring's
-   middle; discounting it in full puts the label 3.1px right. Just under
-   half of its width is taken back out, which is the point where neither
-   reading is off by more than about a pixel and a half. */
+/* Pull the % back by just under half its width to centre the digits. */
 .hb-ring-val span{font-size:8px;margin-right:-.45em}
 .hb-ring-lbl{font-size:9.5px;font-weight:800;color:var(--text);margin-top:5px}
 .hb-ring-sub{font-size:8px;color:var(--text3);margin-top:1px}
@@ -1916,11 +1626,8 @@ body.no-anim .hb-tick{transition:none}
 .hb-color{width:30px;height:30px;border-radius:9px;border:2px solid transparent;cursor:pointer;flex:none}
 .hb-color.sel{border-color:var(--text);transform:scale(1.06)}
 
-/* ── reordering habits ──
-   The grip is two dotted columns drawn with a gradient rather than an
-   icon: it is 5px wide and an SVG at that size is mush. It only takes
-   room on a pointer device, where hovering is how you would find out a
-   row can be dragged; on touch the hold gesture is the discovery. */
+/* Reordering habits
+   Gradient grip, shown on hover-capable pointers; touch uses press-and-hold. */
 .hb-grip{width:0;flex:none;align-self:stretch;margin:7px 0;opacity:0;
   background-image:radial-gradient(currentColor 42%,transparent 44%);
   background-size:2px 4px;color:var(--text3);
@@ -1937,8 +1644,7 @@ body.hb-reordering .hb-cell{pointer-events:none}
   background:var(--card2);box-shadow:0 8px 22px var(--shadow)}
 .hb-row.hb-drag .hb-grip{width:2px;opacity:1;margin-right:2px;color:var(--accent)}
 body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
-/* One line under the grid, so the gesture is not something you have to
-   guess at. Hidden when there is nothing to reorder. */
+/* Gesture hint; hidden when there is nothing to reorder. */
 .hb-hint{font-size:9.5px;color:var(--text3);padding:6px 12px 0;text-align:center}
 
 @media(max-width:400px){
@@ -1948,7 +1654,7 @@ body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
   .hb-hero-num{font-size:30px}
 }
 
-/* ── PAISAFOLIO CIRCLE ───────────────────────────────────────────────── */
+/* PAISAFOLIO CIRCLE */
 .circle-note{background:var(--bg3);border:1px solid var(--border);border-radius:12px;
   padding:12px 13px;font-size:11.5px;line-height:1.55;color:var(--text2);margin-bottom:12px}
 .circle-note b{color:var(--text);font-weight:700}
@@ -1958,14 +1664,12 @@ body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
 .circle-err{font-size:11.5px;color:var(--red);background:var(--red-bg);border-radius:10px;
   padding:9px 12px;margin-top:10px;line-height:1.5}
 .circle-row .circle-ava{flex:none;display:flex;align-items:center;margin-right:2px}
-/* The two answers sit on the row, not under it: wiz-btn is flex:1 by
-   default, which stretched them until the row wrapped. */
+/* Keep the buttons on the row (wiz-btn is flex:1). */
 .circle-acts{display:flex;gap:6px;flex:none;align-items:center}
 .circle-acts .wiz-btn{flex:none;padding:7px 12px;font-size:11.5px;white-space:nowrap}
 .circle-row .s-item-right{flex:none;display:flex;align-items:center;gap:8px}
 .circle-meta{font-size:10.5px;color:var(--text3);font-weight:600}
-/* One card per thing they share, so a person who shares only their goals
-   gets a sheet about goals rather than a page of empty headings. */
+/* One card per shared scope. */
 .circle-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;
   padding:12px 13px;margin-bottom:10px}
 .circle-card-lbl{font-size:8.5px;font-weight:800;letter-spacing:1.2px;color:var(--text3);
@@ -1977,20 +1681,12 @@ body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
 .circle-goal-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
   font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px}
 
-/* ════════ UNDO TOAST STACK ════════
-   Each destructive action gets its OWN toast, stacked above the previous
-   ones, each with its own independent 8s countdown. Deleting a second item
-   while the first is still undoable must not lose the first, that was the
-   bug with the old single-slot version, which reused one global snapshot
-   and one shared DOM element, so a second delete silently overwrote the
-   first delete's undo entirely. */
+/* UNDO TOAST STACK
+   One toast per action, each with its own countdown. */
 .undo-toast-stack{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);
   z-index:500;display:flex;flex-direction:column-reverse;gap:8px;align-items:center;
   pointer-events:none;width:max-content;max-width:min(380px,calc(100vw - 32px))}
-/* A floor as well as a ceiling on the width: "Test deleted" on its own made
-   a stubby little box, and the countdown bar underneath it read as a solid
-   block rather than a timer. Shallower now, with the bar hairline-thin and
-   inset from the rounded corners so it looks like time running out. */
+/* Min width so the countdown reads as a timer. */
 .undo-toast{display:flex;align-items:center;gap:10px;padding:7px 7px 9px 14px;
   background:var(--card);border:1px solid var(--border2);border-radius:12px;
   font-size:12px;font-weight:600;color:var(--text);box-shadow:0 8px 26px var(--shadow);
@@ -1998,42 +1694,30 @@ body.no-anim .hb-row.hb-shift,body.no-anim .hb-grip{transition:none}
   width:100%;min-width:min(248px,calc(100vw - 32px));
   opacity:0;transform:translate3d(0,10px,0);transition:opacity .22s ease,transform .22s ease}
 .undo-toast.show{opacity:1;transform:translate3d(0,0,0)}
-/* Two lines rather than an ellipsis: "Bitcoin transaction deleted" cut to
-   "Bitcoin transa…" tells you nothing about what you are undoing. */
+/* Wrap to two lines rather than truncate. */
 .undo-toast .toast-msg{flex:1;min-width:0;pointer-events:none;line-height:1.45;overflow-wrap:anywhere}
 .undo-toast .toast-undo{flex:none;background:transparent;border:0;color:var(--accent);
   font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
   padding:7px 11px;border-radius:8px;cursor:pointer;
   transition:background .15s ease,transform .15s ease}
-/* The row is short now, so the 44px target comes from a pseudo rather than
-   from padding that would make the toast tall again. */
+/* 44px target via a pseudo-element. */
 .undo-toast .toast-undo::after{content:'';position:absolute;top:50%;right:0;width:76px;
   height:44px;transform:translateY(-50%)}
 .undo-toast .toast-undo:hover{background:var(--accent-glow)}
 .undo-toast .toast-undo:active{transform:scale(.95)}
 .toast-undo-barwrap{position:absolute;left:12px;right:12px;bottom:4px;height:2px;border-radius:2px;
   background:var(--border);pointer-events:none;overflow:hidden}
-/* Driven by a keyframe animation rather than a JS width transition: a
-   transition needs a style change to land on a already-laid-out element in a
-   later frame to fire at all, which is easy to lose. An animation with a
-   duration just runs. --undo-ms is set inline so the bar and the actual undo
-   window can never drift apart. */
+/* Keyframe-driven; --undo-ms keeps the bar in step with the undo window. */
 .toast-undo-bar{height:100%;width:100%;background:var(--accent);transform-origin:left center;
   animation:undoCountdown var(--undo-ms,8000ms) linear forwards}
 @keyframes undoCountdown{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 body.no-anim .toast-undo-bar{animation-duration:var(--undo-ms,8000ms)!important}
 
-/* ══════════════════════════════════════════════════════════════════════
-   DESIGN SYSTEM ADDENDUM
-   Cross-cutting rules that belong to the whole app rather than to one
-   component. Kept last so they win without needing !important.
-   ══════════════════════════════════════════════════════════════════════ */
+/* DESIGN SYSTEM ADDENDUM
+   App-wide rules, kept last so they win without !important. */
 
-/* ── Keyboard focus ───────────────────────────────────────────────────
-   Only `.search-box input:focus` had a visible ring; everything else fell
-   back to the UA default outline, which is close to invisible on a near
-   black surface. :focus-visible means pointer users never see a ring while
-   keyboard users always do. */
+/* Keyboard focus
+   Visible ring for keyboard users only. */
 :where(button,a[href],input,select,textarea,summary,[tabindex]:not([tabindex="-1"])):focus-visible{
   outline:2px solid var(--accent);
   outline-offset:2px;
@@ -2044,80 +1728,50 @@ body.no-anim .toast-undo-bar{animation-duration:var(--undo-ms,8000ms)!important}
 .stat-card:focus-visible,.card:focus-visible{border-radius:var(--radius)}
 .cat-pill:focus-visible,.pnl-pill:focus-visible,.ledger-pill:focus-visible{border-radius:20px}
 .lock-keypad button:focus-visible{border-radius:50%}
-/* Never strip the outline on :focus-visible, even where a component sets
-   outline:none for the mouse case. */
+/* Never strip the ring on :focus-visible. */
 :focus:not(:focus-visible){outline:none}
 
-/* ── Comfortable touch targets ────────────────────────────────────────
-   Several controls are visually small on purpose (34px icon buttons, tiny
-   pills). Rather than grow them and loosen the layout, extend the hit area
-   past the paint area with a pseudo-element, accurate to tap, identical
-   to look at. */
+/* Touch targets
+   Extend small controls' hit areas with a pseudo-element. */
 .hdr-btn,.see-all,.conn-banner-retry,.recur-run-btn,.curr-quick-btn,.onb-skip{position:relative}
 .hdr-btn::after,.see-all::after,.conn-banner-retry::after,
 .recur-run-btn::after,.curr-quick-btn::after,.onb-skip::after{
   content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   width:max(100%,44px);height:max(100%,44px);
 }
-/* Controls that sit shoulder to shoulder in a row get the height only. Widening
-   them too would make each one's hit area reach across its neighbour, and the
-   tap would land on whichever happened to stack higher, worse than a small
-   target, because it is wrong rather than merely hard. Their rows are short,
-   so the vertical room is free. */
-/* .hb-name-cell is deliberately absent: it is position:sticky further up,
-   and listing it here quietly overrode that (same specificity, later in
-   the file), so the habit names scrolled away with the day boxes instead
-   of holding the left edge. Sticky is a positioned box already, so the
-   tap-target pseudo below still anchors to it. */
+/* Controls packed in a row grow in height only, so hit areas don't overlap. */
+/* .hb-name-cell is left out: it is sticky, and this would override that. */
 .pnl-pill,.habit-navbtn,.month-nav,.seg-3-btn,.seg-edit-btn,.link-btn,.cat-pill,
 .d-tab,.sort-btn,.add-btn{position:relative}
 .pnl-pill::after,.habit-navbtn::after,.month-nav::after,.seg-3-btn::after,
 .seg-edit-btn::after,.link-btn::after,.cat-pill::after,.hb-name-cell::after,
 .d-tab::after,.sort-btn::after,.add-btn::after{
   content:'';position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);
-  /* `inherit`, never `auto`. On the wide layout every page is still in the
-     DOM stacked on top of the others and switched off with pointer-events;
-     `auto` here punched a hole through that, so Reports' Export CSV button
-     sat over Debts’ Add Debt and took the click, a tap on one page ran a
-     command on another. Inheriting keeps the target alive on the page you
-     are on and dead on the ones you are not. */
+  /* `inherit`, never `auto`: hidden pages are stacked and rely on pointer-events:none. */
   height:max(100%,44px);pointer-events:inherit;
 }
 
-/* ── Horizontal scrollers ─────────────────────────────────────────────
-   These strips clip their last item mid-word with nothing to say there is
-   more (the stat row on Assets, top movers, the category bar). A mask fades
-   whichever edge still has more behind it. bindScrollHints() sets
-   `data-scroll` to the direction the unread items lie in, so "end" means
-   there is more to the right and the RIGHT edge is the one that fades.
-   Getting these two the wrong way round dims the card you are reading and
-   hard-cuts the one you are scrolling toward, which is what it used to do. */
+/* Horizontal scrollers
+   bindScrollHints() sets data-scroll to where unread items are; that edge fades. */
 .scroll-x{-webkit-overflow-scrolling:touch}
 .scroll-x[data-scroll="end"]{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent 100%);mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent 100%)}
 .scroll-x[data-scroll="start"]{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 22px);mask-image:linear-gradient(90deg,transparent 0,#000 22px)}
 .scroll-x[data-scroll="middle"]{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%)}
-/* Scroll snapping makes these strips settle on a card instead of halfway
-   through one. */
+/* Snap to a card. */
 .movers-scroll,.assets-summary-row{scroll-snap-type:x proximity}
 .movers-scroll>*,.assets-summary-row>*{scroll-snap-align:start}
 
-/* ── Chart unavailable ────────────────────────────────────────────────
-   Paired with syncChartFallbacks(). */
+/* Chart unavailable */
 .chart-na-host{height:auto!important;min-height:0}
 .chart-na{display:flex;align-items:center;justify-content:center;gap:6px;
   padding:16px 12px;border:1px dashed var(--border2);border-radius:10px;
   color:var(--text3);font-size:11px;font-weight:600;letter-spacing:.2px;text-align:center}
 
-/* An unrecognised colourTheme (an older export, a renamed palette) used to
-   render a progress bar with no fill at all, a goal at 100% looked empty.
-   The base rule now carries the accent gradient, so a bad class degrades to
-   the default colour instead of to invisible. */
+/* Default fill for unknown colour themes. */
 .progress-fill{background:linear-gradient(90deg,var(--accent2),var(--accent))}
 
-/* ── Numerals ─────────────────────────────────────────────────────────
-   Poppins ships tabular figures. Turning them on stops every currency
-   column from shifting sideways as digits change during a live price tick
-   or a count-up animation. */
+/* Numerals
+   Tabular figures so live numbers don't shift sideways. */
 .nw-amount,.stat-val,.asset-val,.debt-val,.goal-pct,.plan-stat-val,
 .debt-sum-val,.tx-amount,.ledger-amt,.mover-price,.assets-summary-val,.an-stat .v,
 .legend-pct,.nw-badge,.nw-change,.asset-pnl,.d-stat-val,
@@ -2127,11 +1781,8 @@ body.no-anim .toast-undo-bar{animation-duration:var(--undo-ms,8000ms)!important}
   font-family:var(--font-num);
 }
 
-/* ── Density ──────────────────────────────────────────────────────────
-   The layout carried ~12px of air between every card and 11-13px inside
-   them, which on a 390px phone costs roughly a full extra card of scroll
-   per screen. Tightened to a consistent 8/10/12 rhythm; nothing loses
-   breathing room, there is just less dead space between related things. */
+/* Density
+   A consistent 8/10/12 spacing rhythm. */
 .sec-pad{padding:8px 12px}
 .nw-card{margin:10px 12px 0;padding:15px 15px 14px}
 .pnl-filter-row{padding:0 12px;margin-top:5px}
@@ -2162,35 +1813,17 @@ body.no-anim .toast-undo-bar{animation-duration:var(--undo-ms,8000ms)!important}
   .assets-list,.debt-list{gap:8px}
 }
 
-/* ── Reduced motion ───────────────────────────────────────────────────
-   The blanket rule further up already flattens durations. These are the
-   decorative loops that a duration of 0 does not actually stop. */
+/* Reduced motion */
 @media(prefers-reduced-motion:reduce){
   .overdue-badge,.live-dot,.asset-live-badge .dot,.spinning,.toast-undo-bar{animation:none}
   .overdue-badge{outline:1px solid currentColor;outline-offset:-1px}
 }
 body.no-anim .overdue-badge,body.no-anim .live-dot,body.no-anim .asset-live-badge .dot{animation:none}
 
-/* ══════════════════════════════════════════════════════════════════════
-   COMPOSITING BUDGET
+/* COMPOSITING BUDGET
+   Hidden or finished elements should not hold compositor layers. */
 
-   Measured on a 390x844 phone viewport: 82 composited layers holding
-   ~61 MB of GPU memory, about 49x the viewport area, while the app sat
-   completely idle on the dashboard. That is what makes a phone lag and
-   run hot: the GPU is re-managing that surface set every frame.
-
-   Almost all of it came from elements that were finished or not open yet.
-   `opacity:0` hides an element visually but keeps it in the paint and
-   composite pipeline; `will-change` on a permanently-present element pins
-   a layer for its whole lifetime. All 17 modals were sitting there fully
-   rendered, each with a backdrop blur and a promoted layer, waiting to be
-   opened. Hidden work is still work.
-   ══════════════════════════════════════════════════════════════════════ */
-
-/* Closed modals: visibility:hidden removes the whole subtree from painting,
-   so the 28px sheet blur and the 5px overlay blur cost nothing until the
-   modal is actually opened. visibility is transitioned discretely, delayed
-   by the length of the fade, so the closing animation still plays in full. */
+/* Closed modals skip painting; visibility flips after the fade. */
 .modal-overlay{visibility:hidden;transition:opacity .25s,visibility 0s linear .25s}
 .modal-overlay.open{visibility:visible;transition:opacity .25s,visibility 0s linear 0s}
 /* Promote the sheet only while it is on screen and moving. */
@@ -2201,18 +1834,14 @@ body.no-anim .overdue-badge,body.no-anim .live-dot,body.no-anim .asset-live-badg
 .cmdk-box{will-change:auto}
 .cmdk.open .cmdk-box{will-change:transform}
 
-/* Only the page you are looking at needs a promoted layer; the other five
-   are display:none and were still asking for one. */
+/* Only the visible page gets a layer. */
 .page{will-change:auto}
 .page.active{will-change:opacity,transform}
 
-/* The splash bar kept its infinite keyframe animation running for the whole
-   session, .splash.hide only sets opacity/visibility, and neither stops an
-   animation from ticking. */
+/* Stop the splash animation once hidden. */
 .splash.hide{display:none}
 
-/* Overlay blurs are the most expensive effect on a phone and the least
-   visible one. The existing mobile rule covered cards but not overlays. */
+/* No overlay blur on phones. */
 @media(max-width:700px){
   .modal-overlay,.onb-overlay,.auth-overlay,.verify-overlay,.cmdk,.lock-close-btn{
     backdrop-filter:none !important;-webkit-backdrop-filter:none !important;
@@ -2225,40 +1854,21 @@ body.no-anim .overdue-badge,body.no-anim .live-dot,body.no-anim .asset-live-badg
 .skel{animation:shimmer 1.4s ease 6}
 @media(prefers-reduced-motion:reduce){.skel{animation:none}}
 
-/* The net-worth card's sheen looped forever, repainting the full card every
-   frame for a decorative highlight. A flourish that plays on arrival reads as
-   craft; one that loops for the whole session is just cost. */
+/* Sheen plays on arrival, not forever. */
 .nw-card::before{animation-iteration-count:3}
 
-/* ══════════════════════════════════════════════════════════════════════
-   PAGE + NAV TRANSITIONS
-
-   There were none. `.page` carried opacity/transform and a transition, and
-   goPage() had a from-left/from-right scaffold, but no call site ever passed
-   a direction and, more fundamentally, a transition cannot run on an
-   element going from display:none to display:block in the same frame,
-   because there is no previous computed style to interpolate from. Every tab
-   switch was a hard cut. A CSS *animation* does run in that situation, which
-   is what this uses.
-
-   Only transform and opacity are animated, so the whole thing stays on the
-   compositor: no layout, no repaint.
-   ══════════════════════════════════════════════════════════════════════ */
+/* PAGE + NAV TRANSITIONS
+   An animation (a transition can't run from display:none). Transform and opacity only. */
 
 .page.active{animation:pageIn var(--dur-3) var(--ease-out) both}
 @keyframes pageIn{
   from{opacity:0;transform:translate3d(var(--page-dx,14px),0,0)}
   to{opacity:1;transform:translate3d(0,0,0)}
 }
-/* An animating element is auto-promoted for its duration, so will-change would
-   only pin the layer permanently afterwards. */
+/* Animations promote on their own. */
 .page.active{will-change:auto}
 
-/* One indicator that slides between tabs, rather than a ::before that pops
-   in and out on whichever item happens to be active. Pure transform.
-   NB: .bnav is already position:fixed, which makes it the containing block
-   for this. Re-declaring position here would silently override that and
-   drop the whole nav bar out of fixed positioning. */
+/* One sliding indicator. .bnav is already fixed and is its containing block; don't set position here. */
 .nav-ind{
   position:absolute;top:0;left:0;width:22px;height:3px;
   background:var(--accent);border-radius:0 0 4px 4px;
@@ -2293,33 +1903,22 @@ body.no-anim .page.active{animation:none}
 body.no-anim .nav-ind{transition:none}
 body.no-anim .nav-item.active svg{animation:none}
 
-/* ── Vertical scroll affordance ───────────────────────────────────────
-   The Sync Center's pending list is capped at 200px and scrolls, but it gave
-   no sign of it: the header counts every queued item ("WAITING TO SYNC (4)")
-   while the box shows as many as fit, so the number and the list disagreed
-   with nothing on screen to explain why. Same treatment as the horizontal
-   strips, fade whichever edge still has content behind it. */
+/* Vertical scroll affordance: fade the edge that has more. */
 .scroll-y[data-scroll="end"]{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 26px),transparent 100%);mask-image:linear-gradient(180deg,#000 calc(100% - 26px),transparent 100%)}
 .scroll-y[data-scroll="start"]{-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 26px);mask-image:linear-gradient(180deg,transparent 0,#000 26px)}
 .scroll-y[data-scroll="middle"]{-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%)}
 /* Taller phones can simply show more of the queue before it needs scrolling. */
 @media(min-height:760px){.sync-pending-list{max-height:280px}}
 
-/* Shown when there genuinely is not enough history to plot. Distinct from
-   .chart-na (Chart.js itself unavailable), because syncChartFallbacks() owns
-   that class and clears it whenever the library IS present. */
+/* Not enough history to plot (unlike .chart-na, Chart.js missing). */
 .chart-empty{display:flex;align-items:center;justify-content:center;text-align:center;
   padding:16px 14px;border:1px dashed var(--border2);border-radius:10px;
   color:var(--text3);font-size:11px;font-weight:600;line-height:1.5}
 
-/* A one-line caption under a chart, for saying what the numbers actually are
-   (cost vs market, principal vs accrued) instead of leaving it ambiguous. */
+/* Caption saying what a chart's numbers are. */
 .chart-note{font-size:10px;color:var(--text3);margin-top:8px;line-height:1.45}
 
-/* ── Allocation vs target ─────────────────────────────────────────────
-   A proportion bar over a compact table: what you hold, what you wanted,
-   and how far apart those are. Six columns on a 390px screen, so the
-   numeric ones are tabular and right-aligned to keep them scannable. */
+/* Allocation vs target */
 .alloc-bar{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--bg3);margin-bottom:12px}
 .alloc-bar-seg{height:100%;min-width:2px}
 .alloc-row{display:grid;grid-template-columns:10px 1fr auto 44px 36px 48px;align-items:center;gap:7px;padding:7px 2px;border-bottom:1px solid var(--border)}
@@ -2359,9 +1958,7 @@ body.no-anim .nav-item.active svg{animation:none}
   font-size:12px;font-weight:700;color:var(--text2)}
 #allocTargetTotal{font-variant-numeric:tabular-nums}
 
-/* ── Realised vs unrealised ───────────────────────────────────────────
-   One bar split by magnitude, then the two figures underneath. Green and
-   red carry sign; the a/b tints separate banked from on-paper. */
+/* Realised vs unrealised */
 .split-bar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--bg3);margin-bottom:12px}
 .split-seg{min-width:2px}
 .split-seg.pos.a{background:var(--green)}
@@ -2385,9 +1982,7 @@ body.no-anim .nav-item.active svg{animation:none}
 .mini-month{display:inline-block;margin-right:8px;font-variant-numeric:tabular-nums}
 .mini-month.pos{color:var(--green)}.mini-month.neg{color:var(--red)}
 
-/* ── Receivables ageing ───────────────────────────────────────────────
-   Buckets shade warmer as the money gets older, so the shape of the
-   problem reads before any number does. */
+/* Receivables ageing */
 .age-headline{display:flex;flex-direction:column;gap:3px;margin-bottom:13px}
 .age-total{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.4px;font-variant-numeric:tabular-nums}
 .age-total-sub{font-size:11px;color:var(--text3)}
@@ -2411,8 +2006,7 @@ body.no-anim .nav-item.active svg{animation:none}
 .age-row-meta{grid-area:meta;font-size:10px;color:var(--text3)}
 .age-row-amt{grid-area:amt;align-self:center;font-size:12.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
 
-/* ── Account profile ──────────────────────────────────────────────────
-   The sheet leads with who you are before what it is doing. */
+/* Account profile */
 .profile-card{display:flex;align-items:center;gap:12px;padding:4px 2px 14px}
 .profile-ident{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .profile-name{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.1px;
@@ -2430,12 +2024,8 @@ body.no-anim .nav-item.active svg{animation:none}
 .sheet-section-lbl{font-size:9px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
   color:var(--text3);padding:14px 2px 6px;border-top:1px solid var(--border);margin-top:6px}
 
-/* ── Optional typefaces ───────────────────────────────────────────────
-   Declared, not loaded. A browser fetches a @font-face file only when a rule
-   actually uses that family, so these cost nothing until someone picks one in
-   Settings. They are deliberately NOT in the service worker's precache list:
-   the default launch stays exactly as light as before.
-   Same unicode-range scoping as Poppins, so only the needed subsets download. */
+/* Optional typefaces
+   Only downloaded once selected in Settings; not precached. */
 @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/ibm-plex-sans-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/ibm-plex-sans-400-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
 @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/ibm-plex-sans-500-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
@@ -2469,9 +2059,7 @@ body.no-anim .nav-item.active svg{animation:none}
 @font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/space-grotesk-700-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 @font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/space-grotesk-700-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
 
-/* ── Font picker ──────────────────────────────────────────────────────
-   Each option previews itself, which is the only honest way to choose a
-   typeface. The number options preview digits, not letters. */
+/* Font picker */
 .font-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
 .font-opt{position:relative;text-align:left;background:var(--bg3);border:1px solid var(--border2);
   border-radius:12px;padding:11px 12px;cursor:pointer;transition:.15s;color:var(--text);
@@ -2482,47 +2070,33 @@ body.no-anim .nav-item.active svg{animation:none}
 .font-opt-sample{font-size:19px;font-weight:700;line-height:1.1;color:var(--text);letter-spacing:-.2px}
 .font-opt-note{font-size:9.5px;color:var(--text3);line-height:1.35;font-family:var(--font)}
 
-/* ── Wide-screen refinements ──────────────────────────────────────────*/
+/* Wide-screen refinements */
 @media(min-width:880px) and (max-width:1099px){
-  /* Narrower rail so the content column keeps a usable width on a small
-     laptop or a tablet in landscape. */
+  /* Narrower rail on small laptops. */
   #app{grid-template-columns:200px 1fr}
   .bnav{padding:14px 10px}
   .bnav .nav-item{padding:10px 12px;gap:10px}
   .bnav .nav-item span{font-size:12.5px}
 }
 @media(min-width:1280px){
-  /* The net-worth chart grows with the card and ends up mostly empty on a
-     large screen. Cap it so the card stays a headline, not a poster. */
+  /* Cap the chart height on large screens. */
   .mini-chart{height:150px}
 }
 
-/* ── Sync Center spacing ──────────────────────────────────────────────
-   .s-item carries its own margin-bottom, which spaces the buttons from each
-   other, but #syncCenterBody is not an .s-item, so whatever it renders sat
-   flush against the Sync Now button below it, at exactly 0px. Give the block
-   the same rhythm as the rows it sits among. */
+/* Sync Center spacing */
 #syncCenterBody:not(:empty){margin-bottom:6px}
 .s-item{margin-bottom:6px}
 .sync-center-row+.s-item,.sync-pending-list+.s-item{margin-top:2px}
 
-/* ── Chart tooltip on touch ───────────────────────────────────────────
-   Chart.js reports touch as hover, but the browser was claiming the gesture
-   for scrolling first, so dragging along the line on a phone did nothing.
-   pan-y keeps vertical scrolling while letting the chart read horizontal
-   movement, which is the axis the crosshair actually follows. */
+/* Chart tooltip on touch: pan-y keeps vertical scroll, horizontal drags scrub. */
 .mini-chart{touch-action:pan-y}
 .chart-tooltip{
   background:var(--glass-solid);border:1px solid var(--border2);
   box-shadow:0 6px 20px var(--shadow);padding:6px 10px;line-height:1.35;
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
-/* ══ SPENDING & BUDGETS ══════════════════════════════════════════════
-   The one page in the app about money leaving rather than money held, so
-   it reads differently on purpose: a month at a time, a pace to hold, and
-   spending down rendered as the good direction. */
-/* Shown on the edit sheet of a holding that already has a ledger, where the
-   quantity and the cost are read out of that ledger rather than typed. */
+/* SPENDING & BUDGETS */
+/* Holding with a ledger: quantity and cost come from it. */
 .ledger-locked{display:flex;gap:8px;align-items:flex-start;margin:0 0 12px;padding:10px 12px;
   background:var(--bg3);border:1px solid var(--border);border-radius:11px;
   font-size:10.5px;line-height:1.5;color:var(--text2)}
@@ -2539,14 +2113,10 @@ body.no-anim .nav-item.active svg{animation:none}
 .spend-hero{margin:6px 12px 8px;padding:14px 14px 10px}
 .spend-total{font-size:30px;font-weight:800;color:var(--text);letter-spacing:-.8px;line-height:1;margin-top:5px}
 .spend-compare{font-size:11px;font-weight:600;color:var(--text3);margin-top:6px}
-/* Spending less is the good outcome here, which inverts the colour meaning
-   used everywhere else in the app. */
+/* Spending less is good: inverted colours. */
 .spend-compare.better{color:var(--green)}
 .spend-compare.worse{color:var(--red)}
-/* The empty state stands in for the chart, so it takes the chart's spacing
-   with it. Listed here rather than on its own line so the two cannot drift
-   apart: without it the dashed box sat flush against the line of text
-   above, which the chart never does. */
+/* The empty state takes the chart's spacing. */
 .spend-day-chart{height:96px;margin-top:12px;position:relative}
 #spendDayEmpty{margin-top:12px}
 .spend-day-chart canvas{width:100%!important;height:100%!important}
@@ -2613,13 +2183,7 @@ body.no-anim .nav-item.active svg{animation:none}
 
 .spend-list{display:flex;flex-direction:column;max-height:420px;overflow-y:auto;
   scrollbar-width:thin;-webkit-overflow-scrolling:touch}
-/* A column flex box with a height cap SHRINKS its children to fit before it
-   will let anything overflow, and a scroll box that is never overflowed
-   never scrolls. Past about eight entries every row was squeezed from 52px
-   to 22px, so each one clipped its own second line and the row below started
-   before the one above had finished - two entries drawn on top of each
-   other under one date. The rows are the right height and the list is what
-   scrolls. */
+/* flex:none so a height-capped column doesn't shrink rows; the list scrolls instead. */
 .spend-list>*{flex:none}
 .spend-list::-webkit-scrollbar{width:4px}
 .spend-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
@@ -2671,8 +2235,7 @@ body.no-anim .nav-item.active svg{animation:none}
 .budget-legend-row{font-size:9.5px;color:var(--text3);line-height:1.45}
 .budget-legend-row b{color:var(--text2);font-weight:700;margin-right:5px}
 
-/* Seven tabs is a lot for a small phone: drop the label size a touch and let
-   the icons carry more of the load rather than truncating words. */
+/* Smaller nav labels on small phones. */
 @media(max-width:400px){
   .nav-item span{font-size:8.5px;letter-spacing:-.2px}
   .nav-item{padding:8px 0 8px;gap:2px}
@@ -2681,10 +2244,8 @@ body.no-anim .nav-item.active svg{animation:none}
   .spend-hero,#budgetCard,#budgetEmpty,#spendListCard,.page#page-spend>.card{margin-left:0;margin-right:0}
   .spend-stats,.spend-actions,.month-bar{padding-left:0;padding-right:0}
 }
-/* ══ AI ASSISTANT ════════════════════════════════════════════════════
-   A conversation, not a form: the sheet is tall, the thread scrolls on its
-   own, and the composer stays pinned so the send button never walks off
-   the bottom when the keyboard opens. */
+/* AI ASSISTANT
+   Thread scrolls; the composer stays pinned above the keyboard. */
 .ai-hdr-btn svg{color:var(--accent)}
 .ai-sheet{display:flex;flex-direction:column;max-height:88vh;height:88vh}
 .ai-thread{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
@@ -2743,17 +2304,14 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
   .ai-sheet{max-width:520px;margin:0 auto;height:82vh}
   .ai-msg{max-width:78%}
 }
-/* ══ COMPOSITION TREEMAP ═════════════════════════════════════════════
-   Tiles are positioned in percentages by the squarify pass, so the whole
-   thing scales with its container and needs no measuring on resize. */
-/* The category picker fills itself in from what you typed. This says so,
-   quietly, so a category you did not choose is not a mystery. */
+/* COMPOSITION TREEMAP */
+/* Marks an auto-picked category. */
 .cat-ai-tag{margin-left:6px;font-size:8.5px;font-weight:700;letter-spacing:.6px;
   text-transform:uppercase;color:var(--accent);background:var(--accent-bg,rgba(245,166,35,.14));
   border-radius:5px;padding:2px 6px}
 .cat-ai-tag.thinking{color:var(--text3);background:var(--bg3)}
 .ad-price-src{font-size:9.5px;color:var(--text3);font-weight:600;margin:-6px 0 10px}
-/* ══ BACKUPS ═════════════════════════════════════════════════════════ */
+/* BACKUPS */
 .bk-note{font-size:11px;color:var(--text3);line-height:1.55;margin-bottom:12px}
 .bk-hdr{display:flex;align-items:center;justify-content:space-between;margin:16px 0 6px;
   font-size:9px;font-weight:800;letter-spacing:1.4px;color:var(--text3)}
@@ -2784,17 +2342,12 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
 .tm-tile.tm-rest{border-style:dashed;border-color:var(--border)}
 .tm-name{font-size:9.5px;font-weight:700;color:var(--text);line-height:1.15;padding:0 6px;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* A tile with room for one line spends it on the name. Smaller type buys
-   several more holdings their label rather than leaving them blank. */
+/* Small type so more tiles get a label. */
 .tm-name-sm{font-size:8px;font-weight:700;padding:0 4px;letter-spacing:-.1px}
 .tm-val{font-size:9px;font-weight:800;color:var(--text);line-height:1.1;padding:0 6px;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tm-pct{font-size:8.5px;font-weight:700;line-height:1.1;padding:0 6px;font-variant-numeric:tabular-nums}
-/* The map answers "what matters in here" at a glance. It cannot answer
-   "what is that sliver" — at phone width a holding worth a fifth of a
-   percent gets a tile 11px across, and no type fits in 11px. The list is
-   the same data with every name readable, which is the question the map
-   is bad at. */
+/* List view: every holding named, even slivers too small for the map. */
 .tm-list{display:flex;flex-direction:column;gap:1px;max-height:420px;overflow-y:auto;
   scrollbar-width:thin;border-radius:10px}
 .tm-list>*{flex:none}   /* same trap as .spend-list, see the note there */
@@ -2804,8 +2357,7 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
   padding:9px 11px;background:var(--card2);border:0;border-radius:7px;cursor:pointer;
   font-family:var(--font);text-align:left;color:inherit;overflow:hidden}
 .tm-row:active{filter:brightness(1.2)}
-/* The share of the portfolio, drawn behind the row rather than as another
-   number to read. */
+/* Portfolio share drawn behind the row. */
 .tm-row-bar{position:absolute;left:0;top:0;bottom:0;border-radius:7px 0 0 7px}
 .tm-row-nm{position:relative;flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2823,7 +2375,7 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
 .tm-legend i.na{background:var(--card2)}
 
 
-/* ══ INVESTMENT INCOME ═══════════════════════════════════════════════ */
+/* INVESTMENT INCOME */
 .inc-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .inc-l{font-size:8.5px;font-weight:700;color:var(--text3);letter-spacing:1.3px}
 .inc-v{font-size:18px;font-weight:800;color:var(--green);margin-top:3px;letter-spacing:-.4px}
@@ -2836,16 +2388,11 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
 .inc-src-v{font-size:11.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
   min-width:58px;text-align:right}
 
-/* Third action on the asset sheet. Three pills need to wrap on a narrow
-   phone rather than squeeze into unreadable thirds. */
-/* Three pills instead of two: let them wrap rather than squeeze into
-   thirds too narrow to read the label in. */
+/* Three pills wrap on narrow phones. */
 .mini-actions{flex-wrap:wrap}
 .mini-actions .act-pill{flex:1 1 96px}
 .act-pill.income{color:var(--accent)}
-/* ══ GOAL PROJECTION ═════════════════════════════════════════════════
-   A target and a date only say what you wish would happen. This says
-   whether the monthly amount actually gets you there. */
+/* GOAL PROJECTION */
 .goal-proj{background:var(--bg3);border:1px solid var(--border);border-radius:12px;
   padding:12px;margin:0 0 14px}
 .gp-head{display:flex;align-items:center;gap:7px;margin-bottom:6px}
@@ -2866,17 +2413,12 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
   font-size:8.5px;font-weight:800;letter-spacing:.2px;vertical-align:1px}
 .goal-chip.on{background:var(--green-bg);color:var(--green)}
 .goal-chip.off{background:var(--red-bg);color:var(--red)}
-/* The three actions on an asset sheet are a tab set: one is open, and the
-   form below belongs to it. Three identical buttons with a form underneath
-   read as a form with no owner. */
+/* The three actions are tabs; mark the open one. */
 .act-pill.active{border-color:currentColor;box-shadow:inset 0 0 0 1px currentColor}
 .act-pill.buy.active{background:var(--blue-bg);color:var(--blue)}
 .act-pill.sell.active{background:var(--green-bg);color:var(--green)}
 .act-pill.income.active{background:var(--accent-glow);color:var(--accent)}
-/* Arriving at a page. Most pages animate as a side effect of rebuilding their
-   charts on entry; the dashboard caches its charts, so it sat there dead. This
-   gives the cards their own arrival without discarding good chart instances to
-   buy one. Removed on finish so it replays next visit and never on a refresh. */
+/* Card arrival animation on page entry; removed when done. */
 @keyframes cardArrive{
   from{opacity:0;transform:translate3d(0,10px,0)}
   to{opacity:1;transform:none}
@@ -2885,10 +2427,7 @@ body.no-anim .ai-msg.thinking span{animation:none;opacity:.55}
   animation-delay:var(--arrive-delay,0ms)}
 body.no-anim [data-arrive].arrive{animation:none}
 @media(prefers-reduced-motion:reduce){[data-arrive].arrive{animation:none}}
-/* ══ CURRENCY PICKER ═════════════════════════════════════════════════
-   Thirty currencies in a three-across grid is a wall of symbols. A row each
-   fits the name, the rate you are actually converting at, and a way to
-   override it. */
+/* CURRENCY PICKER */
 .tall-sheet{display:flex;flex-direction:column;max-height:86vh}
 .curr-mode{margin:0 16px 8px}
 .curr-mode-hint{margin:0 16px 10px;font-size:10.5px;line-height:1.5;color:var(--text3)}
@@ -2925,9 +2464,7 @@ body.no-anim [data-arrive].arrive{animation:none}
 /* The masthead is a button now, so it must not inherit button chrome. */
 button.hdr-brand{background:none;border:none;padding:0;font-family:var(--font);cursor:pointer;text-align:left;transition:opacity .15s}
 button.hdr-brand:active{opacity:.6}
-/* A tooltip is the only place a sparkline can answer a real question, so it
-   carries the value, the exact day, and how far things had moved by then,
-   rather than a number and an ISO date. */
+/* Value, exact day and change so far. */
 .chart-tooltip{min-width:112px;text-align:left;padding:8px 10px;white-space:nowrap;
   transform:translateX(-50%);line-height:1.35}
 .tip-val{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.2px}
@@ -2941,8 +2478,7 @@ button.hdr-brand:active{opacity:.6}
 .tip-row b.dn{color:var(--red)}
 .tip-note{font-size:8.5px;color:var(--text3);font-style:italic;margin-top:5px;
   white-space:normal;max-width:150px;line-height:1.35}
-/* The habit trend is hand-rolled SVG, so it needs its own readout. A line you
-   cannot interrogate is a decoration. */
+/* Readout for the hand-rolled habit trend. */
 #habitChart{position:relative;touch-action:pan-y}
 .hb-trend-line{position:absolute;top:0;bottom:18px;width:1px;background:var(--border2);
   pointer-events:none;opacity:0;transition:opacity .1s;z-index:2}
@@ -2963,17 +2499,14 @@ button.hdr-brand:active{opacity:.6}
 .hb-trend-tip .tip-names{font-size:9px;color:var(--text2);margin-top:4px;line-height:1.4;
   max-width:150px;white-space:normal}
 .hb-trend-tip .tip-names.dim{color:var(--text3);font-style:italic}
-/* The "2 pending" chip was a coloured word: a background with no padding and
-   no radius, so it read as a highlight artefact rather than a badge. */
+/* A real badge: padding and radius. */
 .s-badge{font-size:10.5px;font-weight:800;color:var(--accent);background:var(--accent-glow);
   padding:3px 8px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;
   min-width:20px;justify-content:center}
 .cred-note{font-size:11px;color:var(--text2);line-height:1.55;background:var(--bg3);
   border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin-bottom:14px}
-/* ══ ASSISTANT BUBBLE ════════════════════════════════════════════════
-   A launcher you can put where your thumb is. It drags anywhere, snaps to
-   whichever edge it ended up nearest, and tucks most of itself off that edge
-   after a few idle seconds so it stops competing with the page. */
+/* ASSISTANT BUBBLE
+   Draggable, snaps to the nearest edge, tucks away when idle. */
 .ai-bubble{position:fixed;left:0;top:0;z-index:45;width:50px;height:50px;border:none;cursor:grab;
   display:flex;align-items:center;justify-content:center;
   border-radius:16px 4px 4px 16px;
@@ -2982,26 +2515,21 @@ button.hdr-brand:active{opacity:.6}
   touch-action:none;user-select:none;-webkit-user-select:none;will-change:transform;
   transition:opacity .3s ease,border-radius .2s,filter .16s}
 .ai-bubble.left{border-radius:4px 16px 16px 4px}
-/* Position, drag and tuck all ride on one transform, so nothing overwrites
-   anything else. Dragging is 1:1 with the finger, which means no transition;
-   the settle is a spring with a little overshoot so a throw arrives rather
-   than teleports; the tuck is a plain ease, because sliding out of the way
-   is not the same gesture as being thrown and should not bounce. */
+/* One transform for position, drag and tuck: 1:1 while dragging, a spring to settle,
+   a plain ease to tuck. */
 .ai-bubble.dragging{cursor:grabbing;transition:none;filter:brightness(1.12)}
 .ai-bubble.settling{transition:transform var(--bub-dur,.5s) cubic-bezier(.22,1.25,.36,1),
   opacity .3s ease,border-radius .2s,filter .16s}
 .ai-bubble.tucking{transition:transform .46s cubic-bezier(.33,0,.2,1),opacity .4s ease}
 /* First paint should land in place, not fly in from the corner. */
 .ai-bubble.no-anim-once{transition:none!important}
-/* Scaling on press would overwrite the translate, so the press reads as
-   light rather than movement. */
+/* Brightness on press; scale would override the translate. */
 .ai-bubble:active{filter:brightness(1.18)}
 body.no-anim .ai-bubble{transition:none}
 @media(prefers-reduced-motion:reduce){.ai-bubble{transition:none!important}}
 /* Out of the way of anything modal. */
 body.modal-open .ai-bubble{opacity:0;pointer-events:none}
-/* A caret while the answer is still unrolling, so a pause reads as "still
-   going" rather than "finished, and short". */
+/* Caret while the answer is unrolling. */
 .ai-msg.model.revealing > :last-child::after{content:'';display:inline-block;
   width:2px;height:1em;margin-left:2px;vertical-align:-2px;background:var(--accent);
   animation:aiCaret .9s steps(2,start) infinite}
@@ -3012,16 +2540,12 @@ body.no-anim .ai-msg.model.revealing > :last-child::after{animation:none}
 .seg-3{display:flex;gap:0;background:var(--border);border-radius:9px;padding:3px;margin-top:8px}
 .seg-3-btn{flex:1;background:none;border:none;border-radius:7px;padding:6px 4px;
   font-family:var(--font);font-size:10.5px;font-weight:700;color:var(--text2);cursor:pointer;transition:.16s}
-/* The unselected options sit on the segment's own darker track, where text3
-   fell just under 4.5:1. text2 is the same idea a step brighter. */
+/* text2 for contrast on the darker track. */
 .seg-3-btn.on{background:var(--card);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .s-item-static{cursor:default}
 .s-item-static:active{transform:none}
-/* ══ GUIDED TOUR ═════════════════════════════════════════════════════
-   The dimming is one box-shadow with a huge spread on a transparent box, so
-   everything outside a rounded rectangle darkens in a single paint. Four
-   panels around a hole, or a clip-path, would mean keeping several boxes in
-   sync on every scroll and resize. */
+/* GUIDED TOUR
+   The dimming is one huge box-shadow around a transparent hole. */
 .tour-overlay{position:fixed;inset:0;z-index:120;opacity:0;pointer-events:none;
   transition:opacity .28s ease}
 .tour-overlay.open{opacity:1;pointer-events:all}
@@ -3031,8 +2555,7 @@ body.no-anim .ai-msg.model.revealing > :last-child::after{animation:none}
              width .34s var(--ease-out),height .34s var(--ease-out),border-radius .2s}
 body.no-anim .tour-hole,body.no-anim .tour-overlay{transition:none}
 @media(prefers-reduced-motion:reduce){.tour-hole{transition:none}}
-/* Gliding between steps is right; trailing a third of a second behind a
-   finger scroll is not, so following a scroll turns the ease off. */
+/* No easing while following a scroll. */
 .tour-hole.instant{transition:none}
 /* The lit element sits above the dimming so it reads at full brightness. */
 .tour-lit{z-index:121}
@@ -3059,8 +2582,7 @@ body.no-anim .tour-card{transition:none}
 .tour-skip{position:absolute;top:14px;right:14px;background:none;border:none;
   font-family:var(--font);font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;padding:2px 4px}
 .tour-skip:active{opacity:.6}
-/* Only appears once you have scrolled the lit element off the screen, so
-   the card is never describing something you cannot see. */
+/* Shown only once the target is scrolled away. */
 .tour-show{display:none;width:100%;margin-top:12px;border:1px solid var(--accent);
   background:var(--accent-glow);border-radius:10px;padding:9px 12px;font-family:var(--font);
   font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;transition:.16s}
@@ -3070,29 +2592,17 @@ body.no-anim .tour-card{transition:none}
 body.tour-open{overflow:hidden}
 body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 
-/* Only the outer ends of a row are rounded, so a month reads as one track
-   rather than thirty-one separate pills. */
+/* Only the row ends are rounded. */
 .hb-days .hb-cell:first-child::after{border-radius:6px 0 0 6px}
 .hb-days .hb-cell:last-child::after{border-radius:0 6px 6px 0}
 .hb-days .hb-cell:only-child::after{border-radius:6px}
-/* One line between two cells, never two.
-
-   Every cell draws a complete box, so two neighbours used to put their
-   facing borders side by side and the divider came out double-thick.
-   Dropping one side instead left a coloured box with a missing edge
-   wherever a ticked day sat next to an empty one. So the boxes overlap by
-   exactly one border width: the borders land on each other and read as a
-   single 1.5px line, and every box keeps all four of its own edges. */
+/* Neighbouring cells overlap by one border width, so shared edges read as one line. */
 .hb-days .hb-cell + .hb-cell::after{left:-1.5px}
-/* Paint order decides which colour that shared line takes, so state decides
-   it rather than DOM order: a ticked box always draws its outline over a
-   neutral neighbour, and today's marker sits above an empty day. */
+/* State, not DOM order, decides which outline paints on top. */
 .hb-days .hb-cell::after{z-index:0}
 .hb-days .hb-cell.today::after{z-index:1}
 .hb-days .hb-cell.on::after{z-index:2}
-/* ══ HABIT CALENDAR ═══════════════════════════════════════════════════
-   The grid is a month as a filmstrip; this is a month as a month. Same log,
-   different question: the grid is for streaks, the calendar is for weeks. */
+/* HABIT CALENDAR */
 .hcal-bar{display:flex;align-items:center;justify-content:center;gap:12px;padding:2px 16px 10px}
 .hcal-month{font-size:13px;font-weight:800;color:var(--text);min-width:130px;text-align:center}
 .hcal-filter{display:flex;gap:6px;overflow-x:auto;padding:0 16px 12px;
@@ -3104,12 +2614,9 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
   transition:border-color .15s,color .15s,background .15s}
 .hcal-chip.on{background:var(--card);border-color:var(--chip,var(--accent));color:var(--text)}
 .hcal-chip-dot{width:8px;height:8px;border-radius:50%;flex:none}
-/* ══ DAILY P&L ═══════════════════════════════════════════════════════
-   The habit calendar's grid, carrying money instead of ticks: green for a
-   day that made something, red for one that lost, and the depth of the
-   colour set by the biggest move in the month so a quiet month is not
-   painted like a violent one. A day the app was never opened has no
-   reading and stays blank, rather than being guessed at. */
+/* DAILY P&L
+   Month grid: green or red by the day's result, depth by the month's largest move;
+   days without a reading stay blank. */
 .pnl-cal-card{padding:14px}
 .pnl-cal-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .pnl-cal-head{min-width:0}
@@ -3149,8 +2656,7 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 .pnl-foot-cell b{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
 .pnl-foot-cell span{font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3)}
 .pnl-cal-empty{font-size:11.5px;color:var(--text3);line-height:1.6;padding:20px 2px 6px;text-align:center}
-/* Inside an asset's own sheet the card is part of the sheet, not a card on
-   a page, so it drops its frame. */
+/* Frameless inside an asset sheet. */
 .ad-pnl-cal{padding:0;background:none;border:0;box-shadow:none;margin:14px 0 0}
 .ad-pnl-cal .pnl-cal-val{font-size:20px}
 .hcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px}
@@ -3163,8 +2669,7 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
   border:1.5px solid var(--border);background:var(--card2);
   font-family:var(--font);cursor:pointer;padding:0;
   transition:transform .12s ease,border-color .15s,background .15s}
-/* Completion is carried by fill strength, so a glance reads density before
-   it reads any number. One habit in focus is binary and takes its colour. */
+/* Fill strength shows completion; one focused habit is binary. */
 .hcal-day.has{background:color-mix(in srgb,var(--c) calc(var(--fill,1) * 62%),transparent);
   border-color:color-mix(in srgb,var(--c) calc(var(--fill,1) * 75%),var(--border))}
 .hcal-day.full{border-color:var(--c)}
@@ -3210,25 +2715,19 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 .hcal-row-name{flex:1;font-size:12.5px;font-weight:700;color:var(--text)}
 .hcal-row-state{font-size:10px;font-weight:700;color:var(--text3)}
 .hcal-row.on .hcal-row-state{color:currentColor}
-/* Pulling past the end of a month. The grid stretches against a band and the
-   month heading names where you are headed, so the month never changes
-   without having shown you first, and nothing covers the grid to say it. */
+/* Pulling past the month's end previews the target month in the heading. */
 .habit-month.hb-month-peek{color:var(--text3);transition:color .16s}
 .habit-month.hb-month-peek.armed{color:var(--accent)}
 .hb-days{will-change:transform}
 .hb-cell.locked{cursor:not-allowed}
 .hb-cell.locked::after{border-style:solid;border-color:var(--border);opacity:.5}
-/* A locked day that was never ticked is simply a day that did not happen.
-   It used to show a faint tick, which read as a half-done state that does
-   not exist. Only a day that was actually ticked shows a tick. */
+/* Only days actually ticked show a tick. */
 .hb-cell.locked.on .hb-tick{opacity:.62}
 .hb-cell.locked.on::after{opacity:1;border-color:currentColor;
   background:color-mix(in srgb,currentColor 10%,transparent)}
 .hb-cell.locked:active::after{transform:none}
-/* ── habit month swap ──────────────────────────────────────────────────── */
-/* The heading leaves the way the month left and the new one arrives from the
-   other side; --hb-dx carries the direction so one pair of keyframes covers
-   both. */
+/* habit month swap */
+/* --hb-dx carries the direction. */
 @keyframes hbLblOut{to{opacity:0;transform:translateX(var(--hb-dx,0px))}}
 @keyframes hbLblIn{from{opacity:0;transform:translateX(calc(var(--hb-dx,0px) * -1))}}
 .habit-month.hb-lbl-out{animation:hbLblOut .17s cubic-bezier(.4,0,1,1) forwards}
@@ -3238,10 +2737,8 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
 @media(prefers-reduced-motion:reduce){
   .habit-month.hb-lbl-out,.habit-month.hb-lbl-in,.hb-fade-up{animation:none}
 }
-/* ── ticking a habit ───────────────────────────────────────────────────── */
-/* The grid is rebuilt on every tick, so the cell is created already ticked
-   and the CSS transition has nothing to animate from. These replay the
-   feedback on the one cell that actually changed. */
+/* ticking a habit */
+/* Replay feedback on the rebuilt cell. */
 @keyframes hbPop{
   0%{transform:scale(.55)}
   55%{transform:scale(1.22)}
@@ -3252,13 +2749,7 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
   60%{transform:scale(1.12)}
   100%{transform:scale(1);opacity:1}
 }
-/* Unticking had nothing to look at. The grid is rebuilt on every toggle, so
-   the new cell is born already empty and the tick simply was not there any
-   more, the tap that put it in got a flourish and the tap that took it out
-   got silence. These two run on the rebuilt cell and play the tick and its
-   box back out: the tick twists away as it shrinks, the box gives a little
-   under it and comes back empty. `both` holds the finished state, which is
-   also the resting one, so nothing flashes when the class comes off. */
+/* Untick animation on the rebuilt cell; `both` holds the resting state. */
 @keyframes hbTickOut{
   0%{opacity:1;transform:scale(1) rotate(0deg)}
   35%{opacity:.95;transform:scale(1.16) rotate(-7deg)}
@@ -3291,7 +2782,7 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
   .hb-cell.hb-pop .hb-tick,.hb-cell.hb-pop::after,.hb-cell.hb-unpop::after,.hb-cell.hb-unpop .hb-tick,
   .hb-cell.hb-allday::after,.hb-tot.hb-allday-tot{animation:none}
 }
-/* ── recurring bills, on the spending page ────────────────────────────── */
+/* recurring bills, on the spending page */
 .bill-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);cursor:pointer}
 .bill-row:last-of-type{border-bottom:none}
 .bill-row:active{background:var(--card2)}
@@ -3304,17 +2795,10 @@ body.tour-open .ai-bubble{opacity:1;pointer-events:none}
   padding:4px 9px;font-family:var(--font);font-size:10px;font-weight:800;cursor:pointer}
 .bill-run:active{transform:scale(.94)}
 .bill-foot{font-size:10px;color:var(--text3);padding-top:9px;margin-top:2px;border-top:1px solid var(--border)}
-/* ── needs attention ──────────────────────────────────────────────────── */
-/* Only appears when something is actually late or due. A card that is always
-   there stops being read; one that shows up only when it has something to say
-   keeps its meaning. */
-/* Inset to the same 12px gutter as every other card on the page. Full-bleed
-   it ran its rounded corners and its accent stripe off both screen edges,
-   and with no top margin it sat flush against the net worth card above.
-   The left padding is 2px short of the right to pay for the 3px stripe, so
-   the text inside lines up either side. */
-/* The accent edge is a pseudo-element for the same reason the sync rail is:
-   a 3px left border on a 14px-radius card curves away at both ends. */
+/* needs attention */
+/* Shown only when something is due. */
+/* Same 12px gutter as other cards; left padding offsets the 3px stripe. */
+/* Accent edge as a pseudo-element: a border would curve with the radius. */
 .needs{position:relative;background:var(--card);border:1px solid var(--border);
   border-radius:14px;padding:11px 13px 11px 14px;margin:10px 12px 12px;overflow:hidden}
 .needs::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
@@ -3335,30 +2819,21 @@ body.no-anim .needs-dot{animation:none}
 .needs-name{display:block;font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .needs-sub{display:block;font-size:10px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .needs-amt{font-size:12.5px;font-weight:800;flex:none}
-/* No border of its own: the last row above it already draws one, and the two
-   together read as a double rule. */
+/* No border: the row above already draws one. */
 .needs-more{display:block;width:100%;text-align:left;background:none;border:0;
   font-family:var(--font);font-size:10px;font-weight:700;color:var(--accent);
   padding:8px 0 2px;cursor:pointer}
 .needs-more:active{opacity:.6}
-/* The keyboard highlight in a custom select. Distinct from .active, which is
-   what is currently chosen, you can be moving over one while another is
-   still the selection. */
-/* No ring. A box drawn around one row of a list reads as a stray border,
-   especially on the first or last row where it sits against the dropdown
-   edge. The lighter ground carries the highlight on its own, and the
-   selected row keeps its accent tint underneath it. */
+/* Keyboard highlight, separate from the selected .active. */
+/* Highlighted by background only. */
 .csd-opt.hi{background:var(--card2)}
 .csd-opt.active.hi{background:var(--accent-glow)}
-/* The update prompt reuses the undo toast's shape but is not on a timer, it waits until it is answered, because dismissing it by accident means
-   staying on the old build without knowing. */
+/* Like the undo toast but untimed: it waits for an answer. */
 .undo-toast.update-toast{border-color:var(--accent);padding-right:6px}
 .undo-toast.update-toast .toast-msg{color:var(--accent);font-weight:700}
 
-/* ── Selling, in hindsight ─────────────────────────────────────────────
-   A scoreboard for past sales against today's price. Leads with the net,
-   because the two halves on their own each tell a flattering story: every
-   seller has some winners and some regrets. */
+/* Selling, in hindsight
+   Leads with the net result. */
 .hs-hero{text-align:center;padding:6px 0 12px;border-bottom:1px solid var(--border);margin-bottom:8px}
 .hs-net{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05}
 .hs-net-lbl{font-size:10.5px;font-weight:600;color:var(--text3);margin-top:4px}
@@ -3405,8 +2880,7 @@ body.no-anim .needs-dot{animation:none}
 .hs-note[open] summary::after{content:' ▴'}
 .hs-note p{font-size:10.5px;font-weight:500;color:var(--text3);line-height:1.6;margin:8px 0 0}
 
-/* Editing a transaction records what you paid, not what it is worth today.
-   Today's price is offered here rather than written in behind your back. */
+/* Today's price is offered, not written in. */
 .etx-live{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px}
 .etx-live-lbl{font-size:9.5px;font-weight:600;color:var(--text3);min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3415,9 +2889,7 @@ body.no-anim .needs-dot{animation:none}
   letter-spacing:.4px;padding:3px 9px;cursor:pointer}
 .etx-live-btn:active{opacity:.6}
 
-/* ── Admin ─────────────────────────────────────────────────────────────
-   A control panel, so it is denser than the rest of the app and makes no
-   apology for looking like one. */
+/* Admin */
 #page-admin .card{margin:0 12px 8px;padding:14px}
 .admin-card{position:relative}
 .admin-p{font-size:11px;color:var(--text2);line-height:1.6;margin:6px 0 10px}
@@ -3498,8 +2970,7 @@ body.no-anim .needs-dot{animation:none}
 .cat-readonly-lbl{flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* admin.html has no app shell around it, so it brings its own header and
-   gate. Everything below the tabs reuses the .admin-* rules above. */
+/* admin.html has no app shell; its own header and gate. */
 .adm-top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
   padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--glass);
   backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}

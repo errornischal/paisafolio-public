@@ -1,29 +1,7 @@
-// api/crypto.js — Vercel Serverless Function
-// Proxies CoinGecko so Nepal IPs aren't blocked.
-//
-// HARDENING NOTES (v2):
-//  • Cache is now bounded (LRU, 300 entries). Previously every distinct
-//    `ids`/`query` string created a permanent map entry — anyone could grow
-//    the lambda's heap without limit just by sending random query strings.
-//  • `days` and `date` were interpolated raw into the upstream URL, letting a
-//    caller append arbitrary CoinGecko query params (`?days=7&vs_currency=btc`).
-//    Both are now strictly validated against a whitelist/format.
-//  • CORS is restricted to our own deployments instead of `*`, so this stops
-//    being a free public CoinGecko proxy burning our rate limit.
-//  • (v3) That allowlist accepted *any* *.vercel.app host, i.e. every project
-//    on the platform. Now scoped to this project's own deployments.
-//  • Every upstream call has a hard timeout so a slow CoinGecko can't pin the
-//    function open until Vercel kills it.
+// CoinGecko proxy (blocked from Nepal). Bounded cache, validated params, own-origin CORS, hard timeouts.
 
 const CG = 'https://api.coingecko.com/api/v3';
-// Binance's public market-data endpoints need no key and serve real OHLC at
-// every interval, as far back as the pair has traded. CoinGecko's free tier
-// gives 30-minute data for a single day, which is not a chart you can scroll.
-//
-// data-api.binance.vision is Binance's own market-data-only mirror and is not
-// geo-restricted the way the main host is in some regions; api.binance.com is
-// kept as a second try. Either way a failure here just means the caller falls
-// back to CoinGecko.
+// Binance serves real OHLC at every interval with no key; CoinGecko is the fallback.
 const BINANCE_HOSTS = [
   'https://data-api.binance.vision/api/v3',
   'https://api.binance.com/api/v3',
@@ -32,8 +10,7 @@ const TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 300;
 const UPSTREAM_TIMEOUT_MS = 8000;
 
-// Origins allowed to call this endpoint. Set ALLOWED_ORIGINS in Vercel
-// (comma-separated) to add your own domains without editing this file.
+// Add origins with ALLOWED_ORIGINS (comma-separated).
 const DEFAULT_ORIGINS = [
   'https://nepbytebazaar.kesug.com',
   'http://nepbytebazaar.kesug.com',
@@ -43,17 +20,11 @@ function allowedOrigins() {
     .split(',').map((s) => s.trim()).filter(Boolean);
   return [...DEFAULT_ORIGINS, ...fromEnv];
 }
-// Vercel gives every deployment of every project a *.vercel.app hostname, so
-// `hostname.endsWith('.vercel.app')` allowed the entire platform — anyone could
-// host a page on their own *.vercel.app and spend this project's upstream rate
-// limit. Scope it to this project's own deployments: Vercel sets
-// VERCEL_PROJECT_PRODUCTION_URL (e.g. your-app.vercel.app) at build time, and
-// preview URLs are that project name with a deployment suffix.
+// Only this project's own *.vercel.app deployments, not every project on the platform.
 function projectPreviewHost(host) {
   const prod = (process.env.VERCEL_PROJECT_PRODUCTION_URL || '').trim().toLowerCase();
   if (!host.endsWith('.vercel.app')) return false;
-  // No project URL available (local dev, self-hosted): fall back to refusing
-  // cross-origin *.vercel.app rather than accepting all of it.
+  // No project URL (local dev): refuse cross-origin *.vercel.app.
   if (!prod) return false;
   if (host === prod) return true;
   const project = prod.replace(/\.vercel\.app$/, '');
@@ -68,8 +39,7 @@ function isAllowedOrigin(origin) {
   } catch (_) { return false; }
 }
 
-// ── Bounded LRU cache ───────────────────────────────────────────────────
-// Map preserves insertion order, so the first key is always the oldest.
+// Bounded LRU cache
 const cache = new Map();
 function cacheGet(key) {
   const entry = cache.get(key);
@@ -114,13 +84,10 @@ async function upstream(url) {
   }
 }
 
-// ── Input validation ────────────────────────────────────────────────────
-// Query params arrive as string | string[] depending on how many times the
-// key appears. Always collapse to a single string before touching it.
+// Input validation
 function one(v) { return Array.isArray(v) ? v[0] : v; }
 
-// CoinGecko ids are lowercase slugs. Cap the list so nobody can push a
-// megabyte of ids through us.
+// Capped so nobody can push a megabyte of ids through us.
 const ID_RE = /^[a-z0-9-]{1,64}$/;
 function cleanIds(raw, fallback) {
   const s = one(raw);
@@ -139,8 +106,6 @@ function cleanDays(raw) {
   const s = String(one(raw) ?? '7').trim();
   return ALLOWED_DAYS.has(s) ? s : '7';
 }
-// market_chart takes any positive day count, or 'max'. Bounded so a caller
-// cannot ask for something absurd.
 function cleanChartDays(raw) {
   const s = String(one(raw) ?? '90').trim();
   if (s === 'max') return 'max';
@@ -183,8 +148,7 @@ function cleanDate(raw) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
-  // Same-origin browser requests send no Origin header at all — those are
-  // always fine. Cross-origin ones must be on the allowlist.
+  // Same-origin requests send no Origin header; cross-origin ones must be allowlisted.
   if (origin) {
     if (!isAllowedOrigin(origin)) {
       return res.status(403).json({ error: 'Origin not allowed' });
@@ -226,19 +190,14 @@ export default async function handler(req, res) {
       const days = cleanDays(params.days);
       data = await cgFetch(`/coins/${encodeURIComponent(id)}/ohlc?vs_currency=usd&days=${encodeURIComponent(days)}`);
     } else if (action === 'chart') {
-      // market_chart returns a price SERIES rather than candles, and it goes
-      // much further back at a usable resolution than /ohlc does: 5-minutely
-      // for a day, hourly up to 90 days, daily beyond that, and 'max' for the
-      // coin's whole life. The client builds candles from it, which is how you
-      // get 1H candles covering three months instead of /ohlc's single day.
+      // A price series rather than candles: it reaches much further back, and the client builds candles from it.
       const id = cleanId(params.id) || 'bitcoin';
       const days = cleanChartDays(params.days);
       const iv = one(params.interval);
       const suffix = iv === 'daily' ? '&interval=daily' : '';
       data = await cgFetch(`/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${encodeURIComponent(days)}${suffix}`);
     } else if (action === 'klines') {
-      // Real candles, and pageable: pass endTime to walk backwards, which is
-      // what lets the chart keep loading history as you scroll left.
+      // Pageable with endTime, which lets the chart keep loading history as you scroll left.
       const symbol = cleanSymbol(params.symbol);
       if (!symbol) return res.status(400).json({ error: 'valid symbol required' });
       const interval = cleanInterval(params.interval);

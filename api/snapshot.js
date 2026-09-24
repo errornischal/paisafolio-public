@@ -1,94 +1,41 @@
-// api/snapshot.js — Vercel Serverless Function, run on a schedule
-//
-// WHAT THIS IS FOR
-// The app records net worth whenever prices refresh, which only happens while
-// it is open. A day the app was never opened had no reading at all, so the
-// chart ran a straight line across it and the Daily P&L calendar had nothing
-// to show. This closes that gap: every two hours, with nobody looking, each
-// account's holdings are re-priced and a reading is written.
-//
-// HOW IT VALUES A PORTFOLIO WITHOUT RE-IMPLEMENTING THE APP
-// It does not know what a tola is, or how a savings account accrues, or which
-// currency anybody keeps their books in — and it must not have to, because a
-// second copy of that arithmetic would drift from the first and quietly draw
-// a wrong chart.
-//
-// Instead the app leaves it a recipe (public.valuation_recipes, written on
-// every sync). Each priced holding is one leg: the exact feed reading the app
-// last used (`p`) and what that holding was worth at that reading (`v`). The
-// job re-reads the same feed and scales:
-//
-//     new value = v x (new price / p)
-//
-// The ratio cancels every constant between the feed and the figure —
-// quantity, unit conversion, the exchange rate into the base currency, the
-// Nepali retail tola rate — so the answer is right without the job knowing
-// any of them. A leg with no `k` has no live price behind it (a bank balance,
-// land, a hand-typed price) and carries its value unchanged. `fixed` is
-// everything the legs do not cover, which is mostly debts.
-//
-// The app corrects the day's row the moment it is next opened, so any drift
-// in what the job cannot see (interest accruing, a holding sold on another
-// device) lives at most until then.
-//
-// WHAT IT IS ALLOWED TO TOUCH
-// The service role bypasses RLS, so this is the one thing in the project that
-// reads rows belonging to somebody other than the caller. It reads exactly
-// two tables — valuation_recipes, and its own last networth_history row — and
-// neither holds a name, a note, a transaction or a category. It writes one
-// row per user per day. It answers with counts and nothing else: no figure
-// belonging to any account ever appears in the response.
-//
-// HOW TO RUN IT
-// Set CRON_SECRET in the Vercel project, then have something call this every
-// two hours with `Authorization: Bearer <that secret>`. The bottom of
-// schema.sql has the pg_cron block that does it from Supabase, which is what
-// this project uses — Vercel's own cron is limited to one run a day on the
-// Hobby plan, and one a day is the problem, not the fix.
+// Scheduled job: every two hours, re-price each account from the recipe the app left
+// (public.valuation_recipes) and write a net-worth reading, so days the app
+// was closed still have data.
+// 
+// Each leg stores the feed price the app used (p) and the holding's value then (v);
+// new value = v × newPrice / p, which cancels quantity, units and FX without
+// re-implementing them. Legs without a feed, and `fixed` (mostly debts), carry over.
+// 
+// Uses the service role, reads only valuation_recipes and networth_history, and
+// responds with counts only. Called by pg_cron with `Authorization: Bearer CRON_SECRET`
+// (see setup-snapshot.sql); Vercel Hobby cron is limited to once a day.
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-// Quotes around the value are the single most common way this is pasted
-// wrong: a lot of people wrap an environment variable in them out of habit,
-// and Vercel stores them as part of the value. Strip them here and on the way
-// in, so a secret that is right apart from its punctuation still works.
+// Vercel keeps pasted quotes as part of the value; strip them on both sides.
 function tidySecret(v) {
   return String(v || '').trim().replace(/^["']|["']$/g, '').trim();
 }
 const CRON_SECRET = tidySecret(process.env.CRON_SECRET);
 
-// Which commit this deployment was built from, and when. It rides along on
-// every refusal, because the first question when a call is refused is not
-// "is the secret wrong" but "is this deployment even the one I just fixed".
-// A stale deployment also carries a stale environment variable, so the two
-// look identical from the outside: both say Unauthorized. Without this there
-// is no way to tell them apart from a phone.
+// Sent with every refusal: a stale deployment and a wrong secret both look like 401.
 const BUILD = { commit: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'unknown' };
 
-// A recipe older than this describes holdings that may be nothing like what
-// is actually held now, and re-pricing it would draw a confident line about a
-// portfolio that no longer exists. Open the app and it refreshes.
+// Older recipes may describe holdings that no longer exist.
 const RECIPE_MAX_AGE_DAYS = 21;
-// Two hours, matching the buckets the app itself records into, so the two
-// interleave instead of fighting over slots.
+// Same two-hour buckets the app records into.
 const SLOT_MS = 2 * 3600 * 1000;
 const KEEP_MS = 48 * 3600 * 1000;
-// One run should not be able to melt the upstream price feeds or run past the
-// function timeout, so a run covers at most this many accounts. They are
-// taken oldest-snapshot-first, so nobody is starved across runs.
+// Caps a run to protect the feeds and the timeout; oldest first, so nobody starves.
 const MAX_USERS = 400;
-// A ratio outside this band is a feed glitch, not a market move: a price feed
-// that answers 0, or answers in a different unit after an upstream change,
-// would otherwise wipe out or multiply somebody's net worth. Legs outside it
-// are left at their last known value.
+// Outside this band is a feed glitch, not a market move; keep the last value.
 const RATIO_MIN = 0.02;
 const RATIO_MAX = 50;
 
 function sbBase() { return SUPABASE_URL.replace(/\/+$/, ''); }
 function configured() { return !!(SUPABASE_URL && SERVICE_KEY && CRON_SECRET); }
 
-// Constant-time compare, so a wrong secret cannot be found a character at a
-// time by timing the refusals.
+// Constant-time, so the secret cannot be found by timing.
 function secretMatches(given) {
   const a = Buffer.from(tidySecret(given), 'utf8');
   const b = Buffer.from(CRON_SECRET, 'utf8');
@@ -119,11 +66,7 @@ async function sbFetch(path, init) {
   return body;
 }
 
-// ── the price feeds ──────────────────────────────────────────────────────
-// Read through this deployment's own /api routes rather than going upstream
-// directly, so caching, fallbacks and the scraping defences in those files
-// all apply here too, and there is one place that knows how to talk to each
-// provider. They are called once per run, not once per user.
+// Prices come through this deployment's own /api routes, so their caching and fallbacks apply.
 function selfOrigin(req) {
   const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
@@ -146,9 +89,7 @@ async function getJSON(url, ms) {
   }
 }
 
-// Every leg names its feed, its instrument and the exact field the app read,
-// as `coin:bitcoin:usd` or `nepse:NABIL:price`. Collect the instruments the
-// recipes actually mention, ask for those, and build one lookup table.
+// Legs name their feed as `coin:bitcoin:usd` or `nepse:NABIL:price`; fetch only those.
 function wantedInstruments(recipes) {
   const coins = new Set(), nepse = new Set();
   for (const r of recipes) {
@@ -175,10 +116,7 @@ async function readFeeds(origin, want) {
         if (v && typeof v.usd === 'number' && v.usd > 0) prices['coin:' + id + ':usd'] = v.usd;
       }
     })());
-    // Metals come from the same /api/metals overlay the app applies on top of
-    // CoinGecko, and under the same ids the app files them under. These are
-    // Nepali retail rates in NPR, which is a different number from the spot
-    // price and the one a Nepali ledger is actually marked at.
+    // Nepali retail metal rates in NPR, under the ids the app uses.
     tasks.push((async () => {
       const d = await getJSON(origin + '/api/metals', 15000);
       if (!d || typeof d !== 'object') return;
@@ -198,9 +136,7 @@ async function readFeeds(origin, want) {
     tasks.push((async () => {
       const d = await getJSON(origin + '/api/nepse', 20000);
       if (!d || !d.prices || typeof d.prices !== 'object') return;
-      // A stale exchange feed is the ordinary state of it outside trading
-      // hours: yesterday's close is the correct mark for a share right now,
-      // so it is used, not skipped.
+      // Outside trading hours yesterday's close is the right mark.
       for (const [sym, q] of Object.entries(d.prices)) {
         const px = q && Number(q.price);
         if (px > 0) prices['nepse:' + String(sym).toUpperCase() + ':price'] = px;
@@ -212,7 +148,7 @@ async function readFeeds(origin, want) {
   return prices;
 }
 
-// ── re-pricing one recipe ────────────────────────────────────────────────
+// re-pricing one recipe
 function revalue(recipe, prices) {
   const legs = Array.isArray(recipe.legs) ? recipe.legs : [];
   const assets = Object.create(null);
@@ -244,9 +180,7 @@ function revalue(recipe, prices) {
   return { netWorth: Math.round(netWorth), assets, moved, priced, legs: legs.length };
 }
 
-// Fold a reading into the two-hourly ring the 1D view is drawn from. A run
-// inside a bucket that already has a reading replaces it, exactly as the app
-// does, so a bucket holds one value however many times it is written.
+// One value per two-hour bucket, like the app.
 function foldIntraday(existing, now, value) {
   const slot = Math.floor(now / SLOT_MS) * SLOT_MS;
   const floor = now - KEEP_MS;
@@ -269,13 +203,10 @@ function ymd(d) {
     String(d.getUTCDate()).padStart(2, '0');
 }
 
-// Exported so the pure parts can be tested directly. Vercel only looks at
-// the default export; this costs nothing at runtime.
+// For tests only; Vercel uses the default export.
 export const __test = { revalue, foldIntraday, wantedInstruments, secretMatches };
 
 export default async function handler(req, res) {
-  // Nothing here is for a browser: no CORS headers, and the only caller that
-  // can get past this line holds a secret that never leaves the server.
   res.setHeader('Cache-Control', 'no-store');
 
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -298,11 +229,7 @@ export default async function handler(req, res) {
   const auth = String(req.headers.authorization || '');
   const bearer = /^Bearer\s+(.+)$/i.exec(auth);
   if (!bearer || !secretMatches(bearer[1])) {
-    // Say enough to find the mistake, and nothing else. Lengths and a short
-    // hash prefix cannot be worked backwards into the secret, and between
-    // them they name every ordinary cause: a character lost on the way
-    // through a copy, a trailing space, a value that was never updated on
-    // one of the two sides.
+    // Lengths and a hash prefix help spot a paste mistake without revealing the secret.
     const got = bearer ? tidySecret(bearer[1]) : '';
     const fp = async (v) => {
       if (!v) return '-';
@@ -327,9 +254,7 @@ export default async function handler(req, res) {
     } catch (e) {
       hint = 'Secret does not match the one this deployment was built with.';
     }
-    // Header NAMES only, never their values: enough to tell "it never left"
-    // from "something ate it in transit", which are different problems with
-    // different fixes, and nothing that is worth keeping secret.
+    // Header names only, never values.
     const arrived = Object.keys(req.headers || {}).sort().slice(0, 40);
     return res.status(401).json({ error: 'Unauthorized', hint, got: arrived, build: BUILD.commit });
   }
@@ -352,19 +277,14 @@ export default async function handler(req, res) {
     const asked = want.coins.length + want.nepse.length;
     const prices = await readFeeds(origin, want);
     const feedsUp = Object.keys(prices).length;
-    // Asked and got nothing back: writing a reading now would record "nothing
-    // moved" as a fact when the truth is that nobody could see. Skip the run;
-    // the next one is two hours away and the app corrects the day when it
-    // opens. Asking for nothing is a different thing entirely - a portfolio
-    // of bank balances and land has no feed behind it and never did, and it
-    // still deserves its reading.
+    // Feeds were asked and none answered: skip rather than record "nothing moved".
+    // Asking for nothing (bank balances, land) still gets a reading.
     if (asked && !feedsUp) {
       return res.status(200).json({ ok: false, reason: 'no price feed answered', users: recipes.length, written: 0, ms: Date.now() - started });
     }
 
     const today = ymd(new Date(started));
-    // One read of today's rows for everybody, so the intraday ring can be
-    // extended rather than replaced.
+    // Today's rows for everyone in one read, so the intraday ring is extended.
     const ids = recipes.map(r => r.user_id).filter(Boolean);
     let existing = [];
     if (ids.length) {

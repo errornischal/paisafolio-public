@@ -1,39 +1,12 @@
-// ════════════════════════════════════════════════════════════════════════
-// PAISAFOLIO, supabase.js
-// All Supabase config + cloud sync logic lives here.
-// index.html only needs:  <script src="supabase.js"></script>  (after the
-// supabase-js CDN script, before the closing </body>, same spot the old
-// inline block used to live).
-//
-// Public functions called from index.html (unchanged names/signatures):
-//   initSupabase(), pushToCloud(), pullFromCloud(fromSignIn), schedulePush(),
-//   manualSync(), loadCloudCache(userId), updateSyncDot(status),
-//   updateSyncLabels(), importLocalToCloud(), discardLocalStartFresh(),
-//   showImportLocalPrompt()
-//
-// These all read/write the SAME global `state` object the rest of the app
-// uses (assets, debts, goals, recurs, transactions, settings, pnlHistory).
-// The only thing that changed is WHERE that state is stored in Supabase:
-// instead of one big JSON blob in `paisafolio_data`, it's now split across
-// proper tables (profiles, assets, debts, goals, recurring, transactions,
-// settings, networth_history) as set up by schema.sql.
-//
-// GUARD: this whole file is wrapped so that if it's ever accidentally
-// loaded twice (e.g. a duplicate <script> tag, or a service worker layering
-// a stale cached copy over a fresh fetch), the second execution is a silent
-// no-op instead of throwing "Identifier 'X' has already been declared" and
-// breaking the entire page. window.__paisafolioSupabaseLoaded is the flag.
-// ════════════════════════════════════════════════════════════════════════
+// Supabase auth and cloud sync. Reads/writes the app's global `state`, split across
+// the tables in schema.sql. Wrapped in a guard so a second load is a no-op.
 if (window.__paisafolioSupabaseLoaded) {
   console.warn('supabase.js loaded more than once, skipping duplicate execution. ' +
     'This usually means a stale cached copy is being served; a hard refresh (Ctrl/Cmd+Shift+R) will fix it.');
 } else {
 window.__paisafolioSupabaseLoaded = true;
 
-// ════════ SUPABASE CONFIG ════════
-// Read from sb-config.js, which admin.html shares, so the connection lives in
-// one place. Left empty there, the app runs entirely on this device: no
-// sign-in, no sync, everything else exactly the same.
+// From sb-config.js; empty means local-only (no sign-in or sync).
 const SUPABASE_URL = (window.SB_URL || '').trim();
 const SUPABASE_ANON_KEY = (window.SB_ANON || '').trim();
 
@@ -48,46 +21,19 @@ window.STORE_KEY = 'paisafolio_local';          // local-only key, never touched
 window.cloudKey = uid => ('paisafolio_cloud_' + uid); // per-user offline cache key
 
 
-// ════════ PENDING-SYNC TRACKING ════════
-// Whenever a local edit happens (schedulePush is called) while signed in, we
-// snapshot which item ids exist right now per list. Once that push actually
-// lands on the server, those ids are cleared. This gives accurate per-card
-// "not synced yet" badges and a real list for the sync center, without having
-// to touch every single add/edit/delete function across the app individually.
+// Per-row "not synced yet" ids, cleared when the push that carried them lands.
 window.pendingSyncIds = { assets: new Set(), debts: new Set(), goals: new Set(), recurs: new Set(), transactions: new Set(), spends: new Set() };
 window.lastSyncError = null;
 
-// ════════ INTERACTIVE-SIGN-IN FLAG ════════
-// onAuthStateChange fires SIGNED_IN in three situations that all need very
-// different behaviour, and only one of them may ever trigger the
-// local-vs-cloud merge prompt:
-//  1. Typing a password and hitting Sign In (same tab)              -> prompt OK
-//  2. Google OAuth redirect (same tab navigates away and back)      -> prompt OK
-//  3. Clicking an email "confirm your account" link, which very     -> prompt OK,
-//     often opens in a BRAND NEW tab/window, not the original one      but needs
-//                                                                       to survive that
-//  4. supabase-js silently restoring a saved session on page load   -> NO prompt
-// Case 3 is why this can't live in sessionStorage: a new tab does not
-// inherit the original tab's sessionStorage, so the flag would silently
-// vanish and case 3 would get treated as case 4 (no prompt shown even
-// though the person just deliberately signed up on a device with real
-// guest data). localStorage IS shared across tabs on the same origin, so
-// it survives all three real sign-in paths. To keep a stale flag from
-// lingering indefinitely (e.g. sign-up started, never confirmed, then a
-// totally unrelated session gets silently restored days later), it's
-// timestamped and only honored for a few minutes.
+// Only a real sign-in (password, OAuth redirect, email-confirm link) may show the
+// merge prompt; a restored session may not. localStorage so the confirm link's new
+// tab sees it; timestamped so a stale flag expires.
 const INTERACTIVE_SIGNIN_KEY = 'pf_interactive_signin';
 const INTERACTIVE_SIGNIN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
 window.markInteractiveSignIn = function () {
   try { localStorage.setItem(INTERACTIVE_SIGNIN_KEY, String(Date.now())); } catch (e) {}
 };
-// doLogin()/doRegister() call sbClient.auth.signInWithPassword() and get a
-// resolved promise the instant the AUTH request succeeds, well before the
-// separate onAuthStateChange listener (below) has pulled cloud data and
-// re-rendered. Without this, the login modal closes and the dashboard is
-// shown still holding stale/empty data for a beat, which reads as "nothing
-// happened" until the next manual refresh. This lets callers await the
-// actual data-ready point instead of just the auth handshake.
+// Lets doLogin/doRegister await the pulled data, not just the auth handshake.
 window._signInReadyResolve = null;
 window.signInReadyPromise = function () {
   return new Promise((resolve) => { window._signInReadyResolve = resolve; });
@@ -102,9 +48,7 @@ window.consumeInteractiveSignIn = function () {
   } catch (e) { return false; }
 };
 
-// Fingerprint of every row as it existed at the last successful push/pull, so
-// we can tell what genuinely changed instead of re-sending the whole account.
-// Shape: { assets: Map(id -> json), debts: Map(...), ... }
+// Row fingerprints at the last push/pull: { kind: Map(id -> json) }.
 const SYNC_KINDS = ['assets', 'debts', 'goals', 'recurs', 'transactions', 'spends'];
 // Supabase table name -> the state key that holds those items.
 const TABLE_TO_KIND = { assets:'assets', debts:'debts', goals:'goals', recurring:'recurs', transactions:'transactions' };
@@ -123,48 +67,30 @@ function fingerprintsFor(kind) {
   return (syncedFingerprints && syncedFingerprints[kind]) || null;
 }
 
-// Was: marked EVERY item in EVERY table as pending on every single save, so a
-// one-character edit lit up the whole account as "waiting to sync" and the
-// Sync Center listed the same thing under several kinds at once. Now only
-// genuinely-changed rows are marked.
+// Mark only rows that changed since the last sync.
 function snapshotPendingSync() {
   if (!supabaseUser) return;
   SYNC_KINDS.forEach(kind => {
     const known = fingerprintsFor(kind);
     (state[kind] || []).forEach(item => {
       if (!item || item.id == null) return;
-      // No baseline yet (first sync of the session) => treat everything as
-      // pending, which is correct: nothing is known to be on the server.
+      // No baseline yet: everything is pending.
       if (!known) { pendingSyncIds[kind].add(item.id); return; }
       const prev = known.get(item.id);
       if (prev === undefined || prev !== JSON.stringify(item)) pendingSyncIds[kind].add(item.id);
       else pendingSyncIds[kind].delete(item.id);
     });
-    // Anything queued that no longer exists locally was deleted; the delete
-    // itself is the pending change, so keep it queued until the push lands.
+    // Deleted locally: the delete itself is pending.
   });
   refreshPendingSyncUI();
 }
-// Everything queued is now on the server: record the new "known synced"
-// baseline, then re-derive what is still outstanding.
-//
-// `sentSnapshot` is the fingerprint set captured at the moment the push began.
-// It must be used in preference to re-reading `state` here, because `state`
-// can have moved on during the network round trip. Re-reading it marked
-// edits made mid-push as already-synced, so the follow-up push filtered them
-// out as unchanged and they never reached the cloud, while the UI happily
-// reported "0 pending". Local kept the edit, the cloud never saw it, and
-// another device would never show it.
-//
-// Biasing to the send-time snapshot can at worst re-upload a row that did
-// make it (upserts are idempotent, so that is free). The opposite bias
-// silently loses data, which is why this errs that way deliberately.
+// Use the snapshot taken when the push began, not current `state`: edits made during
+// the round trip must stay pending. Re-sending a row is harmless; losing one is not.
 function markAllSynced(sentSnapshot) {
   if (sentSnapshot) syncedFingerprints = sentSnapshot;
   else captureSyncedFingerprints();
   clearAllPendingSync();
-  // Anything edited while the push was in flight is absent from the baseline,
-  // so this re-queues it instead of dropping it.
+  // Re-queue edits made mid-push.
   snapshotPendingSync();
 }
 // Fingerprint every synced list right now, for use as a send-time snapshot.
@@ -183,18 +109,7 @@ function pendingSyncCount() {
 function isPendingSync(kind, id) {
   return !!supabaseUser && !!(pendingSyncIds[kind] && pendingSyncIds[kind].has(id));
 }
-// Re-render whatever's currently on screen so badges/sync-center update live.
-// Debounced lightly via rAF-style microtask batching isn't needed here since
-// callers already debounce (schedulePush) or only fire once (push finish).
-// A sync badge appearing on one row does not need the whole app rebuilt.
-// This used to call renderAll(), so a single save painted three times: once
-// for the action, once when the push was queued, once when it landed. Each
-// rebuild replayed every entrance animation, which is what made an ordinary
-// edit look like the screen was refreshing over and over.
-//
-// Badges are added and removed in place instead. renderAll() stays as the
-// fallback for the one case that genuinely changes structure: a row count
-// that no longer matches what is on screen.
+// Toggle badges in place; only a changed row count needs a full renderAll().
 function refreshPendingSyncUI() {
   try { paintPendingBadges(); } catch (e) {
     try { if (typeof renderAll === 'function') renderAll(); } catch (e2) {}
@@ -210,14 +125,10 @@ const PENDING_SELECTORS = [
   { kind: 'spends', sel: '[data-spend-id]', attr: 'spendId' },
   { kind: 'recurs', sel: '[data-recur-id]', attr: 'recurId' },
 ];
-// A cloud with an up-arrow: this is queued to go up, not broken. The struck
-// -through cloud that was here before reads as "sync is off".
 const PENDING_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
   + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<path d="M20 16.6A4.5 4.5 0 0 0 17.5 8h-1.3A7 7 0 1 0 4 14.9"/>'
   + '<polyline points="9 15 12 12 15 15"/><line x1="12" y1="12" x2="12" y2="21"/></svg>';
-// The cloud alone asks people to learn what it means. The words under it
-// do not, and at 15% opacity behind the content they cost nothing.
 const PENDING_BADGE = '<span class="unsynced-badge" title="Waiting to sync" aria-label="Waiting to sync">'
   + PENDING_ICON + '<span class="unsynced-badge-lbl">Not synced</span></span>';
 window.PENDING_ICON = PENDING_ICON;
@@ -261,9 +172,7 @@ function initSupabase() {
   try {
     sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // Set the instant onAuthStateChange (above) starts handling a session on
-    // this page load, so the getSession() fallback below knows not to also
-    // independently pull, see the note in that block for why that mattered.
+    // Tells the getSession() fallback that the listener already took this session.
     let authListenerHandledInitialSession = false;
 
     sbClient.auth.onAuthStateChange(async (event, session) => {
@@ -273,36 +182,23 @@ function initSupabase() {
       try { if (typeof refreshAdminRole === 'function') refreshAdminRole(); } catch (e) {}
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && supabaseUser && !prevUser) {
         authListenerHandledInitialSession = true;
-        // Was this a real sign-in the user just performed, or just supabase-js
-        // restoring a saved session on page load? Only the former may prompt.
+        // Only a user-initiated sign-in may prompt.
         const isInteractive = consumeInteractiveSignIn();
         loadCloudCache(supabaseUser.id);
         renderAll();
-        // Close the auth modal on ANY successful sign-in, not just email/
-        // password. Google (and any other OAuth provider) completes here,
-        // via a page redirect back into this same onAuthStateChange handler
-        //, previously only doLogin()/doRegister() called closeAuthModal(),
-        // so a Google sign-in left the modal sitting open on top of an
-        // already-logged-in app.
+        // OAuth sign-ins land here too, so close the auth modal here.
         authRequired = false;
         try { closeAuthModal(); } catch (e) {}
         if (isInteractive) toast('Signed in! Syncing data…', 'success');
 
-        // NOTE: there is intentionally no "copy cloud to local" prompt here.
-        // saveState() already writes every signed-in edit straight into this
-        // account's own offline cache (cloudKey(uid)), and pullFromCloud()
-        // below fills that same cache from the server. That cache IS this
-        // device's offline backup for this account, nothing else needs to
-        // happen. The plain guest key (STORE_KEY) is a completely separate
-        // space for signed-out use and must never be touched by a signed-in
-        // flow, silently or via a prompt.
+        // No prompt here: the account's own cache is this device's offline copy, and the
+        // guest key is never touched by a signed-in flow.
         await pullFromCloud(isInteractive);
         renderAll();
         renderSettings();
         if (window._signInReadyResolve) { window._signInReadyResolve(); window._signInReadyResolve = null; }
       } else if (event === 'PASSWORD_RECOVERY') {
-        // The reset link signs the person in so a new password can be set.
-        // Without this the sign-in was the whole visible effect of the link.
+        // Recovery links sign the user in; open the new-password sheet.
         if (typeof openRecoveryModal === 'function') openRecoveryModal();
       } else if (event === 'SIGNED_OUT') {
         clearAllPendingSync();
@@ -314,30 +210,15 @@ function initSupabase() {
     });
 
     sbClient.auth.getSession().then(async ({ data: { session } }) => {
-      // Don't blindly overwrite supabaseUser here. onAuthStateChange (above)
-      // is the source of truth and can already have fired, e.g. right after
-      // an OAuth redirect (Google) or an email-confirmation link, Supabase
-      // parses the token from the URL and fires SIGNED_IN/INITIAL_SESSION
-      // essentially immediately, but this getSession() call was kicked off
-      // in parallel and can resolve slightly *after* it, sometimes still
-      // returning a stale/null session for that first tick. Only apply what
-      // getSession() found if we don't already have a signed-in user, or if
-      // it agrees with (or actively updates) the one we have.
+      // onAuthStateChange is the source of truth and may already have run with a newer
+      // session; only adopt getSession()'s result if it agrees or we have none.
       if (!supabaseUser || !session || session.user?.id === supabaseUser.id) {
         supabaseUser = session?.user || supabaseUser || null;
       }
       updateAuthUI();
       try { if (typeof refreshAdminRole === 'function') refreshAdminRole(); } catch (e) {}
-      // IMPORTANT: if the listener above already claimed (or is about to
-      // claim) this exact sign-in, do NOT also call pullFromCloud() here.
-      // Both used to fire independently on the same page load, e.g. right
-      // after clicking an email confirmation link, and this unconditional
-      // call (fromSignIn defaults to false) could win the race and quietly
-      // run first, which skips the local-vs-cloud merge prompt entirely and
-      // silently leaves guest data untouched with no feedback at all. Wait
-      // one microtask so an already-in-flight onAuthStateChange callback has
-      // a chance to set the flag before this checks it, closes the last
-      // sliver of the race instead of just narrowing it.
+      // Yield once so an in-flight auth callback can claim this sign-in; pulling twice
+      // would skip the merge prompt.
       await Promise.resolve();
       if (supabaseUser && !authListenerHandledInitialSession) {
         loadCloudCache(supabaseUser.id);
@@ -366,22 +247,13 @@ function loadCloudCache(userId) {
     state.settings = { ...state.settings, ...devicePrefs };
     // state was just replaced, so the view variables read at boot are stale.
     if (typeof adoptViewPrefs === 'function') adoptViewPrefs();
-    // Re-read from the device-scoped store rather than trusting whichever blob
-    // happened to load first. Before that store existed, `devicePrefs` above was
-    // captured from the guest blob, which a signed-in user never writes to, so
-    // a theme chosen while signed in was overwritten by a stale value on every
-    // launch, and no amount of re-picking it could stick.
+    // Device prefs come from their own store, not the guest blob.
     if (typeof loadDevicePrefs === 'function') loadDevicePrefs();
     state.settings.onboarded = true;
   } catch (e) {}
 }
 
-// ════════ ROW <-> APP-OBJECT MAPPERS ════════
-// Each table stores the bits we want to query directly (id, user_id, a couple
-// of headline columns) plus a `data` JSONB column holding the rest of the
-// object exactly as the app already shapes it. This keeps the multi-table
-// structure clean for admins/SQL while not requiring the rest of index.html
-// (which builds these objects in many different places) to change at all.
+// Rows keep a few queryable columns plus the app object as-is in `data`.
 
 function assetToRow(a, userId) {
   return {
@@ -392,10 +264,7 @@ function assetToRow(a, userId) {
 }
 function rowToAsset(r) { return { ...r.data, id: r.id }; }
 
-// The debts table has a check constraint on `type`. The app writes 'owed' or
-// 'iowe'; anything else (a hand-edited backup, a future value) would fail the
-// whole batch, so unknown values are sent as NULL, which the constraint
-// explicitly permits, rather than blowing up the entire sync.
+// Unknown debt types go up as NULL rather than failing the batch on the check constraint.
 const VALID_DEBT_TYPES = new Set(['owed', 'iowe', 'lent']);
 function debtToRow(d, userId) {
   const type = VALID_DEBT_TYPES.has(d.type) ? d.type : null;
@@ -413,11 +282,7 @@ function recurToRow(rc, userId) {
 }
 function rowToRecur(r) { return { ...r.data, id: r.id }; }
 
-// Spending used to be pushed into the transactions table with type='spend',
-// so the investment ledger and the household budget shared one table and
-// neither read cleanly. Spending has its own table now. The marker is still
-// recognised on the way IN, because rows written by older builds are still
-// sitting in transactions and have to be migrated across (see pullFromCloud).
+// Spending has its own table; old builds wrote it to transactions, still read for migration.
 const SPEND_MARK = 'spend';
 function combinedLedger() {
   return (state.transactions || []).map(t => ({ ...t, _k: 'tx' }));
@@ -435,10 +300,7 @@ function spendToRow(x, userId) {
   };
 }
 function rowToSpend(r) { return { ...r.data, id: r.id }; }
-// Habits still live in the settings blob, which is where the two-way merge
-// that protects a streak is written. This mirrors them into a real table so
-// they are legible and queryable in Supabase; the blob stays the source of
-// truth and the mirror is never read back.
+// Habits' source of truth is the settings blob; this table is a write-only mirror.
 function habitToRow(h, userId) {
   const log = (state.settings && state.settings.habitLog && state.settings.habitLog[h.id]) || {};
   return {
@@ -458,20 +320,7 @@ function txToRow(t, userId) {
 }
 function rowToTx(r) { return { ...r.data, id: r.id }; }
 
-// ════════ CLOUD SYNC ════════
-// Replace-style sync: on push we diff each list against what's already on
-// the server for this user (by id) and insert/update/delete just the rows
-// that changed, rather than wiping every table on every save. This keeps
-// writes cheap and avoids any "delete everything then re-insert" race.
-//
-// Deletes are SOFT deletes (deleted_at = now()) on tables that support it
-// (assets/debts/goals/recurring/transactions), not a hard DELETE. This is
-// a safety net, not a behavior change: rows with deleted_at set are
-// filtered out below exactly like they'd been actually deleted, so the
-// app looks and behaves identically. The only difference is that if a
-// sync bug or a bad merge ever makes `items` empty when it shouldn't be,
-// the data is recoverable for 30 days (see purge_old_deleted() in
-// schema.sql) instead of being gone the instant it happens.
+// Diff-based sync per table. Deletes are soft (deleted_at), recoverable for 30 days.
 async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
   const { data: existingRows, error: fetchErr } = await sbClient
     .from(table).select('id').eq('user_id', userId).is('deleted_at', null);
@@ -480,22 +329,8 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
   const existingIds = new Set((existingRows || []).map(r => r.id));
   const currentIds = new Set(items.map(i => i.id));
 
-  // ── WIPE GUARD ────────────────────────────────────────────────────────
-  // Only refuse a full wipe when the server side had a MEANINGFUL amount of
-  // data (currently: 3+ rows). Deleting your one and only asset, or your
-  // last couple of transactions, is completely normal, everyday use, local
-  // legitimately going to zero from 1 or 2 items is not a red flag and must
-  // sync through without any friction.
-  // A jump from many rows straight to zero is a different story: that
-  // pattern basically never happens from someone manually deleting one item
-  // at a time, so it's far more likely local `state` got clobbered (failed
-  // pull, bad import, storage error, a race during sign-in). Refuse only
-  // that case, and let the next pull restore local instead.
-  // bypassWipeGuard is set by explicit, already-confirmed full-wipe actions
-  // (Settings → Clear All Data) that have their own "type to confirm"-style
-  // dialog, those are genuine, deliberate deletes, not the ambiguous
-  // silent-empty-state case this guard exists to catch, so they must be
-  // allowed straight through.
+  // Refuse a push that empties a table that had 3+ rows: that is usually clobbered
+  // local state, not deliberate deletes. Clear All Data bypasses it.
   const WIPE_GUARD_MIN_ROWS = 3;
   if (!bypassWipeGuard && items.length === 0 && existingIds.size >= WIPE_GUARD_MIN_ROWS) {
     console.warn(
@@ -506,10 +341,7 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
     throw new Error(`Sync stopped: local "${table}" was unexpectedly empty while the cloud still had ${existingIds.size} item(s). Your cloud data was left untouched, try Sync Now again once your data is back, or use Sync Center to overwrite the cloud copy on purpose.`);
   }
 
-  // A softer signal, not a guard: a push that removes more than 60% of a
-  // non-trivial table is noted in the console and then allowed. Blocking it
-  // would turn a deliberate clear-out into a sync that keeps failing, and the
-  // empty-list case above already covers the shape that means local broke.
+  // Large deletions are logged, not blocked.
   if (existingIds.size >= 5) {
     const deletingCount = [...existingIds].filter(id => !currentIds.has(id)).length;
     if (deletingCount / existingIds.size > 0.6) {
@@ -519,10 +351,8 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
 
   const toDelete = [...existingIds].filter(id => !currentIds.has(id));
 
-  // Drop anything that can't satisfy the composite primary key, and clamp the
-  // numeric columns the schema guards with `>= 0` checks. A single bad row
-  // (missing id, negative qty from a hand-edited backup) would otherwise
-  // reject the entire batch and stall sync permanently.
+  // Drop rows without an id and clamp columns the schema requires >= 0, so one bad
+  // row cannot stall the batch.
   const clampNonNeg = (v) => {
     if (v === null || v === undefined || v === '') return null;
     const n = Number(v);
@@ -535,8 +365,7 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
     .map(i => {
       const row = { ...toRow(i, userId), deleted_at: null };
       for (const col of NON_NEG_COLS) {
-        // `transactions.amount` is intentionally unconstrained (sells are
-        // recorded as negatives), so leave that table's amounts alone.
+        // Sells are negative amounts.
         if (col === 'amount' && table === 'transactions') continue;
         if (col in row) row[col] = clampNonNeg(row[col]);
       }
@@ -547,15 +376,9 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
     console.warn(`[sync] Skipped ${items.length - rows.length} "${table}" item(s) with a missing id.`);
   }
 
-  // Only send what actually changed. Previously every push re-uploaded the
-  // entire account, every asset, every transaction, even for a one-field
-  // edit, which is slow, burns mobile data, and is what made sync feel like
-  // it was "resyncing everything all again". Rows whose fingerprint matches
-  // the last successful sync are skipped entirely.
+  // Skip rows whose fingerprint matches the last sync.
   const known = (typeof fingerprintsFor === 'function') ? fingerprintsFor(kindForTable(table)) : null;
-  // Index the source items once. This used to run items.find() for every row,
-  // i.e. O(rows x items), on a few thousand transactions that is millions of
-  // comparisons on every single push, on the main thread.
+  // Index once instead of items.find() per row.
   const byId = new Map();
   for (const i of items) { if (i && i.id != null) byId.set(i.id, i); }
   const changedRows = known
@@ -591,22 +414,16 @@ let pushQueuedAgain = false;
 
 async function pushToCloud(bypassWipeGuard = false) {
   if (!supabaseUser || !sbClient) return;
-  // Hard stop while a sign-in decision is pending, see pauseSync() above.
-  // An already-scheduled debounce timer can still fire after pauseSync()
-  // cleared it (if it was mid-flight), so this second check is the one that
-  // actually guarantees nothing uploads before the person has chosen.
+  // Also checked here: a timer can fire after pauseSync() cleared it.
   if (window.syncPaused && !bypassWipeGuard) return;
   if (pushInFlight) {
-    // A push is already running, don't start a second one concurrently
-    // (that could race on the same tables and clobber/undo changes).
-    // Just remember to run once more right after this one finishes.
+    // One push at a time; run again when this one finishes.
     pushQueuedAgain = true;
     return;
   }
   pushInFlight = true;
   updateSyncDot('syncing');
-  // Snapshot BEFORE the first await: this is the version of the data this
-  // push is responsible for. See markAllSynced().
+  // Before the first await; see markAllSynced().
   const sentSnapshot = captureFingerprintSnapshot();
   try {
     const uid = supabaseUser.id;
@@ -619,8 +436,7 @@ async function pushToCloud(bypassWipeGuard = false) {
       syncTable('transactions', uid, combinedLedger(), txToRow, bypassWipeGuard),
       syncTable('spends', uid, state.spends || [], spendToRow, bypassWipeGuard),
     ]);
-    // A mirror, not a sync: a failure here must never fail the push, because
-    // the habits themselves went up inside settings a moment ago.
+    // A mirror; its failure must not fail the push.
     try {
       await syncTable('habits', uid, (state.settings && state.settings.habits) || [], habitToRow, bypassWipeGuard);
     } catch (e) { console.warn('[sync] habit mirror failed (habits are safe in settings):', e); }
@@ -647,28 +463,18 @@ async function pushToCloud(bypassWipeGuard = false) {
           user_id: uid,
           snapshot_date: today,
           net_worth: netWorth,
-          // A day's per-holding values live on that day's own row. This used
-          // to write the WHOLE history into today's row on every sync, which
-          // nothing ever read back (the pull selects two columns and has
-          // never asked for `data`), so it was a growing write-only blob:
-          // harmless while it held one number per day, several hundred
-          // kilobytes per sync once each day carries a value per holding.
+          // Only this day's per-holding values.
           data: {
             assets: (((state.pnlHistory || []).find(x => x && x.date === today) || {}).assets) || {},
-            // The two-hourly readings for today, from both sides: a pull put
-            // the job's slots into state.intraday, so writing it back keeps
-            // them. Older slots have already aged out of the ring.
+            // Includes the job's readings from the last pull.
             intraday: (state.intraday || []).filter(x => x && Number(x.t) > 0),
           },
         }, { onConflict: 'user_id,snapshot_date' });
       if (nwErr) throw nwErr;
     }
 
-    // What the scheduled snapshot job re-prices while the app is closed: the
-    // feed reading behind each holding and what it was worth at that reading.
-    // See valuationRecipe() in app.js and api/snapshot.js for why that is
-    // enough. A failure here must not fail the sync - it costs the two-hourly
-    // readings until the next push, not any of the data above.
+    // The recipe api/snapshot.js re-prices while the app is closed. Optional: failure
+    // only costs the background readings.
     try {
       if (typeof valuationRecipe === 'function') {
         const recipe = valuationRecipe();
@@ -690,8 +496,7 @@ async function pushToCloud(bypassWipeGuard = false) {
       console.warn('[sync] valuation recipe not stored, snapshots while closed will pause:', e && e.message ? e.message : e);
     }
 
-    // The profile is the account-level record: who you are, and the choices
-    // that should follow you to a new device rather than staying on this one.
+    // Account-level choices that follow the user across devices.
     const st = state.settings || {};
     const profileRow = {
       user_id: uid, email: supabaseUser.email || null,
@@ -724,8 +529,7 @@ async function pushToCloud(bypassWipeGuard = false) {
   }
 }
 
-// Best-effort net worth number for the snapshot row; falls back to null
-// (which skips the snapshot) if the app's own calculator isn't available.
+// Null skips the snapshot row.
 function computeNetWorthForSync() {
   try {
     if (typeof getNetWorth === 'function') return getNetWorth();
@@ -734,8 +538,7 @@ function computeNetWorthForSync() {
   return null;
 }
 
-// The most recent reading the scheduled job took. Null means it has never
-// written for this account: either it is not set up, or it has not run yet.
+// Null: the scheduled job has never written for this account.
 function lastCronAt(rows) {
   let best = null;
   for (const r of (rows || []).slice(-4)) {
@@ -747,10 +550,7 @@ function lastCronAt(rows) {
   return best ? new Date(best).toISOString() : null;
 }
 
-// The two-hourly readings live on the day they belong to, so the last two
-// days of rows are where the 48-hour ring is. Union them with whatever this
-// device recorded for itself, newest write per slot winning, because both
-// sides are writing into the same absolute two-hour buckets.
+// Union of the last two days' cloud readings with this device's; newest write per slot wins.
 function cloudIntraday(rows) {
   const KEEP = 48 * 3600 * 1000;
   const floor = Date.now() - KEEP;
@@ -790,14 +590,9 @@ async function pullFromCloud(fromSignIn = false) {
     for (const r of [assetsRes, debtsRes, goalsRes, recurRes, txRes, nwRes]) {
       if (r.error) throw r.error;
     }
-    // The spends table is new. A project whose schema.sql has not been re-run
-    // yet answers with an error here, and that must not take the whole pull
-    // down: fall back to the spend-marked rows still in transactions.
+    // Older schemas have no spends table; fall back to transactions.
     if (spendRes.error) console.warn('[sync] spends table unavailable, reading spending from transactions:', spendRes.error.message || spendRes.error);
-    // Spending written by an older build is still sitting in transactions.
-    // Read it from wherever it actually is; the next push writes it to the
-    // spends table and, because combinedLedger() no longer includes it, drops
-    // it from transactions. One pull-then-push and the move is done.
+    // Legacy spends in transactions move to spends on the next push.
     const legacySpends = (txRes.data || []).map(rowToTx).filter(t => t._k === SPEND_MARK);
     const cloudSpends = (!spendRes.error && (spendRes.data || []).length)
       ? (spendRes.data || []).map(rowToSpend)
@@ -805,18 +600,8 @@ async function pullFromCloud(fromSignIn = false) {
     // settings: PGRST116 = no row yet, not a real error
     if (settingsRes.error && settingsRes.error.code !== 'PGRST116') throw settingsRes.error;
 
-    // "Does this account actually have DATA in the cloud?" must mean real
-    // user records only, assets, debts, goals, recurring, transactions.
-    //
-    // It must NOT include settingsRes.data. The settings row is preferences
-    // (currency/theme/etc), it's upserted on EVERY pushToCloud(), and nothing
-    // ever deletes it, not clearAllData(), not syncTable() (which only
-    // handles the five data tables above). So once an account has synced even
-    // once, that row exists forever. Including it here made hasCloudData
-    // permanently true for any previously-used account, which sent every
-    // sign-in down the "account has cloud data" branch and made the
-    // import-to-empty-cloud prompt in the else branch literally unreachable -
-    // even after the person deleted every asset or used Clear All Data.
+    // Real records only. The settings row exists forever once synced, so counting it
+    // would make every account look non-empty.
     const hasCloudData = (assetsRes.data?.length || 0) > 0
       || (debtsRes.data?.length || 0) > 0
       || (goalsRes.data?.length || 0) > 0
@@ -825,12 +610,7 @@ async function pullFromCloud(fromSignIn = false) {
       || (spendRes.data?.length || 0) > 0;
 
     if (hasCloudData) {
-      // ─── ACCOUNT HAS CLOUD DATA ───────────────────────────────────────
-      // Never prompts here, regardless of guest storage state. Cloud data
-      // just becomes the active session; guest storage (whatever it holds,
-      // even if empty) is left completely untouched, in its own separate
-      // space. The only sign-in prompt in this whole flow is the opposite
-      // case, below: guest has data AND cloud is empty.
+      // Cloud has data: it becomes the session; guest storage is left alone.
       const localSettings = { ...state.settings }; // keep device-level UI prefs
       // Snapshot habits BEFORE state.settings is overwritten by the cloud copy.
       const localHabits = JSON.parse(JSON.stringify(state.settings.habits || []));
@@ -844,27 +624,21 @@ async function pullFromCloud(fromSignIn = false) {
         recurs: (recurRes.data || []).map(rowToRecur),
         transactions: (txRes.data || []).map(rowToTx).filter(t => t._k !== SPEND_MARK),
         spends: cloudSpends,
-        // Carry each day's per-holding values across with it. Without them a
-        // new device gets the net-worth line and a Daily P&L card with
-        // nothing in it, for every day recorded before that device existed.
+        // Per-holding values, so a new device has Daily P&L history.
         pnlHistory: (nwRes.data || []).map(r => {
           const pt = { date: r.snapshot_date, netWorth: r.net_worth };
           const av = r.data && r.data.assets;
           if (av && typeof av === 'object' && Object.keys(av).length) pt.assets = av;
           return pt;
         }),
-        // The 1D view is drawn from these. Most of them were taken by the
-        // scheduled job, at hours this device was not running.
+        // The 1D view; mostly the scheduled job's readings.
         intraday: cloudIntraday(nwRes.data),
-        // When that job last wrote anything, so the Sync Center can say
-        // whether it is running at all rather than leaving it a mystery.
+        // For the Sync Center's background-job status.
         cronSeenAt: lastCronAt(nwRes.data),
         settings: settingsRes.data ? { ...settingsRes.data.data } : state.settings,
         lastUpdated: new Date().toISOString(),
       };
-      // Same list as loadCloudCache, from the same place: a pull must not hand
-      // this device another device's view preferences.
-      // (cloudIntraday is defined below, beside the other row readers.)
+      // Same list as loadCloudCache: never adopt another device's view prefs.
       const keepLocal = {};
       const keys = (typeof DEVICE_PREF_KEYS !== 'undefined' && DEVICE_PREF_KEYS)
         || ['theme','hideBalance','haptics','reduceMotion'];
@@ -872,11 +646,7 @@ async function pullFromCloud(fromSignIn = false) {
       state.settings = { ...state.settings, ...keepLocal, onboarded: true };
       if (typeof adoptViewPrefs === 'function') adoptViewPrefs();
 
-      // Habits ride inside the settings blob, but unlike theme/currency they
-      // are real user data, a pull replacing settings wholesale would destroy
-      // habits created on this device that hadn't been pushed yet. Merge by
-      // union: keep every habit from both sides, and OR the check-in logs
-      // together so a tick made on either device survives.
+      // Habits are merged by union, check-ins OR'd, so neither device loses a tick.
       try {
         const cloudHabits = (settingsRes.data && settingsRes.data.data && settingsRes.data.data.habits) || [];
         const cloudLog    = (settingsRes.data && settingsRes.data.data && settingsRes.data.data.habitLog) || {};
@@ -899,11 +669,7 @@ async function pullFromCloud(fromSignIn = false) {
       updateSyncLabels();
 
     } else {
-      // ─── EMPTY ACCOUNT (no user data in the cloud yet) ─────────────────
-      // Reachable both for a brand-new account and for an existing one whose
-      // data was all deleted. In the latter case a settings row can still
-      // exist (it's never deleted), so apply those saved preferences here -
-      // otherwise signing in would silently reset currency/theme.
+      // Empty account: still apply saved preferences so sign-in keeps currency/theme.
       if (settingsRes.data) {
         const devicePrefs = { ...state.settings };
         state.settings = {
@@ -916,10 +682,7 @@ async function pullFromCloud(fromSignIn = false) {
           onboarded: true,
         };
       }
-      // Must read the guest key directly here, loadCloudCache() (called
-      // just before pullFromCloud during sign-in) already overwrote in-memory
-      // `state` with this account's own (empty) cloud cache, so `state` no
-      // longer reflects guest storage by this point.
+      // Read the guest key directly: `state` already holds this account's cache.
       const guestRaw = (() => {
         if (typeof flushSave === 'function') flushSave();   // debounced write may be pending
         try { const s = localStorage.getItem(STORE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
@@ -930,13 +693,7 @@ async function pullFromCloud(fromSignIn = false) {
         (guestRaw.goals && guestRaw.goals.length > 0)
       );
       if (hasLocalData && fromSignIn) {
-        // CRITICAL: at this point `state` can still be holding the GUEST data.
-        // loadCloudCache() bails out early when this device has no cache for
-        // this account yet (brand-new account), leaving whatever loadState()
-        // put there, the guest data, in place. Since supabaseUser is already
-        // set, any saveState() (restorePage/setPage call one immediately after
-        // sign-in) would schedule a push and upload it while this modal is
-        // still open. Freeze all syncing until there's an actual answer.
+        // `state` may still be guest data here; freeze sync until the user decides.
         pauseSync();
         let choice;
         try {
@@ -957,11 +714,7 @@ async function pullFromCloud(fromSignIn = false) {
           try { localStorage.setItem(cloudKey(uid), JSON.stringify(state)); } catch (e) {}
           toast('Local data imported to your account!', 'success');
         } else {
-          // Declined. `state` is still the guest data, so it MUST be cleared -
-          // otherwise the very next saveState() pushes it up anyway, which is
-          // the exact opposite of what was just asked for. The signed-in
-          // session now correctly shows this empty account; the guest key on
-          // disk is untouched and still holds everything.
+          // Declined: clear `state` so the guest data is not pushed. The guest key stays.
           const devicePrefs = { ...state.settings };
           state = {
             assets: [], debts: [], goals: [], recurs: [], transactions: [], pnlHistory: [],
@@ -982,19 +735,12 @@ async function pullFromCloud(fromSignIn = false) {
   }
 }
 
-// Legacy entry points kept so any stray references don't hard-crash; the
-// flow above (openSyncConfirm) is now the actual UI for this decision.
+// Legacy no-op; openSyncConfirm handles this now.
 function showImportLocalPrompt() {}
 async function importLocalToCloud() { await pushToCloud(); toast('Local data imported to your account!', 'success'); }
 async function discardLocalStartFresh() { /* no-op: cancel now just leaves things as they are */ }
 
-// While a sign-in decision modal is open, `state` may still hold GUEST data
-// that the person has not yet agreed to upload. Any auto-push during that
-// window would silently import it behind their back, which is exactly what
-// happened: restorePage()/setPage() call saveState() right after sign-in,
-// schedulePush() fired on a 1.5s debounce, and the upload completed while
-// the "Import local data?" modal was still waiting for an answer. Pausing
-// blocks both the debounce and the push itself until a choice is made.
+// True while a sign-in decision is pending, so guest data is not uploaded unasked.
 window.syncPaused = false;
 function pauseSync() { window.syncPaused = true; clearTimeout(syncDebounceTimer); }
 function resumeSync() { window.syncPaused = false; }
@@ -1007,11 +753,7 @@ function schedulePush() {
   syncDebounceTimer = setTimeout(pushToCloud, 1500); // 1.5s debounce
 }
 
-// ════════ GOOGLE SIGN-IN ════════
-// Redirect-based OAuth: Supabase sends the browser to Google, Google sends it
-// back to this same page with a token in the URL, and onAuthStateChange
-// (already wired above) picks up the resulting session automatically, no
-// separate callback page needed.
+// Redirect OAuth; onAuthStateChange picks up the session on return.
 async function signInWithGoogle() {
   if (!sbClient) {
     toast(sbClientMissingMsg ? sbClientMissingMsg() : 'Cloud sign-in unavailable in this preview', 'error');
@@ -1024,9 +766,7 @@ async function signInWithGoogle() {
     const { error } = await sbClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Send the browser back to wherever it is right now (works whether
-        // you're on the Vercel domain, the kesug mirror, or localhost) -
-        // as long as that exact origin is in Supabase's redirect URL allowlist.
+        // Return to this origin; it must be in Supabase's redirect allowlist.
         redirectTo: window.location.origin + window.location.pathname,
       },
     });
@@ -1044,9 +784,7 @@ if (typeof window.signInWithGoogle === 'undefined') window.signInWithGoogle = si
 
 async function manualSync() {
   if (!supabaseUser) { openAuthModal(); return; }
-  // Being offline is not a sync error, it is the reason there cannot be one
-  // yet. "Sync error: Failed to fetch" describes the plumbing; this describes
-  // the situation, and says what happens next without the user asking.
+  // Offline is not an error.
   if (!navigator.onLine) {
     updateSyncDot('offline');
     const n = (typeof pendingSyncCount === 'function') ? pendingSyncCount() : 0;
@@ -1054,8 +792,7 @@ async function manualSync() {
             : 'You are offline. Everything is saved on this device.', 'error');
     return;
   }
-  // Push first so any local edit made just before tapping "Sync" (within the
-  // 1.5s debounce window) isn't immediately overwritten by the pull below.
+  // Push first so a just-made edit is not overwritten by the pull.
   clearTimeout(syncDebounceTimer);
   const TIMEOUT_MS = 15000;
   const withTimeout = (p, label) => Promise.race([
@@ -1080,11 +817,7 @@ async function manualSync() {
   }
 }
 
-// A bare coloured dot can't say WHAT it means, green and grey look like
-// decoration. These are real glyphs: tick = everything is on the server,
-// arrows = uploading right now, cloud-with-slash = offline so edits are held
-// locally, "!" = the last sync actually failed. Pending-but-online gets its
-// own up-arrow so "not sent yet" reads differently from "can't send".
+// tick = synced, arrows = syncing, slashed cloud = offline, ! = failed, up-arrow = pending.
 const SYNC_ICONS = {
   synced:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   syncing: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
@@ -1107,8 +840,7 @@ function updateSyncDot(status) {
   if (!supabaseUser) { dot.style.display = 'none'; return; }
   dot.style.display = 'flex';
 
-  // Offline beats everything except an in-flight sync: if there's no
-  // connection, "pending" is the honest state, not an error.
+  // Offline reads as pending, not error.
   let visual = status;
   if (status !== 'syncing') {
     if (!navigator.onLine) visual = 'offline';
@@ -1149,35 +881,9 @@ function updateSyncLabels() {
   }
 }
 
-// ════════ PUBLIC API EXPORT ════════
-// Everything above is declared inside the `else { ... }` block of the
-// double-load guard. Plain `function foo()` declarations still reach the
-// global object from inside a block, via Annex B web-compat hoisting, but
-// that hoisting covers FunctionDeclaration ONLY. It does NOT cover
-// AsyncFunctionDeclaration. So every `async function` here stayed
-// block-scoped and never became a window property, while every plain one did.
-//
-// index.html then runs its offline fallback shim, sees `typeof
-// window.pushToCloud !== 'function'`, and installs a no-op in its place.
-// The result was that the async half of this module was silently replaced by
-// stubs for every caller outside this file:
-//
-//   • "Sync Now" called the stub and answered "Cloud sync unavailable in
-//     this preview", the button could never work.
-//   • The Refresh button's pullFromCloud() did nothing, so a refresh never
-//     picked up changes made on another device.
-//   • The beforeunload flush did nothing, so edits made in the last 1.5s
-//     before closing the tab were never pushed.
-//   • Clear All Data never cleared the cloud copy.
-//
-// Calls made *within* this file resolved to the real block-scoped functions,
-// which is why automatic debounced push and the post-sign-in pull kept
-// working, and why the breakage was invisible from the outside.
-//
-// Assigning the public surface explicitly is hoisting-independent and matches
-// the contract stated at the top of this file. Keep this list in sync when
-// adding a public function; the check below fails loudly in the console
-// rather than silently degrading to a stub.
+// Async functions declared in a block are not hoisted to window (Annex B covers only
+// plain functions), so export the public API explicitly. Keep this list complete; the
+// check below warns if index.html's fallback stub would take over.
 Object.assign(window, {
   paintPendingBadges,
   initSupabase, pushToCloud, pullFromCloud, schedulePush, manualSync,

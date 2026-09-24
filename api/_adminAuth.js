@@ -1,19 +1,5 @@
-// ════════════════════════════════════════════════════════════════════════
-// PROVING SOMEONE IS THE ADMIN
-// ════════════════════════════════════════════════════════════════════════
-// The browser sends its Supabase access token. This asks Supabase who that
-// token belongs to, then reads that person's row with the service role to see
-// whether they are an admin.
-//
-// Two things it deliberately does NOT do:
-//
-//  - trust anything the client says about itself. A `role` sent in the body,
-//    or read from a table the client can write, is a request, not a fact.
-//  - decode the JWT locally. Supabase's own /auth/v1/user endpoint is the
-//    only thing that can tell us the token is real and unexpired.
-//
-// So the admin flag lives in `profiles.role`, a column no client policy can
-// UPDATE, and is only ever read here.
+// Admin check: Supabase verifies the access token, then profiles.role (not client-writable)
+// is read with the service role. Nothing the client says about itself is trusted.
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -76,8 +62,7 @@ async function sql(path, init) {
   return res;
 }
 
-// Never send a key back to a browser, not even to the admin's. The last four
-// characters are enough to tell two keys apart when swapping one out.
+// Keys never go back to the browser; the last four tell them apart.
 function maskKey(k) {
   const s = String(k || '');
   if (!s) return '';

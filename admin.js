@@ -1,24 +1,15 @@
-// ════════════════════════════════════════════════════════════════════════
-// PAISAFOLIO ADMIN, standalone
-// ════════════════════════════════════════════════════════════════════════
-// Runs on its own page with its own Supabase client. It needs a session and
-// a role, and nothing else from the app, which is exactly why it is not in
-// app.js any more.
-//
-// Being here at all proves nothing. Every action posts to /api/admin, which
-// verifies the token with Supabase and re-reads profiles.role server-side
-// before doing anything. The gate below is so an ordinary person sees a
-// polite message instead of a broken page.
+// Standalone admin page. The gate here is cosmetic: /api/admin re-checks the
+// token and role on every call.
 
 let sbClient=null, supabaseUser=null;
 
-// ── the few helpers this page borrows from the app ────────────────────
+// the few helpers this page borrows from the app
 const el=(id)=>document.getElementById(id);
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"'`=\/]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;','=':'&#61;','/':'&#47;'}[c]));
 function formatDate(d){if(!d)return'';try{return new Date(d).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
 function haptic(){try{if(navigator.vibrate)navigator.vibrate(8);}catch(e){}}
 
-// ── theme, kept in step with the app's own choice ─────────────────────
+// theme, kept in step with the app's own choice
 function readAppTheme(){
   try{
     const d=JSON.parse(localStorage.getItem('paisafolio_device_prefs')||'{}');
@@ -43,7 +34,7 @@ function applyAdmTheme(){
     :'<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 }
 
-// ── the gate ──────────────────────────────────────────────────────────
+// the gate
 function gate(title,msg,cta){
   el('admPanel').hidden=true;
   el('admGate').hidden=false;
@@ -283,8 +274,7 @@ async function adminToggleRole(userId,role){
   try{
     await adminCall('setRole',{userId,role});
     adminSay('Role updated','ok');
-    // Removing your own admin closes this page behind you, which is the
-    // honest outcome rather than a panel that no longer works.
+    // Removing your own admin role closes the page.
     if(role==='user'&&supabaseUser&&supabaseUser.id===userId){
       gate('You are no longer an administrator','You just removed your own access.',
         {label:'Back to the app',href:'index.html'});

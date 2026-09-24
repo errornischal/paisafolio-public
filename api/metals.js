@@ -1,19 +1,4 @@
-// api/metals.js — Vercel Serverless Function
-// Returns Nepal gold/silver prices in NPR per tola.
-// Strategy 1: Scrape arthakendra.com (FENEGOSIDA official rates)
-// Strategy 2: Fallback to international spot × live USD/NPR rate
-//
-// HARDENING / RELIABILITY NOTES (v2):
-//  • CORS restricted to our own origins instead of `*`.
-//  • Scraping is far more defensive: the old regex took the first two
-//    "Rs. N/-" matches on the page in document order and trusted them to be
-//    gold-then-silver. Any new promo box or price table above the real one
-//    silently returned wrong prices — the worst possible failure mode for a
-//    money app, because it looks like it worked. We now anchor on the
-//    surrounding text AND sanity-check the gold:silver ratio.
-//  • Added a last-known-good in-memory cache so a scrape failure serves a
-//    slightly stale (but clearly labelled) price instead of a hard 502.
-//  • Response now always states which strategy produced it and how old it is.
+// Nepal gold and silver in NPR per tola: scraped from arthakendra, with spot x USD/NPR as the fallback.
 
 const TOLA_IN_GRAMS = 11.6638;
 const OZ_IN_GRAMS = 31.1035;
@@ -22,17 +7,11 @@ const DEFAULT_ORIGINS = [
   'https://nepbytebazaar.kesug.com',
   'http://nepbytebazaar.kesug.com',
 ];
-// Vercel gives every deployment of every project a *.vercel.app hostname, so
-// `hostname.endsWith('.vercel.app')` allowed the entire platform — anyone could
-// host a page on their own *.vercel.app and spend this project's upstream rate
-// limit. Scope it to this project's own deployments: Vercel sets
-// VERCEL_PROJECT_PRODUCTION_URL (e.g. your-app.vercel.app) at build time, and
-// preview URLs are that project name with a deployment suffix.
+// Only this project's own *.vercel.app deployments, not every project on the platform.
 function projectPreviewHost(host) {
   const prod = (process.env.VERCEL_PROJECT_PRODUCTION_URL || '').trim().toLowerCase();
   if (!host.endsWith('.vercel.app')) return false;
-  // No project URL available (local dev, self-hosted): fall back to refusing
-  // cross-origin *.vercel.app rather than accepting all of it.
+  // No project URL (local dev): refuse cross-origin *.vercel.app.
   if (!prod) return false;
   if (host === prod) return true;
   const project = prod.replace(/\.vercel\.app$/, '');
@@ -46,8 +25,7 @@ function isAllowedOrigin(origin) {
   try { return projectPreviewHost(new URL(origin).hostname.toLowerCase()); } catch (_) { return false; }
 }
 
-// Last successful result, so a transient upstream failure degrades to "slightly
-// old price" rather than "no price at all".
+// Last good result, so a failed scrape serves a slightly stale price rather than none.
 let lastGood = null; // { data, ts }
 const STALE_OK_MS = 6 * 60 * 60 * 1000; // serve up to 6h old on total failure
 
@@ -61,8 +39,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
   }
 }
 
-// Plausibility gate. These bounds are deliberately wide — they exist to catch
-// "we parsed a phone number as a gold price", not to second-guess the market.
+// Wide on purpose: this catches a misparsed number, not a real market move.
 function ratesLookSane(goldTola, silverTola) {
   if (!Number.isFinite(goldTola) || !Number.isFinite(silverTola)) return false;
   if (goldTola < 50_000 || goldTola > 5_000_000) return false;
@@ -84,9 +61,7 @@ async function fetchNepalRates() {
 
   const parseNum = (s) => parseFloat(String(s).replace(/,/g, ''));
 
-  // Preferred: find the price that actually sits near the word gold/silver,
-  // rather than assuming document order. We scan a window of characters after
-  // each keyword occurrence and take the first Rs. value inside it.
+  // The price nearest the word, rather than trusting the order things appear on the page.
   function nearKeyword(keyword) {
     const re = new RegExp(keyword, 'gi');
     let m;
@@ -104,8 +79,7 @@ async function fetchNepalRates() {
   let goldTola = nearKeyword('hallmark|fine gold|gold');
   let silverTola = nearKeyword('silver');
 
-  // Fallback to the original positional heuristic if the anchored scan missed,
-  // but only accept it if it passes the sanity gate below.
+  // Positional fallback, accepted only if it passes the sanity check.
   if (!goldTola || !silverTola) {
     const all = [...html.matchAll(/Rs\.?\s*([0-9][0-9,]{2,})\s*\/-/g)].map((x) => parseNum(x[1]));
     if (all.length >= 2) { goldTola = goldTola || all[0]; silverTola = silverTola || all[1]; }

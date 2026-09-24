@@ -10,14 +10,7 @@
 <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-<!-- A separate page on purpose. It shares nothing with the app itself: no
-     holdings, no charts, no currency, no sync. Keeping it inside index.html
-     meant every person who will never open it still downloaded it, and a
-     mistake in here could take the whole app down with it.
-
-     The hidden link in Settings is a convenience. The real check happens
-     twice: once below, and again in api/admin.js against the database on
-     every single call. Loading this URL directly gets you nothing. -->
+<!-- Admin panel, separate from the app. Access is enforced by api/admin.js on every call. -->
 <header class="adm-top">
   <a class="adm-back" href="index.html" aria-label="Back to Paisafolio">
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>

@@ -1,14 +1,5 @@
-// Paisafolio, application script.
-//
-// Extracted from the inline <script> block in index.html. This is not
-// cosmetic: V8 caches compiled bytecode for *external* scripts across page
-// loads, but never for inline ones. As an inline block, all ~360 KB was
-// re-parsed and re-compiled on every single launch of the app.
-//
-// Loaded as a classic script (not a module) on purpose: the markup wires
-// hundreds of handlers with inline onclick="...", which resolve against the
-// global scope. Module scope would break every one of them.
-// ════════ ICONS ════════
+// Paisafolio app script. A classic script, not a module: inline onclick= handlers need globals.
+// ICONS
 const ICONS={
   search:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
   bitcoin:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11.767 19.089c4.924.868 6.14-6.025 1.216-6.894m-1.216 6.894L5.86 18.047m5.908 1.042-.858 4.873m1.220-11.867c4.924.868 6.140-6.026 1.216-6.894m-1.216 6.894L4.641 9.132m7.126 4.055-.858-4.873"/></svg>`,
@@ -38,10 +29,6 @@ const ICONS={
   sun:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
   box:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`,
   clock:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
-  // The stem was four units long against a 2.5-wide round cap, so at the
-  // sizes this is actually drawn at the mark and the dot ran together and
-  // the whole thing read as a circle with a blob in it. Longer stem, a real
-  // round dot set further down, and the exclamation is legible at 14px.
   alert:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.25"/><line x1="12" y1="7.25" x2="12" y2="13"/><circle cx="12" cy="16.9" r="1.15" fill="currentColor" stroke="none"/></svg>`,
 };
 const ICON_KEYS=Object.keys(ICONS);
@@ -64,11 +51,7 @@ const UNIT_LABELS={'troy oz':'TROY OUNCES','gram':'GRAMS','tola':'TOLA','kg':'KI
 function unitQtyLabel(u){return UNIT_LABELS[u]||String(u||'').toUpperCase();}
 const UNIT_CONVERSIONS={'gram':{'troy oz':1/31.1035,'gram':1,'tola':1/11.664,'kg':0.001},'troy oz':{'troy oz':1,'gram':31.1035,'tola':31.1035/11.664,'kg':0.0311035},'tola':{'troy oz':11.664/31.1035,'gram':11.664,'tola':1,'kg':0.011664},'kg':{'troy oz':1000/31.1035,'gram':1000,'tola':1000/11.664,'kg':1}};
 
-// ════════ STORAGE KEYS ════════
-// STORE_KEY and cloudKey are declared in supabase.js (loaded earlier, in <head>)
-
-
-// ════════ AUTH UI ════════
+// STORAGE KEYS
 let authCurrentTab = 'login';
 
 function openAuthModal(required) {
@@ -85,13 +68,7 @@ function openAuthModal(required) {
   warnIfFileProtocol();
 }
 
-// Sign-in/sign-up/reset all rely on cross-origin fetch() calls to Supabase.
-// Most mobile and desktop browsers block or badly mishandle those when the
-// page itself was opened as a local file (file://) instead of being served
-// over http(s), so every auth button will look like it "does nothing".
-// This isn't something the code can work around; the page needs to be
-// served (Vercel, `python3 -m http.server`, GitHub Pages, etc.) for auth
-// and cloud sync to function at all.
+// Auth needs fetch() to Supabase, which browsers block from file:// pages.
 let _fileProtoWarned = false;
 function warnIfFileProtocol(){
   if (location.protocol !== 'file:' || _fileProtoWarned) return;
@@ -104,10 +81,7 @@ function warnIfFileProtocol(){
   toast('Auth needs the site served over http(s), not opened as a file', 'error');
 }
 
-// Shown when sbClient never got created, either the Supabase CDN script
-// failed to load (blocked by the host/network/ad-blocker) or supabase.js
-// itself didn't load. Distinct message for file:// since that's a different,
-// unfixable-in-code situation vs. a blocked CDN script.
+// Supabase client missing: CDN blocked, supabase.js not loaded, or opened from file://.
 function sbClientMissingMsg(){
   // A fresh copy of this app has no Supabase project behind it yet. That is
   // not a fault to apologise for, it is a setup step nobody has done, so say
@@ -133,9 +107,6 @@ function closeAuthModal() {
   popModalHistoryIfNeeded();
 }
 
-// The account sheet was titled "Sync Center" and showed nothing but an email
-// and a sync button, there was no profile at all. It leads with who you are
-// now, then sync underneath.
 function displayName(){
   const custom = (state.settings && state.settings.displayName || '').trim();
   if (custom) return custom;
@@ -146,23 +117,15 @@ function displayName(){
   const email = (supabaseUser && supabaseUser.email) || '';
   return email ? email.split('@')[0] : 'Your account';
 }
-// ════════ PROFILE ACTIONS ════════
-// The account sheet was a sync panel with a name on top. Sync now lives in
-// its own sheet, and this one does what a profile does: who you are, and the
-// three things you can change about the account.
 function openSyncCenter(){renderSyncCenter();openModal('syncCenterModal');}
 
-// An account can carry more than one way in. Signing up with Google left you
-// with no password, signing up with a password left you with no Google, and
-// nothing in the app said so or offered to add the other.
 function authIdentities(){
   const ids=(supabaseUser&&supabaseUser.identities)||[];
   return Array.isArray(ids)?ids:[];
 }
 function hasIdentity(provider){return authIdentities().some(i=>i&&i.provider===provider);}
 function hasPasswordLogin(){
-  // Supabase models an email/password login as an 'email' identity. An account
-  // created through Google has none until a password is set.
+  // Supabase calls an email/password login an 'email' identity.
   return hasIdentity('email');
 }
 async function linkGoogle(){
@@ -202,8 +165,7 @@ async function unlinkGoogle(){
 }
 function toggleGoogleLink(){hasIdentity('google')?unlinkGoogle():linkGoogle();}
 let credMode=null;   // 'email' | 'password' | 'username'
-// The handle a person is known by, and the only thing another user is ever
-// shown. Lowercase, so one spelling cannot become two people.
+// Lowercase handle, the only thing other users see.
 function normalizeUsername(v){return (v||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');}
 function usernameProblem(v){
   if(v.length<3)return 'At least 3 characters.';
@@ -221,10 +183,7 @@ function openChangeUsername(){
   el('credNew').placeholder='lowercase, 3-24 characters';
   el('credNew').value=state.settings.username||'';
   el('credConfirmRow').style.display='none';
-  // A handle is how people find you, so changing one you already have is a
-  // change to your identity, not a preference. It is checked the same way
-  // changing an email is: a phone left unlocked on a table should not be
-  // enough to take someone's handle and hand it to somebody else.
+  // Changing an existing handle needs the password, like changing email.
   const needPw=changing&&hasPasswordLogin();
   const row=el('credPassRow');if(row)row.style.display=needPw?'':'none';
   el('credNote').textContent=needPw
@@ -255,8 +214,7 @@ async function saveUsername(){
     finally{btn.disabled=false;btn.textContent='Save username';}
   }
   btn.disabled=true;btn.textContent='Checking…';
-  // A name that could not be checked because the connection is down is not a
-  // rejected name. Only a name the server actually refused is.
+  // Could not check because offline is not a rejection.
   const offlineish=e=>!navigator.onLine||/fetch|network|timeout|connection/i.test((e&&e.message)||'');
   let unchecked=false;
   try{
@@ -278,8 +236,7 @@ async function saveUsername(){
     }else unchecked=true;
     state.settings.username=next;
     saveState();closeModal('credModal');haptic('success');
-    // pushToCloud sends the username with the profile, so an unchecked name
-    // still reaches the server on the next sync.
+    // pushToCloud sends the username, so an unchecked name still reaches the server.
     toast(unchecked?('Saved as @'+next+'. It will sync when you are back online.'):('You are @'+next),'success');
     renderProfile();
   }catch(e){
@@ -302,8 +259,7 @@ function openChangeEmail(){
 }
 function openChangePassword(){
   credMode='password';
-  // Nothing to re-authenticate against on a Google-only account: there is no
-  // old password to type, so asking for one made adding one impossible.
+  // Google-only accounts have no old password to confirm.
   const adding=!hasPasswordLogin();
   el('credTitle').textContent=adding?'Add a Password':'Change Password';
   el('credNewLbl').textContent=adding?'PASSWORD':'NEW PASSWORD';
@@ -341,10 +297,7 @@ async function submitCredChange(){
   if(!pass&&!addingFirstPassword){credFail('Enter your current password.');return;}
   btn.disabled=true;btn.textContent='Checking…';
   try{
-    // Re-authenticate before changing anything. Supabase will happily update
-    // a live session's email or password without asking, which means an
-    // unlocked phone is enough to take someone's account. The exception is an
-    // account that has no password at all: there is nothing to check against.
+    // Re-authenticate first; Supabase would otherwise change email/password on any live session.
     if(!addingFirstPassword){
       const {error:authErr}=await sbClient.auth.signInWithPassword({email:supabaseUser.email,password:pass});
       if(authErr){credFail('That password is not right.');return;}
@@ -365,20 +318,10 @@ async function submitCredChange(){
     btn.textContent=credMode==='email'?'Send confirmation':'Change password';
   }
 }
-// ════════ PAISAFOLIO CIRCLE ════════
-// The tables, the policies and the shared_with_me() gate have been in
-// schema.sql for a while with nothing on top of them. This is that.
-//
-// A connection is two rows, one owned by each person, and a row says only
-// what its owner thinks: 'accepted' means I am happy to be connected to you.
-// Both rows have to say it before anything is visible, which is why asking
-// someone grants them nothing and why either of us can end it alone, by
-// changing only our own row. The database enforces exactly that, a policy
-// lets you write your row and no one else's.
-//
-// Nothing is shared by adding someone. What each person can see is a
-// separate row again, written only by the owner of the data, per person,
-// starting empty.
+// CIRCLE
+// A connection is two rows, one per person; both must say 'accepted' before anything
+// is visible, and either side can end it. What each person shares is a separate row,
+// written by the data owner, starting empty. Enforced by RLS.
 const CIRCLE_SCOPES=[
   {k:'networth',label:'Net worth',sub:'The single figure, and how it has moved'},
   {k:'goals',   label:'Goals',    sub:'What you are saving for and how far along'},
@@ -424,8 +367,7 @@ async function circleLoad(force){
     ]);
     if(linkRes.error)throw linkRes.error;
     circleState.links=linkRes.data||[];
-    // The shares table is newer than some deployments; no shares is a fine
-    // answer, an error here must not empty the circle.
+    // Older deployments lack the shares table; treat an error as no shares.
     circleState.shares=shareRes.error?[]:(shareRes.data||[]);
     const ids=[...new Set(circleState.links.map(l=>l.user_id===uid?l.friend_id:l.user_id))];
     if(ids.length){
@@ -438,8 +380,7 @@ async function circleLoad(force){
     circleState.err=circleErr(e);
   }finally{ circleState.busy=false; }
 }
-// The one message worth translating: the tables not being there at all means
-// schema.sql has not been re-run, and that is a thing you can act on.
+// Missing tables means schema.sql has not been re-run.
 function circleErr(e){
   const m=String((e&&(e.message||e.error_description))||e||'');
   if(/does not exist|schema cache|relation/i.test(m))
@@ -465,9 +406,7 @@ async function circleSearch(){
   }catch(e){ circleState.err=circleErr(e); }
   finally{ circleState.busy=false; renderCircle(); }
 }
-// Asking and accepting are the same act: I write my row saying yes. Whether
-// that reads as a request or an acceptance depends only on whether theirs is
-// already there.
+// Request and accept are the same write; which it is depends on their row.
 async function circleSay(id,status){
   if(!circleReady())return false;
   try{
@@ -484,13 +423,11 @@ async function circleAdd(id){
   const ok=await circleSay(id,'accepted');
   if(ok){haptic('success');toast(already==='incoming'?'You are connected':'Request sent','success');
     circleState.found=null;const i=el('circleSearchInput');if(i)i.value='';
-    // Connecting and then showing them nothing is a connection that does
-    // nothing. Net worth is on from the start, and one tap turns it off.
+    // Net worth is shared by default; one tap turns it off.
     await circleShareDefault(id);}
   renderCircle();
 }
-// Only ever sets the first scope, and only when no row exists: someone who
-// has turned everything off stays off.
+// Only when no share row exists, so an explicit "off" stays off.
 async function circleShareDefault(id){
   if(!circleReady())return;
   const row=circleState.shares.find(x=>x.owner_id===circleId()&&x.viewer_id===id);
@@ -502,20 +439,15 @@ async function circleShareDefault(id){
         {onConflict:'owner_id,viewer_id'});
     if(error)throw error;
     circleState.shares.push({owner_id:circleId(),viewer_id:id,scopes});
-  }catch(e){ /* sharing is a convenience; failing to preset it is not an error worth interrupting for */ }
+  }catch(e){ }
 }
 async function circleDecline(id){
   const ok=await circleSay(id,'blocked');
   if(ok){haptic('tap');toast('Request declined','success');}
   renderCircle();
 }
-// Leaving takes my side of the connection away and, with it, everything I was
-// showing them. Their row stays theirs, it is not mine to delete, which
-// leaves a question: their row still says yes, so simply deleting mine puts
-// them straight back under "wants to connect", which is not what leaving
-// felt like. So walking out of a live connection records a no, and only
-// cancelling a request I sent and they never answered deletes the row.
-// Adding them again overwrites either one.
+// Leaving a live connection writes a no (so they don't see a new request); cancelling an
+// unanswered request deletes the row.
 async function circleRemove(id){
   const live=circleStatus(id)==='friend';
   if(!await askConfirm({title:live?('Remove '+esc(circleName(id))+'?'):'Cancel that request?',
@@ -558,10 +490,7 @@ async function circleToggleScope(id,scope){
   }catch(e){ toast(circleErr(e),'error'); }
 }
 
-// What they have chosen to show me. Every one of these reads a table I have no
-// blanket access to: the rows come back only because their share row and both
-// halves of the connection say so, and the check runs in the database, not
-// here. If they revoke it mid-session the next read returns nothing.
+// RLS returns rows only if their share row and both connection rows allow it.
 async function circleFetchShared(id){
   const out={networth:null,goals:null,habits:null,ccy:null,err:''};
   if(!circleReady())return out;
@@ -572,10 +501,7 @@ async function circleFetchShared(id){
       jobs.push(sbClient.from('networth_history')
         .select('snapshot_date,net_worth').eq('user_id',id).order('snapshot_date',{ascending:true}).limit(400)
         .then(r=>{out.networth=r.error?null:(r.data||[]);}));
-      // Which currency those figures are in. A function rather than a column
-      // on the public view, so it answers only for someone already allowed
-      // to see the number. An older database without it just says nothing,
-      // and the figure falls back to bare digits.
+      // RPC answers only for someone allowed to see the figure; older databases lack it.
       if(sbClient.rpc)jobs.push(Promise.resolve(sbClient.rpc('shared_currency',{owner:id}))
         .then(r=>{out.ccy=(r&&!r.error&&r.data)?String(r.data):null;}).catch(()=>{}));
     }
@@ -590,7 +516,7 @@ async function circleFetchShared(id){
   return out;
 }
 
-// ── the sheets ──────────────────────────────────────────────────────────
+// the sheets
 function openCircle(){
   renderCircle();
   openModal('circleModal');
@@ -601,12 +527,10 @@ function circleAvatar(id,size){
   const cls=size==='lg'?'acct-avatar-lg':'acct-avatar';
   const letter=esc((circleName(id)||'?').trim()[0].toUpperCase()||'?');
   if(!p.avatar_url)return `<span class="${cls}">${letter}</span>`;
-  // A 40px circle is an identifier, not a photograph. Tapping it shows the
-  // photograph.
   return `<span class="${cls} has-photo" role="button" tabindex="0" title="View photo"
     onclick="event.stopPropagation();openPhotoView('${jsAttr(p.avatar_url)}','${jsAttr(circleName(id))}')"><img alt="" src="${esc(p.avatar_url)}"/></span>`;
 }
-// ── Seeing a picture at the size it was taken ──
+// Seeing a picture at the size it was taken
 function openPhotoView(url,who){
   if(!url)return;
   const ov=el('photoView');if(!ov)return;
@@ -618,12 +542,10 @@ function openPhotoView(url,who){
 function closePhotoView(){
   closeModal('photoView');
   const img=el('photoViewImg');
-  // Let the browser drop it rather than holding a full-size image behind a
-  // hidden overlay for the rest of the session.
+  // Free the full-size image once the viewer closes.
   setTimeout(()=>{if(img&&!el('photoView').classList.contains('open'))img.removeAttribute('src');},320);
 }
-// A div rather than a button: some of these rows carry Accept and Decline
-// inside them, and a button inside a button is neither valid nor reliable.
+// A div: rows can contain Accept/Decline buttons.
 function circlePersonRow(id,right,onclick){
   const p=circlePerson(id);
   const act=onclick?` role="button" tabindex="0" onclick="${onclick}"`:' style="cursor:default"';
@@ -678,8 +600,6 @@ function renderCircle(){
     html+='<div class="empty-state" style="padding:20px"><p>No one yet. Add someone by their username and they will see it next time they open Paisafolio.</p></div>';
   }else{
     html+=friends.map(id=>{
-      // What I am showing them, which is the half I control and the half
-      // worth being reminded of. What they show me is inside.
       const mine=circleScopesFor(id).length;
       const sub=`<span class="circle-meta">${mine?'Sharing '+plural(mine,'thing','things'):'Sharing nothing'}</span>`;
       return circlePersonRow(id,sub+'<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
@@ -723,8 +643,7 @@ function renderCircleFriend(id,shared){
     +'<div style="font-size:15px;font-weight:800;color:var(--text)">'+esc(circleName(id))+'</div>'
     +(circlePerson(id).username?'<div class="circle-meta">@'+esc(circlePerson(id).username)+'</div>':'')
     +'</div>';
-  // What they show me, drawn from what actually came back rather than from
-  // what their share row claims, so a revoked scope simply is not there.
+  // From what actually came back, so a revoked scope is not shown.
   html+='<div class="settings-sec-lbl" style="margin:2px 2px 6px">WHAT THEY SHARE</div>';
   if(!theirs.length){
     html+='<div class="empty-state" style="padding:18px"><p>'+esc(circleName(id))+' is not sharing anything with you yet.</p></div>';
@@ -750,17 +669,11 @@ function circleSharedHtml(id,d){
     const last=rows.length?num(rows[rows.length-1].net_worth):null;
     const first=rows.length?num(rows[0].net_worth):null;
     const chg=(last!=null&&first!=null&&first!==0)?((last-first)/Math.abs(first)*100):null;
-    // Their figure is in their own base currency, so it is labelled with
-    // theirs rather than dressed in mine, which would read as a conversion
-    // that never happened. If the database is too old to answer which one it
-    // is, the number stands on its own instead of borrowing a symbol.
+    // Labelled in their own base currency; no symbol if the database cannot say which.
     const cc=d.ccy?String(d.ccy).toUpperCase():'';
     const cur=CURRENCIES.find(c=>c.code===cc);
     const amount=last==null?'Not shared yet'
       :((cur?cur.sym:(cc?cc+' ':''))+Math.round(last).toLocaleString());
-    // The symbol in front of the figure already says which currency this is,
-    // so naming it again underneath was the same fact twice. It is only worth
-    // saying when there is no symbol to go on.
     html+='<div class="circle-card"><div class="circle-card-lbl">NET WORTH</div>'
       +'<div class="circle-card-val">'+amount+'</div>'
       +((last!=null&&!cur)?'<div class="circle-meta">'+(cc?esc(cc):'in their own currency')+'</div>':'')
@@ -829,8 +742,6 @@ function circleHabitChart(hs){
     <div class="circle-hb-cap"><span>30 days ago</span><span>peak ${maxV} of ${list.length}</span><span>today</span></div>
     <div class="circle-hb-keys">${legend}</div>`;
 }
-// A line, no axes, no numbers: the shape of someone's year is the most that
-// belongs in a card about somebody else.
 function circleSpark(vals){
   if(!vals||vals.length<2)return '';
   const w=260,h=54,lo=Math.min(...vals),hi=Math.max(...vals),rng=(hi-lo)||1;
@@ -848,10 +759,7 @@ function circleSpark(vals){
     +`<path d="${area}" fill="url(#${gid})" stroke="none"/>`
     +`<path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
-// A Catmull-Rom curve through the points, written out as cubic beziers. The
-// dashboard's line is smoothed by its chart library; this one is drawn by
-// hand, and a row of straight segments beside it read as a different, cruder
-// chart of the same thing.
+// Catmull-Rom through the points, as cubic beziers.
 function smoothPath(pts){
   if(pts.length<2)return '';
   if(pts.length===2)return `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)} L ${pts[1][0].toFixed(1)} ${pts[1][1].toFixed(1)}`;
@@ -866,21 +774,12 @@ function smoothPath(pts){
   return d;
 }
 
-// ════════ PROFILE PHOTO ════════
-// Signing in with Google hands over a picture, and using it is what anyone
-// would expect; the alternative on offer was a coloured circle with one
-// letter in it.
-//
-// Under ten kilobytes it is not a photograph. An account with no picture
-// gets a flat tile with an initial generated for it, and those come back
-// tiny, so the file size is the test for whether there is a face here at
-// all. Nothing below the line is worth keeping or looking at.
+// PROFILE PHOTO
+// Under 10KB is a generated initial tile, not a photo.
 const AVATAR_MIN_BYTES=10*1024;
 const AVATAR_PX=192;
 let _avatarTried=false;
-// The provider URL carries its size in it (…=s96-c), and 96 pixels of even a
-// real photograph is only a couple of kilobytes, asking for the thumbnail
-// would make the test above throw everything away. Ask for a real one.
+// Ask for a real size; the default =s96 thumbnail would fail the 10KB test.
 function googleAvatarUrl(px){
   const meta=(supabaseUser&&supabaseUser.user_metadata)||{};
   const raw=String(meta.avatar_url||meta.picture||'').trim();
@@ -889,9 +788,7 @@ function googleAvatarUrl(px){
 }
 function hasGoogleAvatar(){return !!googleAvatarUrl(96);}
 function avatarSrc(){return (state.settings&&state.settings.avatar)||'';}
-// Re-encoded at a fixed size before being stored, so what goes into the
-// settings is a few kilobytes whatever the provider sent, and it keeps
-// working offline and after that URL stops resolving.
+// Re-encode small so it lives in settings and works offline.
 async function shrinkImage(blob,px){
   try{
     const bmp=await createImageBitmap(blob);
@@ -910,8 +807,7 @@ async function adoptGoogleAvatar(force){
   if(!force){
     if(_avatarTried)return false;
     if(avatarSrc())return false;
-    // Taken off on purpose. Putting it straight back would make the button
-    // that removed it look broken.
+    // Removed on purpose; don't re-adopt.
     if(state.settings.avatarOff)return false;
   }
   _avatarTried=true;
@@ -932,11 +828,7 @@ async function adoptGoogleAvatar(force){
     return true;
   }catch(e){return false;}   // offline, blocked, an expired URL: keep the initial
 }
-// The circle is the same element either way; it just stops being a letter.
-// Only the two places you go to look at your own picture open it full size:
-// the Account sheet and the Profile Photo sheet. The one in the header and
-// the one on the Settings card are buttons that lead somewhere, and a photo
-// sitting on top of where you were going is an interruption, not a feature.
+// Only the Account and Profile Photo sheets open the full-size preview (tap==='view').
 function paintAvatarInto(node,letter,tap){
   if(!node)return;
   const src=avatarSrc();
@@ -959,10 +851,7 @@ function paintAvatarInto(node,letter,tap){
     node.onclick=null;
   }
 }
-// Google's picture is the default when there is one, not the only option:
-// any photo can be uploaded, whichever way the account was made. The 10KB
-// floor applies only to what is taken automatically, a file someone picked
-// on purpose is wanted whatever it weighs.
+// Uploads have no size floor; the 10KB test is only for auto-adopted photos.
 const AVATAR_MAX_UPLOAD=12*1024*1024;
 function profilePhotoAction(){
   const body=el('photoModalBody');if(!body)return;
@@ -990,8 +879,7 @@ async function onAvatarPicked(e){
   if(!file)return;
   if(!/^image\//.test(file.type||'')){toast('That is not an image','error');return;}
   if(file.size>AVATAR_MAX_UPLOAD){toast('That image is too large','error');return;}
-  // Squared off and re-encoded at 192px, same as the one taken from Google, so
-  // a 4MB photo from a phone camera does not become 4MB of settings.
+  // 192px square, same as Google's.
   const data=await shrinkImage(file,AVATAR_PX);
   if(!data){toast('Could not read that image','error');return;}
   state.settings.avatar=data;
@@ -1018,10 +906,7 @@ async function removeAvatar(){
   closeModal('photoModal');
 }
 function renderProfile(){
-  // The Circle row lives in this sheet now, so its subtitle and its
-  // waiting-to-connect badge have to be right when the sheet opens rather
-  // than only after somebody has been into Circle once. circleLoad caches,
-  // so this is a network call the first time and nothing after it.
+  // The Circle row lives in this sheet; refresh its subtitle and badge on open (cached after first load).
   try{
     syncCircleBadge();
     if(typeof circleLoad==='function')circleLoad().then(()=>{try{syncCircleBadge();}catch(e){}});
@@ -1070,10 +955,6 @@ function renderProfile(){
       + (since && !isNaN(since) ? `<div class="profile-since">Member since ${since.toLocaleDateString('en', { month:'short', year:'numeric' })}</div>` : '');
   }
 }
-// The name used to be edited in place: an Edit button that swapped the
-// header for a text box and two more buttons, in a sheet where every other
-// field opens a sheet of its own. One field, two ways of editing it, and the
-// odd one out was the one people reach for first.
 function openChangeDisplayName(){
   credMode='name';
   el('credTitle').textContent='Display Name';
@@ -1163,8 +1044,7 @@ function isValidEmail(email) {
 function mapAuthError(msg) {
   if (!msg) return null;
   const m = msg.toLowerCase();
-  // An account created through Google has no password at all, so the same
-  // "invalid credentials" comes back however carefully it is typed.
+  // Google-created accounts have no password, so this looks like bad credentials.
   if (m.includes('invalid login') || m.includes('invalid credentials')) return 'Incorrect email or password. If you signed up with Google, use the Google button instead.';
   if (m.includes('email not confirmed')) return 'Please verify your email first. Check your inbox.';
   if (m.includes('user already registered') || m.includes('already registered')) return 'An account with this email already exists. Try signing in instead.';
@@ -1252,9 +1132,7 @@ async function doLogin() {
     const { data, error } = await sbClient.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
     btn.textContent = 'Loading your data…';
-    // Wait for onAuthStateChange to actually finish pulling + rendering cloud
-    // data (capped, so a stuck listener can't hang the button forever) -
-    // otherwise the modal closes onto a dashboard that hasn't updated yet.
+    // Wait for the auth listener to pull and render (capped at 8s).
     await Promise.race([ready, new Promise((r) => setTimeout(r, 8000))]);
     closeAuthModal();
   } catch(e) {
@@ -1269,10 +1147,6 @@ async function doLogin() {
 
 async function doRegister() {
   if (!sbClient) { showAuthErr('authRegErr', sbClientMissingMsg()); return; }
-  // Signing in with Google hands over a name, so an account made that way
-  // has always had one. Signing up with an email had nowhere to put one and
-  // the app fell back to whatever came before the @, which is not what
-  // anyone is called.
   const fullName = el('authRegName').value.trim().replace(/\s+/g,' ');
   const email = el('authRegEmail').value.trim();
   const pass = el('authRegPassword').value;
@@ -1289,31 +1163,20 @@ async function doRegister() {
   btn.disabled = true; btn.textContent = 'Creating account…';
   try {
     markInteractiveSignIn();
-    // full_name is where Google puts it too, so displayName() reads one
-    // field whichever way the account was made.
+    // full_name is where Google puts it too.
     const { data, error } = await sbClient.auth.signUp({
       email, password: pass, options: { data: { full_name: fullName, name: fullName } }
     });
     if (error) throw error;
-    // And locally as well, so the name is on screen before the confirmation
-    // email has even arrived.
+    // Locally too, before the confirmation email arrives.
     state.settings.displayName = fullName;
     saveState();
     closeAuthModal();
-    // Whether a session comes back depends on one project setting: with
-    // email confirmation required there is none until the link is clicked,
-    // and the account cannot be used before then, so the sheet explaining
-    // that is the whole of what we can offer. With it off the account is
-    // live immediately and standing in front of it with a sheet saying
-    // "check your inbox" would be turning a warning into a wall. Handle
-    // both, so flipping that setting changes the experience and not the
-    // code.
+    // No session means email confirmation is required; handle both project settings.
     if (data && data.session) {
       _verifyBannerHidden = false;
       _verifyEmail = email;
       toast('Account created. Verify your email when you get a moment.', 'success');
-      // The auth listener paints the rest; this covers the case where the
-      // session was already in hand before it fired.
       try { updateAuthUI(); } catch (e) {}
     } else {
       openVerifyModal(email);
@@ -1324,24 +1187,17 @@ async function doRegister() {
   }
 }
 
-// ════════ EMAIL VERIFICATION ════════
-// Google hands over an address it has already checked, so an account made
-// that way is verified the moment it exists. An email sign-up is not, and
-// until the link is clicked nothing proves the address is reachable: a
-// forgotten password would have nowhere to send a reset. That is worth
-// saying plainly, and worth saying without standing between someone and
-// the app they just signed up for.
+// EMAIL VERIFICATION
+// Google addresses are verified; email sign-ups are until the link is clicked.
 function emailVerified() {
   if (!supabaseUser) return true;
   return !!(supabaseUser.email_confirmed_at || supabaseUser.confirmed_at);
 }
-// Hidden for this run only. A warning you can dismiss forever is a warning
-// nobody ever acts on, and one you cannot dismiss at all is just noise.
+// Dismissed for this run only.
 let _verifyBannerHidden = false;
 function dismissVerifyBanner() { _verifyBannerHidden = true; syncVerifyUI(); haptic('tap'); }
 function syncVerifyUI() {
-  // Signing out clears the dismissal, so the next account to sign in on this
-  // device is warned rather than inheriting somebody else's "not now".
+  // Signing out resets the dismissal for the next account.
   if (!supabaseUser) { _verifyBannerHidden = false; _verifyResendAt = 0; }
   const unverified = !!supabaseUser && !emailVerified();
   const banner = el('verifyBanner');
@@ -1349,8 +1205,7 @@ function syncVerifyUI() {
   const row = el('verifySettingsRow');
   if (row) row.style.display = unverified ? '' : 'none';
 }
-// Clicking the link happens in another tab, which leaves this one holding a
-// token that still says unverified. Coming back is the moment to ask again.
+// The link is clicked in another tab; re-check when this one regains focus.
 let _verifyChecking = false;
 async function recheckEmailVerified() {
   if (_verifyChecking || !sbClient || !supabaseUser || emailVerified()) return;
@@ -1367,8 +1222,7 @@ async function recheckEmailVerified() {
   } catch (e) { /* offline or the refresh was refused: ask again next time */ }
   finally { _verifyChecking = false; syncVerifyUI(); }
 }
-// Both the banner button and the settings row come through here, so the
-// cooldown and the wording are written once.
+// Shared by the banner and the settings row.
 let _verifyResendAt = 0;
 const VERIFY_RESEND_COOLDOWN = 60000;
 async function resendVerifyEmail(btn) {
@@ -1442,9 +1296,7 @@ async function doForgot() {
   const btn = el('authForgotBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    // Without a redirectTo the link lands on the site, quietly signs the
-    // person in, and shows them nothing about a password. Coming back to this
-    // exact page means the PASSWORD_RECOVERY event has a UI to open.
+    // redirectTo this page so PASSWORD_RECOVERY has a UI to open.
     await sbClient.auth.resetPasswordForEmail(email,{
       redirectTo: window.location.origin + window.location.pathname,
     });
@@ -1462,10 +1314,8 @@ async function doForgot() {
   }
 }
 
-// ════════ PASSWORD RECOVERY ════════
-// Opening the emailed link creates a real session, which is why it looked
-// like it "just logged me in": it did. That session exists so a new password
-// can be set, so that is what it now asks for.
+// PASSWORD RECOVERY
+// The emailed link creates a session so a new password can be set.
 let _recoveryOpen=false;
 function openRecoveryModal(){
   if(_recoveryOpen)return;
@@ -1497,18 +1347,14 @@ async function submitRecovery(){
     recoveryFail(navigator.onLine?'Could not reach the server.':'You are offline.');
   }finally{btn.disabled=false;btn.textContent='Set password';}
 }
-// The event is the reliable signal, but it fires once and early. If the page
-// was still booting when it arrived, the URL itself still says what happened.
+// Fallback when the recovery event fired before boot finished.
 function checkRecoveryUrl(){
   const h=window.location.hash||'',q=window.location.search||'';
   if(/type=recovery/.test(h)||/type=recovery/.test(q))openRecoveryModal();
 }
 async function signOut() {
   if (!sbClient) return;
-  // Signing out is one tap away from a row you may have meant to tap the one
-  // above, and it swaps the whole app back to guest storage. Nothing is
-  // destroyed by it - but "where has all my data gone" is a horrible ten
-  // seconds to put somebody through by accident.
+  // Confirm: signing out switches the app to guest storage.
   const waiting = typeof pendingChangeCount === 'function' ? pendingChangeCount() : 0;
   const who = (supabaseUser && supabaseUser.email) ? ' from ' + supabaseUser.email : '';
   const ok = await askConfirm({
@@ -1539,10 +1385,7 @@ async function signOut() {
   supabaseUser = null;
   _avatarTried = false;
 
-  // Signing out NEVER touches guest local storage in any way, it's a
-  // completely separate space from the signed-in cloud cache and stays
-  // exactly as it was, whether empty or not. Just switch the app back to
-  // reading from it.
+  // Guest storage is never touched by sign-out; just switch back to it.
   let localState = { assets:[], debts:[], goals:[], recurs:[], transactions:[],
     pnlHistory:[], settings:{currency:'NPR',baseCurrency:'NPR',hideBalance:false,theme:'dark',
     haptics:true,hapticStrength:'medium',reduceMotion:false,onboarded:false}, lastUpdated:null };
@@ -1577,8 +1420,7 @@ function updateAuthUI() {
     let av = inner.querySelector('.acct-avatar');
     if (!av) { inner.innerHTML = '<div class="acct-avatar"></div>'; av = inner.querySelector('.acct-avatar'); }
     paintAvatarInto(av, initials);   // no preview: this button opens the Account sheet
-    // Fire and forget: the first time a Google session shows up, go and get
-    // the picture. It guards itself against running twice.
+    // Fire and forget; guards against running twice.
     adoptGoogleAvatar();
     acctBtn.title = supabaseUser.email;
     updateSyncDot('synced');
@@ -1605,11 +1447,8 @@ function updateAuthUI() {
   syncVerifyUI();
 }
 
-// ════════ SYNC CONFIRM MODAL ════════
-// Generic confirm dialog used for every local-vs-cloud data decision point.
-// `kind` selects the copy + button set; resolves the caller's Promise with a
-// string choice once a button is tapped (or 'cancel' if the sheet is
-// dismissed without choosing).
+// SYNC CONFIRM MODAL
+// One dialog for every local-vs-cloud decision; resolves with the chosen string or 'cancel'.
 let _syncConfirmResolve = null;
 function syncConfirmRespond(choice) {
   closeModal('syncConfirmModal');
@@ -1664,18 +1503,13 @@ function openSyncConfirm(kind, resolve) {
   openModal('syncConfirmModal');
 }
 
-// ════════ SYNC CENTER (rich account/sync sheet) ════════
+// SYNC CENTER (rich account/sync sheet)
 function manualSyncFromCenter() {
   const btn = el('syncCenterSyncBtn');
   if (btn) btn.classList.add('ico-spin');
   manualSync().finally(() => { if (btn) btn.classList.remove('ico-spin'); renderSyncCenter(); });
 }
-// How many things the user changed, as opposed to how many rows that will
-// write. Editing one holding touches its asset row and its transaction row;
-// counting those as two is true of the database and misleading about what
-// happened.
-// The pending marker lives in supabase.js so the in-place painter and the
-// renderers can never drift apart. These are the accessors.
+// Counts things the user changed, not rows written. The badge markup lives in supabase.js.
 function pendingBadge(){return window.PENDING_BADGE||'';}
 function pendingInline(){return '<span class="unsynced-inline" title="Waiting to sync" aria-label="Waiting to sync">'+(window.PENDING_ICON||'')+'</span>';}
 function pendingChangeCount(){
@@ -1711,10 +1545,7 @@ function renderSyncCenter() {
   }
 
   if (pending > 0) {
-    // Grouped by kind, one section each, with a count badge. The old version
-    // emitted a single flat list and repeated the SAME underlying thing once
-    // per table it touched, deleting one asset also queues its transaction,
-    // so "Money" appeared twice in a row looking like a duplicate bug.
+    // Grouped by kind with a count each.
     const kindMeta = {
       assets:       ['wallet',   'Assets'],
       debts:        ['coins',    'Debts'],
@@ -1723,11 +1554,7 @@ function renderSyncCenter() {
       spends:       ['banknote', 'Spendings'],
       transactions: ['clock',    'Transactions'],
     };
-    // Editing one silver holding queues two cloud rows, the asset and its
-    // transaction, and the list said "2" beside two lines both called Silver.
-    // That is true of the database and wrong about what happened: you changed
-    // one thing. A queued transaction whose asset is queued too is folded into
-    // it, and the count is of things changed rather than rows written.
+    // A queued transaction whose asset is also queued is folded into it.
     const foldedTx = new Set();
     (pendingSyncIds.transactions ? [...pendingSyncIds.transactions] : []).forEach(id => {
       const t = (state.transactions || []).find(x => x.id === id);
@@ -1774,22 +1601,16 @@ function renderSyncCenter() {
     html += `<div class="sync-center-row" style="border:1px solid var(--border);border-radius:12px;padding:10px"><span class="sync-center-row-ico" style="color:var(--green)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></span><div><div class="sync-center-row-name">Everything's synced</div><div class="sync-center-row-sub">All your data matches the cloud</div></div></div>`;
   }
 
-  // Whether readings are still being taken while the app is closed. Without
-  // this the scheduled job is invisible: set up wrong, it does nothing and
-  // says nothing, and the first sign is a flat line weeks later.
+  // Scheduled snapshot job status.
   html += `<div class="sync-center-section-lbl">WHILE THE APP IS CLOSED</div>`;
   html += snapshotJobRow();
 
   body.innerHTML = html;
-  // The pending list is freshly created here, so re-wire its scroll hint:
-  // without this the fade never appears on the first open and the count in
-  // the header silently disagrees with what is visible.
+  // Re-bind the scroll hint on the freshly built list.
   if (typeof bindScrollHints === 'function') bindScrollHints(body);
 }
 
-// Readings are taken every two hours by the job in api/snapshot.js, so a day
-// the app is never opened still has a shape. It is a separate piece of setup
-// (setup-snapshot.sql), so this reports honestly whether it is happening.
+// Status of api/snapshot.js readings (set up via setup-snapshot.sql).
 function snapshotJobRow() {
   const at = state.cronSeenAt ? Date.parse(state.cronSeenAt) : null;
   const fresh = Number.isFinite(at) && (Date.now() - at) < 6 * 3600 * 1000;
@@ -1828,7 +1649,7 @@ function setupAuthKeyListeners() {
   if (fe) fe.addEventListener('keydown', e => { if(e.key==='Enter') doForgot(); });
 }
 
-// ════════ STATE ════════
+// STATE
 let state={assets:[],debts:[],goals:[],recurs:[],transactions:[],spends:[],settings:{currency:'NPR',baseCurrency:'NPR',hideBalance:false,theme:'dark',haptics:true,hapticStrength:'medium',reduceMotion:false,onboarded:false},lastUpdated:null,pnlHistory:[]};
 const CURRENCIES=[{code:'NPR',sym:'Rs.',name:'Nepali Rupee'},{code:'INR',sym:'₹',name:'Indian Rupee'},{code:'USD',sym:'$',name:'US Dollar'},{code:'EUR',sym:'€',name:'Euro'},{code:'GBP',sym:'£',name:'British Pound'},{code:'AUD',sym:'A$',name:'Australian Dollar'},{code:'CAD',sym:'CA$',name:'Canadian Dollar'},{code:'JPY',sym:'¥',name:'Japanese Yen'},{code:'CNY',sym:'CN¥',name:'Chinese Yuan'},{code:'AED',sym:'AED',name:'UAE Dirham'},{code:'SAR',sym:'SAR',name:'Saudi Riyal'},{code:'QAR',sym:'QAR',name:'Qatari Riyal'},{code:'KWD',sym:'KWD',name:'Kuwaiti Dinar'},{code:'BHD',sym:'BHD',name:'Bahraini Dinar'},{code:'OMR',sym:'OMR',name:'Omani Rial'},{code:'MYR',sym:'RM',name:'Malaysian Ringgit'},{code:'SGD',sym:'S$',name:'Singapore Dollar'},{code:'KRW',sym:'₩',name:'South Korean Won'},{code:'HKD',sym:'HK$',name:'Hong Kong Dollar'},{code:'THB',sym:'฿',name:'Thai Baht'},{code:'CHF',sym:'CHF',name:'Swiss Franc'},{code:'NZD',sym:'NZ$',name:'New Zealand Dollar'},{code:'PKR',sym:'₨',name:'Pakistani Rupee'},{code:'LKR',sym:'Rs',name:'Sri Lankan Rupee'},{code:'BDT',sym:'৳',name:'Bangladeshi Taka'},{code:'CNH',sym:'CNH',name:'Chinese Yuan Offshore'},{code:'ZAR',sym:'R',name:'South African Rand'},{code:'RUB',sym:'₽',name:'Russian Ruble'},{code:'TRY',sym:'₺',name:'Turkish Lira'},{code:'BRL',sym:'R$',name:'Brazilian Real'},];
 let livePrices={},fxRates={NPR:133.5,USD:1},currentCurrency=CURRENCIES[0];
@@ -1837,10 +1658,7 @@ let buyPriceEntryCcy=null,liqValueEntryCcy=null,txPriceEntryCcy=null,currentPric
 function buildCompactCcySelect(cid,activeCcy,onChange){
   const wrap=el(cid);if(!wrap)return;
   const cur=activeCcy||currentCurrency.code;
-  // This used to re-render every currency option AND attach a separate click
-  // listener to each one on every single call, and it's called each time the
-  // buy/sell form opens. Build the markup once, then just re-mark the active
-  // option; a single delegated listener replaces the ~20 individual ones.
+  // Build once; later calls only move the active mark. One delegated listener.
   if(wrap._built===CURRENCIES.length){
     const t=wrap.querySelector('.ccy-sel-trigger');
     if(t)t.firstChild.textContent=cur;
@@ -1868,33 +1686,23 @@ function buildCompactCcySelect(cid,activeCcy,onChange){
     if(wrap._onChange)wrap._onChange(v);
   });
 }
-// ── Money fields ──────────────────────────────────────────────────────
-// Some money inputs let you pick the currency you are typing in and some
-// silently assumed the display currency, which is the kind of inconsistency
-// you only notice by getting a number wrong. One mechanism now, keyed by the
-// input's id: which currency the field is in, how to read it in base
-// currency, and how to write a base amount back into it.
-//
-// null means "whatever the display currency is", so changing the display
-// currency never strands a field on a stale code.
+// Money fields
+// Per input id: the currency being typed in (null = display currency).
 const moneyCcy={};
 function moneyRate(id){return getCurrRate(moneyCcy[id]||currentCurrency.code);}
-// What is typed in the field, in base currency. NaN when the field is empty
-// or unusable, so callers can tell "nothing entered" from "zero".
+// Field value in base currency; NaN when empty.
 function moneyBase(id){
   const inp=el(id);if(!inp)return NaN;
   const v=parseFloat(inp.value),r=moneyRate(id);
   return (isNaN(v)||!(r>0))?NaN:v/r;
 }
-// A base amount into the field, in the currency the field is set to. An
-// amount of zero or less clears it rather than writing '0'.
+// Write a base amount in the field's currency; <= 0 clears it.
 function setMoneyField(id,base,dp){
   const inp=el(id);if(!inp)return;
   const r=moneyRate(id),v=num(base);
   inp.value=(v>0&&r>0)?(v*r).toFixed(dp==null?2:dp).replace(/\.00$/,''):'';
 }
-// Attach the picker. `after` runs once the conversion has been applied, for
-// the forms that show a running total or a projection.
+// `after` runs once the conversion is applied.
 function bindMoneyCcy(id,wrapId,after){
   if(!(id in moneyCcy))moneyCcy[id]=null;
   buildCompactCcySelect(wrapId,moneyCcy[id]||null,v=>{
@@ -1902,14 +1710,12 @@ function bindMoneyCcy(id,wrapId,after){
     moneyCcy[id]=(v===currentCurrency.code)?null:v;
     const toRate=moneyRate(id);
     const inp=el(id),val=parseFloat(inp&&inp.value);
-    // Convert what is already typed, so the number goes on meaning the same
-    // amount of money instead of quietly becoming a different one.
+    // Convert what is typed so it keeps meaning the same amount.
     if(inp&&val>0&&fromRate>0)inp.value=(val/fromRate*toRate).toFixed(2).replace(/\.00$/,'');
     haptic('tap');if(after)after();
   });
 }
-// Opening a form fresh starts every one of its money fields on the display
-// currency again.
+// Fresh forms start on the display currency.
 function resetMoneyCcy(ids){ids.forEach(id=>{moneyCcy[id]=null;});}
 function onBuyPriceCcyChange(v){
   const fromRate=getCurrRate(buyPriceEntryCcy||currentCurrency.code);
@@ -1945,9 +1751,7 @@ function onTxPriceCcyChange(v){
   // Re-calc auto price with new currency
   autoFillTxPrice();
 }
-// Whether the open Record Buy / Record Sell form belongs to an asset with
-// no quantity, so the label and the preview stop describing a price per
-// unit of something that comes in ones.
+// Record Buy/Sell for an asset without a quantity.
 let txNoQty=false;
 // Auto-fill total price based on qty × live-price-per-unit
 function autoFillTxPrice(){
@@ -1987,12 +1791,9 @@ let editingRecurId=null,recurCoinId=null,recurCoinName=null,recurCoinImage=null,
 let interestEnabled=false,intType='flat',intFreq='month',intCompound=false;
 let currentPnlRange='30d',customFromDate=null,customToDate=null;
 let assetQuery='',assetSort='value',debtQuery='',debtSort='amount',allocMode='cat',assetView='cards';
-// Which asset groups are open, by category. Null means nobody has touched a
-// group yet, so the default below applies; once one is touched the choice is
-// theirs and is remembered.
+// Open groups by category; null means untouched, so the default applies.
 let assetGroups=null;
-// Below this many assets there is nothing to wade through, so grouping them
-// behind closed headers would be tidying that costs a tap and gains nothing.
+// Fewer assets than this: groups start open.
 const GROUP_COLLAPSE_FROM=7;
 function assetGroupOpen(cat,total){
   if(assetGroups&&Object.prototype.hasOwnProperty.call(assetGroups,cat))return !!assetGroups[cat];
@@ -2009,10 +1810,7 @@ function toggleAssetGroup(cat){
   assetGroups[cat]=willOpen;
   state.settings.assetGroups=assetGroups;saveState();haptic('tap');
 }
-// Opening one group slides it open; opening all of them rebuilt the whole
-// list, so every group arrived already open with nothing left to animate.
-// Same class flip as a single toggle, applied to each group at once, and the
-// CSS transition does the rest.
+// Toggle each group's class so the CSS transition animates.
 function setAllAssetGroups(open){
   const groups=[...document.querySelectorAll('.ag-group')];
   if(!groups.length)return;
@@ -2033,41 +1831,14 @@ let lastPriceTs=null,priceFailCount=0,fxFailCount=0,paletteSel=0,txMode=null,txU
 const PRICE_KEY='paisafolio_prices_v1';
 const GOAL_COLORS=[{name:'acc',hex:'#f5a623'},{name:'grn',hex:'#16d6a4'},{name:'blu',hex:'#5aa6ff'},{name:'pur',hex:'#b39bff'},{name:'red',hex:'#ff5b75'},{name:'org',hex:'#ff7b3a'}];
 const SORTS=['value','name','pnl','recent'],SORT_LBL={value:'Value',name:'Name',pnl:'P&L %',recent:'Recent'};
-// ════════ LOAD/SAVE ════════
+// LOAD/SAVE
 let _storageWarned=false;
-// ════════ DEVICE PREFERENCES ════════
-// Theme, hidden balances, haptics and reduced motion are per-device settings,
-// not per-account data, they should not follow you to another phone. The app
-// already treated them that way: loadCloudCache() deliberately preserves them
-// rather than taking the cloud copy.
-//
-// The bug was that they had nowhere device-scoped to live. saveState() writes
-// to paisafolio_local when signed out and ONLY to the per-user cloud cache
-// when signed in. So for a signed-in user:
-//
-//   1. switch to dark  -> saved into the cloud cache; the guest blob still
-//      says light
-//   2. reload          -> state loads from the guest blob first, before auth
-//      resolves, so the app comes up light
-//   3. loadCloudCache() then "preserves the device preference", which by now
-//      is that stale light value, and overwrites the dark one
-//
-// The setting reverted on every single launch, and no amount of re-picking
-// dark could stick, because the guest blob was never written again.
-//
-// These four now live in their own key that is written on every change
-// regardless of sign-in state, and read back at startup. The inline script in
-// index.html reads the same key before any CSS is parsed, so first paint is
-// already correct.
-// ════════ TYPEFACE CHOICE ════════
-// Text and numbers can take different faces. That is not decoration: a
-// portfolio is mostly columns of figures, and a face with even, tabular
-// digits reads very differently from one tuned for prose.
-//
-// Every option below is self-hosted and unicode-range scoped. Declaring a
-// @font-face costs nothing, a browser only fetches the file once a rule uses
-// the family, so picking one here is what triggers the download. Nothing extra
-// ships on a default launch.
+// DEVICE PREFERENCES
+// Theme, hidden balances, haptics, motion, fonts and view choices belong to the device,
+// not the account. They get their own key, written in any sign-in state; index.html reads
+// it before CSS so first paint is right.
+// TYPEFACE CHOICE
+// Self-hosted, unicode-range scoped; a face downloads only once selected.
 const FONT_CHOICES = [
   { id:'poppins',  label:'Poppins',        stack:"'Poppins','Poppins Fallback',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", note:'Default, geometric' },
   { id:'inter',    label:'Inter',          stack:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",                      note:'Neutral, very legible' },
@@ -2125,25 +1896,12 @@ function renderFontOptions(){
 }
 function openFontSettings(){ renderFontOptions(); openModal('fontModal'); }
 const DEVICE_PREFS_KEY = 'paisafolio_device_prefs';
-// Preferences that belong to THIS device, not to the account. Theme and fonts
-// were always here. Grid-or-list and the sorts join them, because they are a
-// statement about the screen you are looking at, a phone wants the cards, a
-// wide screen may well want the table, and because riding in the synced
-// settings blob made them worse than unsynced: every pull replaced your local
-// choice with whatever the cloud last happened to hold, so switching to grid
-// and reopening the app put you back in list, every time.
-// `currency` is which currency you READ in, which is a per-device viewing
-// choice exactly like theme, not `baseCurrency`, which defines what every
-// stored number means and must stay synced. Leaving it in the synced blob meant
-// a pull replaced your pick with whatever the cloud last held: choose USD, and
-// the next refresh was back in NPR.
+// Device-only prefs. `currency` is the display currency; `baseCurrency` (what stored
+// numbers mean) stays synced.
 const DEVICE_PREF_KEYS = ['theme', 'hideBalance', 'haptics', 'hapticStrength', 'reduceMotion', 'fontText', 'fontNum',
   'currency',
   'assetView', 'assetSort', 'activeCat', 'assetGroups', 'activeDebtTab', 'debtSort', 'goalSort'];
-// The current values, for the sync layer to re-apply after it replaces state.
-// Exported so both places that restore them read one list rather than two
-// hand-maintained copies that drifted apart, which is how assetView came to be
-// missing from them in the first place.
+// Captured for the sync layer to re-apply after it replaces state.
 function captureDevicePrefs(){
   const out={};
   DEVICE_PREF_KEYS.forEach(k=>{ if(state.settings[k]!==undefined) out[k]=state.settings[k]; });
@@ -2157,23 +1915,10 @@ function saveDevicePrefs(){
     localStorage.setItem(DEVICE_PREFS_KEY, JSON.stringify(out));
   } catch (e) { /* storage full or blocked, the in-memory setting still applies */ }
 }
-// How you last left each list: grid or list on Assets, the sort, the category
-// filter, which debt tab. These live in module variables because every render
-// reads them, and they used to be filled in once during init() from whatever
-// state held at that instant.
-//
-// That is too early for a signed-in account. Boot reads the guest copy, then
-// the cloud cache and the pull arrive a moment later and replace state, but
-// the variables had already been set from the older copy, so switching to
-// list view, refreshing, and landing back on grid was exactly right from the
-// code's point of view and exactly wrong from yours. Re-read them whenever
-// state is replaced.
+// Re-read view choices whenever state is replaced (boot reads the guest copy first).
 function adoptViewPrefs(){
   const st=(state&&state.settings)||{};
-  // Every renderer formats money through this, so a state replacement that
-  // leaves it pointing at the old currency shows the right symbol until the
-  // next refresh and the wrong one after, which is worse than being wrong
-  // immediately, because it looks like it worked.
+  // Every formatter reads this; keep it in step with state.
   currentCurrency=CURRENCIES.find(c=>c.code===st.currency)||CURRENCIES[0];
   assetSort=st.assetSort||'value';
   assetView=st.assetView||'cards';
@@ -2186,8 +1931,6 @@ function adoptViewPrefs(){
   selectedCommodityId=st.lastCommodityId||'gold';
   selectedCommodityUnit=st.lastCommodityUnit||'gram';
   selectedLiquidityType=st.lastLiquidityType||'savings';
-  // The buttons have to agree with the variable, or the list is in one mode
-  // and the control says the other.
   const cb=el('viewCardsBtn'),tb=el('viewTableBtn');
   if(cb)cb.classList.toggle('on',assetView==='cards');
   if(tb)tb.classList.toggle('on',assetView==='table');
@@ -2201,28 +1944,17 @@ if(typeof window!=='undefined')window.adoptViewPrefs=adoptViewPrefs;
 function loadDevicePrefs(){
   let prefs = null;
   try { const raw = localStorage.getItem(DEVICE_PREFS_KEY); if (raw) prefs = JSON.parse(raw); } catch (e) {}
-  // No key yet means an install from before this existed: adopt whatever the
-  // loaded state already had, then write it, so nothing visibly changes once.
+  // No key yet (older install): adopt current values and save.
   if (!prefs || typeof prefs !== 'object') { saveDevicePrefs(); return; }
   DEVICE_PREF_KEYS.forEach(k => { if (prefs[k] !== undefined) state.settings[k] = prefs[k]; });
 }
-// Writing state is a synchronous JSON.stringify of the whole portfolio plus a
-// localStorage write, around 165KB on a heavy account. One of those is
-// nothing; seventy-seven call sites, some of them firing per keystroke or per
-// habit tick, is a stutter you can feel on a phone.
-//
-// So writes coalesce into the next idle moment. What must not happen is
-// losing a change because the tab went away before the timer fired, so every
-// way out of the page flushes first, and anything that reads storage back
-// (sync, export) flushes before it looks.
+// Saves coalesce to the next idle moment; every page exit and any storage read flushes first.
 let _saveTimer=null,_savePending=false;
 const SAVE_DEBOUNCE_MS=250;
 function saveState(){
   _savePending=true;
   if(_saveTimer)return;
   _saveTimer=setTimeout(()=>{_saveTimer=null;flushSave();},SAVE_DEBOUNCE_MS);
-  // The push debounce is separate and already generous; keep it responsive to
-  // the change rather than to the disk write.
   schedulePush();
 }
 // Write now, whatever is pending. Safe to call when nothing is.
@@ -2250,9 +1982,7 @@ function writeStateNow(){
     saveDevicePrefs();
     _storageWarned=false;
   } catch(e) {
-    // This used to be an empty catch. Storage failing is the worst silent
-    // failure this app can have: you keep adding assets, watch them appear,
-    // and lose every one of them on refresh. Say so, clearly, once.
+    // A failed save loses data on refresh; say so once.
     console.error('[storage] Save failed:',e);
     if(!_storageWarned){
       _storageWarned=true;
@@ -2268,11 +1998,7 @@ function loadState(){
   // Always load from the local key on startup, auth switching handled separately
   try{const s=localStorage.getItem(STORE_KEY);if(s)state={...state,...JSON.parse(s)};}catch(e){}
   state.settings=Object.assign({currency:'NPR',baseCurrency:'NPR',hideBalance:false,theme:'dark',haptics:true,hapticStrength:'medium',reduceMotion:false,onboarded:false,lastPage:'dash',lastAssetType:'crypto',lastCommodityId:'gold',lastCommodityUnit:'gram',lastLiquidityType:'savings',lastTxUnit:{},assetSort:'value',assetView:'cards',activeCat:'all',activeDebtTab:'owed',debtSort:'amount',goalSort:'progress',autoLockDelay:'5min'},state.settings||{});
-  // Every top-level list must be a real array before anything iterates it.
-  // Previously `state.transactions.forEach(...)` ran *before* the
-  // `if(!state.transactions)` guard further down, so a stored blob containing
-  // "transactions": null threw and aborted the whole of loadState(), leaving
-  // the app on an empty state with the user's data still sitting in storage.
+  // Every list must be an array before anything iterates it.
   ['assets','debts','goals','recurs','transactions','pnlHistory'].forEach(k=>{
     if(!Array.isArray(state[k]))state[k]=[];
   });
@@ -2287,11 +2013,7 @@ function loadState(){
   if(!state.pnlHistory)state.pnlHistory=[];if(!state.transactions)state.transactions=[];
   state.goals.forEach(g=>{if((g.target>0)&&(g.saved||0)>=g.target)completedGoals.add(g.id);});
 }
-// A property was created carrying a quantity of 1, so its opening entry
-// recorded one unit of a house. That is the number the ledger replay divides
-// costs by, and it is what let a second payment on the same flat count as a
-// second flat. Properties have no quantity at all, and their entries say so
-// from here on; the ones already written are corrected on the way in.
+// Properties have no quantity; old entries recorded 1, which broke the ledger replay.
 function migratePropertyTxQty(){
   const props=new Set((state.assets||[]).filter(a=>a.category==='property').map(a=>a.id));
   if(!props.size)return;
@@ -2302,13 +2024,7 @@ function migratePropertyTxQty(){
     t.qty=null;t.perUnit=null;t.enteredQty=null;t.enteredUnit=null;
   });
 }
-// One-time cleanup for a past bug where adding the same commodity (e.g. silver) in a different unit
-// (tola vs gram) created a separate asset instead of merging into the existing holding.
-// Merges duplicate asset records (same commodityId) into one canonical holding, in the oldest one's
-// unit, converting quantity and cost accordingly so current totals are correct immediately.
-// Note: we deliberately don't try to rewrite historical transaction quantities here, transactions
-// are matched only by name+category (not an asset id), so there's no reliable way to know which old
-// transaction belonged to which duplicate. The merged total going forward is accurate either way.
+// One-time: merge duplicate commodity holdings (same commodityId) into the oldest one's unit.
 function migrateDuplicateCommodityAssets(){
   const byCommodity={};
   state.assets.forEach(a=>{if(a.category!=='commodity'||!a.commodityId)return;(byCommodity[a.commodityId]=byCommodity[a.commodityId]||[]).push(a);});
@@ -2329,14 +2045,7 @@ function migrateDuplicateCommodityAssets(){
     });
   });
 }
-// One-time migration: older versions linked transactions to assets purely by
-// name+category text match, which silently orphaned a transaction's history
-// the moment an asset (e.g. a Property or Other entry) was renamed. We now
-// stamp every transaction with a stable assetId at creation time; this backfills
-// assetId onto any pre-existing transactions that don't have one yet, using the
-// best name+category match available today. If a transaction's name no longer
-// matches any current asset (already orphaned by a past rename), it's left as-is
-//, there's no reliable way to recover which asset it originally belonged to.
+// One-time: backfill assetId on transactions that were linked by name+category.
 function migrateTransactionAssetIds(){
   let changed=false;
   (state.transactions||[]).forEach(t=>{
@@ -2346,13 +2055,7 @@ function migrateTransactionAssetIds(){
   });
   if(changed)saveState();
 }
-// Returns all transactions belonging to an asset. Prefers the stable assetId
-// link; falls back to name+category matching only for legacy transactions that
-// predate the migration above and never found a match (e.g. already orphaned).
-// What a transaction is called, in the words that fit the thing it happened
-// to. The stored txType stays buy/sell because that is what the maths keys
-// off; only the wording changes. Putting money in a bank is a deposit, and
-// paying for a stock out of that bank is a withdrawal, not a sale.
+// Wording per asset kind: a bank buy is a deposit. Stored txType stays buy/sell.
 function txTypeLabel(t){
   if(!t)return 'BUY';
   if(t.txType==='income')return (t.incomeKind||'income').toUpperCase();
@@ -2364,10 +2067,7 @@ function txTypeLabel(t){
   if(isCash)return t.txType==='sell'?'WITHDRAW':'DEPOSIT';
   return (t.txType||'buy').toUpperCase();
 }
-// The same words in the other shapes a sentence needs. Everything a person
-// reads goes through one of these three, because a bank deposit written up
-// as a BUY is wrong wherever it appears, not only in the table where it was
-// first noticed.
+// All user-facing wording goes through these.
 const TX_PAST={BUY:'Bought',SELL:'Sold',DEPOSIT:'Deposited into',WITHDRAW:'Withdrew from',
   'MONEY IN':'Money into','MONEY OUT':'Money out of'};
 const TX_NOUN={BUY:'purchase',SELL:'sale',DEPOSIT:'deposit',WITHDRAW:'withdrawal',
@@ -2387,10 +2087,7 @@ function txTypeNoun(t){
   if(t&&t.txType==='income')return lbl.toLowerCase();
   return TX_NOUN[lbl]||lbl.toLowerCase();
 }
-// A transaction stores the asset's name as it was when the row was written,
-// so every past row went on saying "Cash" after the holding was renamed to
-// "Hand Cash". The live asset is the authority on what it is called; the
-// stored name stays as the fallback for a row whose asset is gone.
+// Live asset name wins; the stored name is the fallback.
 function txDisplayName(t){
   if(!t)return '';
   const a=t.assetId?(state.assets||[]).find(x=>x.id===t.assetId):null;
@@ -2402,17 +2099,13 @@ function txsForAsset(asset){
 }
 
 function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
-// The category and habit palettes were picked against the dark theme's
-// near-black. The same gold as text or an icon on a white card is 1.4:1, // invisible. This walks a colour toward the current ground until it is legible
-// and returns it untouched when it already is, so dark mode keeps exactly the
-// palette it has and light mode gets a readable version of the same hue.
+// Darken or lighten a palette colour until it meets contrast on the current theme.
 let _inkCache={};
 function readableInk(hex,min){
   const m=/^#?([0-9a-fA-F]{6})$/.exec(String(hex||'').trim());
   if(!m)return hex||'currentColor';
   const light=resolveTheme(state.settings.theme)==='light';
-  // A shade past the 4.5 threshold, so a colour that lands exactly on the line
-  // still reads comfortably on a translucent card or a tinted tile.
+  // Slightly above 4.5 for translucent grounds.
   const need=min||4.7;
   const key=(light?'L':'D')+m[1].toLowerCase()+need;
   if(_inkCache[key])return _inkCache[key];
@@ -2432,22 +2125,17 @@ function readableInk(hex,min){
 function themeColors(){return{accent:cssVar('--accent'),red:cssVar('--red'),green:cssVar('--green'),text:cssVar('--text'),text2:cssVar('--text2'),text3:cssVar('--text3'),border:cssVar('--border2'),card:cssVar('--card')};}
 function resolveTheme(t){if(t==='auto')return(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';return t;}
 function applyTheme(t){const resolved=resolveTheme(t);_inkCache={};const root=document.documentElement;if(root.dataset.theme&&root.dataset.theme!==resolved&&!state.settings.reduceMotion){root.classList.add('theme-anim');clearTimeout(applyTheme._t);applyTheme._t=setTimeout(()=>root.classList.remove('theme-anim'),400);}root.dataset.theme=resolved;const m=el('metaTheme');if(m)m.content=cssVar('--bg');const sun=ICONS.sun,moon=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;const tt=el('themeToggle');if(tt){tt.innerHTML=resolved==='dark'?sun.replace('<svg ','<svg width="15" height="15" '):moon;
-  // The icon is what the tap gives you, not what you are on: a sun in the
-  // dark means "make it light". The label has to say the same thing, or a
-  // screen reader announces the opposite of what the picture promises.
+  // The icon shows what a tap gives; the label must match.
   const nextLbl=resolved==='dark'?'Switch to the light theme':'Switch to the dark theme';
   tt.setAttribute('aria-label',nextLbl);tt.title=nextLbl;}
   el('themeOptAuto')&&el('themeOptAuto').classList.toggle('active',t==='auto');el('themeOptDark')&&el('themeOptDark').classList.toggle('active',t==='dark');el('themeOptLight')&&el('themeOptLight').classList.toggle('active',t==='light');}
-function setTheme(t){state.settings.theme=t;saveState();haptic('tap');applyTheme(t);invalidateCharts();renderTicker();announce(t==='auto'?'Auto theme':(t==='dark'?'Dark theme':'Light theme'));// Charts need rebuilding since Chart.js reads CSS vars at paint time
+function setTheme(t){state.settings.theme=t;saveState();haptic('tap');applyTheme(t);invalidateCharts();renderTicker();announce(t==='auto'?'Auto theme':(t==='dark'?'Dark theme':'Light theme')); // Chart.js reads CSS vars at paint time
 // Schedule after two animation frames so CSS vars have settled
 requestAnimationFrame(()=>requestAnimationFrame(()=>{renderMiniChart(calcNetWorth());renderDonut(state.assets.reduce((s,a)=>s+getAssetCurrentValue(a),0));if(currentPage==='plan')renderPnLChart();renderSettings();}));}
 function toggleTheme(){setTheme(resolveTheme(state.settings.theme)==='dark'?'light':'dark');}
 if(window.matchMedia){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(state.settings&&state.settings.theme==='auto')applyTheme('auto');});}
-// ════════ CURRENCY ════════
-// Changing the base currency rewrites the ledger, so every field holding
-// money has to be listed here. Missing one would leave a figure in the old
-// currency, quietly wrong forever, so this walks the whole state rather than
-// converting lazily on read.
+// CURRENCY
+// Changing the base rewrites every stored money field; all of them must be listed here.
 function convertStoredAmounts(f){
   const m=(o,k)=>{if(o&&o[k]!=null&&o[k]!==''&&!isNaN(o[k]))o[k]=num(o[k])*f;};
   (state.assets||[]).forEach(a=>['buyPrice','currentPrice','value'].forEach(k=>m(a,k)));
@@ -2460,10 +2148,7 @@ function convertStoredAmounts(f){
   (state.goals||[]).forEach(g=>['target','saved','monthly'].forEach(k=>m(g,k)));
   (state.recurs||[]).forEach(r=>m(r,'amount'));
   (state.spends||[]).forEach(x=>m(x,'amount'));
-  // realized is the profit banked on a sale, in the same currency as the rest.
-  // Leaving it out meant a sale that made Rs 5,000 read as $5,000 after a
-  // switch to dollars, a hundred-and-forty-fold overstatement, on the one
-  // number people look at hardest.
+  // realized is money too.
   (state.transactions||[]).forEach(t=>['amount','perUnit','realized'].forEach(k=>m(t,k)));
   (state.pnlHistory||[]).forEach(x=>m(x,'netWorth'));
   const scaleMap=o=>{const out={};Object.keys(o||{}).forEach(k=>{const v=num(o[k]);if(v)out[k]=v*f;});return out;};
@@ -2483,9 +2168,7 @@ async function setBaseCurrency(code){
     confirmText:'Convert to '+code,danger:false});
   if(!ok)return;
   convertStoredAmounts(f);
-  // Manual rates were quoted in the old base, so they mean a different number
-  // now. Rescale them and drop the one for the new base, which is 1 by
-  // definition and cannot be overridden.
+  // Rescale manual rates to the new base; drop the new base's own.
   const cr=customRates(),next={};
   Object.keys(cr).forEach(k=>{const v=num(cr[k]);if(v>0&&k!==code)next[k]=v*f;});
   state.settings.customRates=next;
@@ -2497,18 +2180,11 @@ async function setBaseCurrency(code){
 }
 function setCurrency(code){state.settings.currency=code;currentCurrency=CURRENCIES.find(c=>c.code===code)||CURRENCIES[0];saveState();haptic('tap');invalidateCharts();renderCurrGrid();updateCurrLabels();renderAll();renderTicker();}
 function updateCurrLabels(){document.querySelectorAll('.curr-lbl-span').forEach(el=>el.textContent=currentCurrency.code);}
-// Units of `code` per 1 unit of the base. A manual override, when set, is
-// stored the way people actually think about it (how many base units one unit
-// is worth) and inverted here, so 1 USD = 153 NPR is typed as 153, not 0.0065.
+// Units of `code` per 1 base. Overrides are stored as base per unit (1 USD = 153) and inverted here.
 function customRates(){return (state.settings&&state.settings.customRates)||{};}
 function customRateFor(code){const v=num(customRates()[code]);return v>0?v:null;}
 function hasCustomRate(code){return customRateFor(code)!==null;}
-// Everything in state is stored in ONE currency, and this is which one. It
-// was NPR, hardcoded, which is fine if you live in Nepal and wrong for
-// everyone else: their own currency could be displayed but never held the
-// numbers, so every figure was a conversion of a conversion. The base is now
-// a setting, and changing it converts the stored amounts once (see
-// setBaseCurrency).
+// The currency every stored amount is in.
 function baseCode(){return (state.settings&&state.settings.baseCurrency)||'NPR';}
 function baseCcy(){return CURRENCIES.find(c=>c.code===baseCode())||CURRENCIES[0];}
 // USD per 1 unit of the base, for the fallback when FX has not loaded yet.
@@ -2520,19 +2196,15 @@ function getCurrRate(code){
   if(manual)return 1/manual;                 // base per unit -> unit per base
   const u=fxOf(base),t=fxOf(code);return (u>0&&t>0)?t/u:1;
 }
-// The market's number, ignoring any override, for showing what you are
-// overriding.
+// Market rate, ignoring overrides.
 function liveRateFor(code){
   const base=baseCode();
   if(code===base)return 1;
   const u=fxOf(base),t=fxOf(code);return (u>0&&t>0)?t/u:0;
 }
-// How many units of the base one unit of `code` buys, which is the direction
-// a person quotes a rate in.
+// Base units per 1 `code`.
 function basePerUnit(code){const r=liveRateFor(code);return r>0?1/r:null;}
-// Currencies that actually use the Indian numbering system (lakh / crore).
-// Everything else gets K / M / B, showing "$1.20Cr" to someone working in
-// dollars is simply wrong, and it did that for every non-NPR currency.
+// Lakh/crore only for these; others get K/M/B.
 const LAKH_CRORE_CCY=new Set(['NPR','INR','PKR','LKR','BDT']);
 function fmt(valNPR){if(state.settings.hideBalance)return currentCurrency.sym+'••••';const r=getCurrRate(currentCurrency.code),v=num(valNPR)*r,sym=currentCurrency.sym,a=Math.abs(v),sign=v<0?'-':'';
   const S=(x,d=2)=>x.toFixed(d).replace(/\.00$/,'');
@@ -2548,41 +2220,28 @@ function fmt(valNPR){if(state.settings.hideBalance)return currentCurrency.sym+'�
   // Under 1000: group thousands, keep 2dp, so small balances stay exact.
   return sign+sym+a.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 function usdToBase(usd){const b=fxOf(baseCode());return usd*(b>0?b:1);}
-// Kept as the old name so nothing outside this file breaks; both mean "into
-// whatever currency the ledger is stored in".
+// Legacy name: into the base currency.
 const usdToNpr=usdToBase;
 // NEPSE quotes rupees, not dollars, so it needs the other direction.
 function nprToBase(npr){const r=fxOf('NPR');return r>0?usdToBase(npr/r):npr;}
-// ════════ APIS ════════
-// API base, Vercel serverless proxy is tried FIRST always (unchanged
-// behavior, still the priority path so Nepal IPs aren't blocked by
-// CoinGecko and scraping runs server-side). If /api/* genuinely isn't
-// there to respond (static hosting, running from disk, Vercel down),
-// we transparently fall back to calling the public APIs directly from
-// the browser instead. This is purely additive, nothing about the
-// Vercel path changes.
+// APIS
+// /api/* (Vercel) first; if it is not there, call public APIs from the browser.
 const CG_PROXY='/api/crypto';
 const TOLA_IN_GRAMS=11.6638;
 
-// Once we detect /api/* isn't working, remember it for the rest of the
-// session so we don't waste a round-trip re-probing it on every call.
+// Remember for the session once /api/* is known to be missing.
 let _vercelApiDown=false;
 
 async function fetchFxRates(){try{const d=await fetchJSON('https://open.er-api.com/v6/latest/USD');if(d&&d.rates){fxRates=d.rates;fxRates['USD']=1;fxFailCount=0;persistPrices();}}catch(e){fxFailCount++;}}
 
-// ── Direct-from-browser fallbacks (no Node/Vercel involved) ──
-// Same public data sources the /api/* functions call server-side, just
-// called directly from the page. Only used once /api/* is confirmed down.
+// Direct-from-browser fallbacks (no Node/Vercel involved)
 const CG_DIRECT='https://api.coingecko.com/api/v3';
 async function directCryptoPrices(ids){return await fetchJSON(`${CG_DIRECT}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd&include_24hr_change=true`,1);}
 async function directCryptoSearch(q){return await fetchJSON(`${CG_DIRECT}/search?query=${encodeURIComponent(q)}`,1);}
 async function directCryptoOHLC(id,days){return await fetchJSON(`${CG_DIRECT}/coins/${encodeURIComponent(id)}/ohlc?vs_currency=usd&days=${days}`,1);}
 async function directCryptoChart(id,days,interval){return await fetchJSON(`${CG_DIRECT}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}${interval==='daily'?'&interval=daily':''}`,1);}
 async function directCryptoHistory(id,cgDate){return await fetchJSON(`${CG_DIRECT}/coins/${encodeURIComponent(id)}/history?date=${cgDate}&localization=false`,1);}
-// Metals: same two-step strategy as api/metals.js (arthakendra scrape, then
-// international spot × NPR fx), run in the browser. arthakendra.com doesn't
-// send CORS headers, so the scrape step will typically fail cross-origin -
-// expected, and we silently drop to the spot-price fallback below.
+// Browser fallback for api/metals.js; the scrape usually fails on CORS, then spot × FX.
 async function directMetals(){
   const fx=await fetchJSON('https://open.er-api.com/v6/latest/USD',1);
   const nprPerUsd=fx?.rates?.NPR;
@@ -2605,10 +2264,7 @@ async function directMetals(){
     usd_npr:nprPerUsd,source:'gold-api.com + open.er-api.com (direct browser fallback)',
   };
 }
-// ── Metal prices via Vercel Function (Nepal NPR rates from FENEGOSIDA) ──
-// Scrapes arthakendra.com for official Nepal gold/silver prices, falls back
-// to international spot × NRB USD/NPR rate. If Vercel isn't reachable at
-// all, falls back further to fetching straight from the browser.
+// Nepal NPR metal rates via /api/metals, falling back to the browser.
 async function fetchMetals(){
   let d=null;
   if(!_vercelApiDown){
@@ -2630,28 +2286,17 @@ async function fetchMetals(){
   livePrices['kinesis-silver']={...livePrices['silver']};
   if(d.platinum_tola_npr){const platUsdOz=(d.platinum_tola_npr/npr)*tolaToOz;livePrices['platinum']={usd:platUsdOz,change24h:livePrices['platinum']?.change24h||0};}
 }
-// ── NEPSE ────────────────────────────────────────────────────────────
-// Nothing that carries Nepali share prices lets a browser read it: no CORS
-// anywhere, and NEPSE's own backend rejects non-browser clients on top of
-// that. So this asks our own serverless function, which has no such rule to
-// obey, and which answers configured:false until an endpoint is set for it.
-// Everything here fails quietly: a share with no live price keeps the price
-// its owner typed, exactly as before this existed.
+// NEPSE
+// No NEPSE source allows browser reads, so this goes through /api/nepse. Failures are
+// silent: the typed price stays.
 const NEPSE_PROXY='/api/nepse';
 let nepsePrices={},nepseAsOf=null,nepseStale=false,_nepseOff=false;
-// The symbol a holding is quoted under. Falls back to the name for a share
-// added before the ticker field existed.
+// Ticker, or the name for older holdings.
 function nepseSym(a){return String((a&&(a.ticker||a.name))||'').trim().toUpperCase();}
-// The badge is a promise that this share is priced by the exchange, so it
-// has to answer to today's list rather than to a flag set once and left. A
-// symbol the exchange does not quote is not listed on it, whatever was ticked
-// when it was added. The flag itself is left alone: a genuinely new listing
-// missing from the feed for a day should not be quietly rewritten, only
-// unbadged until the feed catches up.
+// Listed means quoted by today's feed; the stored flag is not rewritten.
 function isNepseListed(a){
   if(!a||a.category!=='stock'||!a.isNepse)return false;
-  // Nothing to check against: take the flag at its word rather than call
-  // every listed share unlisted because the feed is down.
+  // Feed down: trust the flag.
   if(!Object.keys(nepsePrices).length)return true;
   return nepseKnows(a.ticker)||nepseKnows(a.name);
 }
@@ -2659,19 +2304,13 @@ function nepseQuote(a){
   if(!a||a.category!=='stock'||!a.isNepse)return null;
   return nepsePrices[nepseSym(a)]||null;
 }
-// A share flagged as listed that the exchange does not quote gets no price
-// from it, so the sheet should not claim one is coming: it goes back to the
-// box asking for a price, which is the truthful state.
 async function fetchNepse(force){
   if(_nepseOff)return;
-  // No Nepali shares held, no reason to ask on a price refresh. `force` is
-  // for the search box, which needs the list before there is anything held
-  // to justify fetching it: otherwise nobody can ever pick their first one.
+  // Skip when no NEPSE shares are held; `force` is for the search box.
   if(!force&&!(state.assets||[]).some(a=>a&&a.category==='stock'&&a.isNepse))return;
   try{
     const d=await fetchJSON(NEPSE_PROXY,1);
-    // The function is not deployed, or this is a static host with no /api.
-    // Asking again every refresh would just cost time.
+    // No /api here; stop asking.
     if(!d||typeof d!=='object'){_nepseOff=true;return;}
     if(d.configured===false){_nepseOff=true;return;}
     if(d.prices&&Object.keys(d.prices).length){
@@ -2696,20 +2335,14 @@ async function fetchPrices(manual){const ids=new Set(['bitcoin','ethereum','bina
   if(cgOk||Object.keys(livePrices).length){state.lastUpdated=new Date().toISOString();lastPriceTs=Date.now();priceFailCount=0;persistPrices();trackPnLHistory();saveState();renderAll();renderTicker();updateSyncLabel();if(manual)toast('Prices updated','success');}
   else{priceFailCount++;updateSyncLabel();renderTicker();if(manual){toast('Price service busy, will retry shortly','error');}else if(priceFailCount<=4){clearTimeout(window._priceRetry);window._priceRetry=setTimeout(()=>fetchPrices(false),Math.min(30000,4000*priceFailCount));}}}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-// A failed /api/* call only means "switch to direct browser fallback" when
-// it looks like the function genuinely isn't there to answer (404/405, a
-// non-JSON response, e.g. a static host serving an HTML 404 page or
-// falling back to index.html, or a network-level failure reaching our own
-// origin), NOT for ordinary upstream errors (429/502/etc) that a working
-// Vercel function can return.
+// Fall back only when the function is missing (404/405, HTML, network), not on upstream errors.
 function isVercelUnreachable(e){
   const msg=(e&&e.message)||'';
   return msg==='HTTP 404'||msg==='HTTP 405'||msg==='NOT_JSON'||/Failed to fetch|NetworkError|Load failed/i.test(msg);
 }
 const FETCH_TIMEOUT_MS=12000;
 async function fetchJSON(url,retries=2){let err;for(let i=0;i<=retries;i++){try{
-  // Without an AbortController a stalled socket never rejects, so the whole
-  // retry loop parks forever and the ticker sits on "Connecting\u2026".
+  // A stalled socket never rejects without a timeout.
   const ctrl=new AbortController();
   const tid=setTimeout(()=>ctrl.abort(),FETCH_TIMEOUT_MS);
   let r;
@@ -2717,10 +2350,7 @@ async function fetchJSON(url,retries=2){let err;for(let i=0;i<=retries;i++){try{
   finally{ clearTimeout(tid); }
   if(r.status===429){await sleep(900*(i+1));err=new Error('429');continue;}
   if(!r.ok)throw new Error('HTTP '+r.status);
-  // A static host with no real /api/* route often answers with HTTP 200 but
-  // an HTML error/fallback page instead of JSON. Detect that case explicitly
-  // (rather than letting r.json() throw a generic SyntaxError) so callers can
-  // reliably tell "not really an API" apart from "API returned bad data".
+  // Static hosts answer 200 with HTML; detect it explicitly.
   const text=await r.text();
   try{return JSON.parse(text);}catch(parseErr){throw new Error('NOT_JSON');}
 }catch(e){err=e;if(i<retries)await sleep(500*(i+1));}}throw err;}
@@ -2788,12 +2418,7 @@ async function fetchOHLC(id,days){
     if(Array.isArray(d)&&d.length)csCache[key]=d;return csCache[key]||null;
   }catch(e){return null;}
 }
-// /ohlc hands back candles but almost no history: ask it for 30-minute
-// candles and you get one day, full stop. market_chart hands back a price
-// SERIES instead, and it reaches far further at a resolution you can still
-// use, hourly for three months, daily for the coin's entire life. Candles
-// are built from that here, which is what makes an hourly chart scroll back
-// through months instead of stopping after twenty-four bars.
+// market_chart reaches far further back than /ohlc; candles are built from it here.
 async function fetchChartSeries(id,days,interval){
   const key='mc_'+id+'_'+days+'_'+(interval||'auto');
   if(csCache[key])return csCache[key];
@@ -2806,11 +2431,7 @@ async function fetchChartSeries(id,days,interval){
     return csCache[key]||null;
   }catch(e){return null;}
 }
-// Binance's public market data needs no key, is real OHLC at every interval,
-// and, the part that matters here, is pageable backwards for as long as the
-// pair has traded. That is what a trading chart's endless scrollback is.
-// Everything else in this file treats it as best-effort: if the pair does not
-// exist, or the endpoint is blocked, the CoinGecko series below takes over.
+// Binance klines: keyless, real OHLC, pageable backwards. CoinGecko is the fallback.
 const CS_PAIRS={bitcoin:'BTC',ethereum:'ETH',binancecoin:'BNB',solana:'SOL',
   ripple:'XRP',cardano:'ADA',polkadot:'DOT',dogecoin:'DOGE',tron:'TRX',
   'avalanche-2':'AVAX',chainlink:'LINK',litecoin:'LTC','matic-network':'MATIC',
@@ -2818,8 +2439,7 @@ const CS_PAIRS={bitcoin:'BTC',ethereum:'ETH',binancecoin:'BNB',solana:'SOL',
   'near':'NEAR',aptos:'APT',arbitrum:'ARB',optimism:'OP',cosmos:'ATOM',
   filecoin:'FIL',injective:'INJ',sui:'SUI','tether-gold':'PAXG'};
 const _csPairCache={};
-// Falls back to CoinGecko's own search, which carries the ticker, so a coin
-// outside the list above still gets candles when Binance lists it.
+// Unknown coins: look up the ticker via CoinGecko search.
 async function csPairFor(coinId){
   if(!coinId)return null;
   if(coinId in _csPairCache)return _csPairCache[coinId];
@@ -2835,8 +2455,7 @@ async function csPairFor(coinId){
   _csPairCache[coinId]=pair;
   return pair;
 }
-// One page of candles, newest first page by default; pass endTime to walk
-// backwards. Returns the same [ts,o,h,l,c] shape the chart draws.
+// One page of candles; endTime walks backwards. Returns [ts,o,h,l,c].
 async function fetchKlines(pair,interval,limit,endTime){
   const key='kl_'+pair+'_'+interval+'_'+(limit||1000)+'_'+(endTime||'now');
   if(csCache[key])return csCache[key];
@@ -2856,14 +2475,8 @@ async function fetchKlines(pair,interval,limit,endTime){
   if(out.length)csCache[key]=out;
   return out.length?out:null;
 }
-// [timestamp, price] pairs → candles on a fixed time grid: close is the last
-// price in the bucket, high and low the extremes.
-//
-// Open is the PREVIOUS bucket's close, not the first sample in this one. That
-// is both how a continuous market actually works, today opens where yesterday
-// left off, and the only thing that draws a readable chart here: beyond ninety
-// days CoinGecko serves one price per day, so a bucket holds a single sample and
-// first-sample-as-open would make every candle a flat doji.
+// Series to candles on a fixed grid. Open is the previous close, so one-sample buckets
+// (daily data) are not flat dojis.
 function csCandlesFromSeries(series,bucketMs){
   if(!series||!series.length||!(bucketMs>0))return[];
   const out=[];let cur=null,curT=-1,prevClose=null;
@@ -2885,18 +2498,8 @@ function csCandlesFromSeries(series,bucketMs){
   if(cur)out.push(cur);
   return out;
 }
-// One figure a day was enough to draw a net-worth line and nothing else.
-// Day-by-day profit needs to know what each holding was worth, not just what
-// everything together came to: without that, "how did crypto do on Tuesday"
-// has no answer, and neither does "how did this one coin do".
-//
-// So each snapshot now carries a value per holding as well. Rounded to whole
-// rupees and only for holdings actually worth something, which keeps a year
-// of thirty holdings around a hundred kilobytes rather than a megabyte.
-//
-// A snapshot also happens while the app is closed, every two hours, taken by
-// the scheduled job in api/snapshot.js. See valuationRecipe() below for what
-// that job is given to work with.
+// Per-holding values for the day, rounded, non-zero only. The scheduled job also writes
+// these every two hours (api/snapshot.js).
 function assetValueSnapshot(){
   const m={};
   (state.assets||[]).forEach(a=>{
@@ -2906,34 +2509,16 @@ function assetValueSnapshot(){
   });
   return m;
 }
-// ── What the scheduled job needs to value this portfolio without the app ──
-//
-// Prices are the only thing that moves while the app is closed. Nothing else
-// can: no transaction is entered, no holding is added, no account is opened.
-// So the job does not need to know how any of this is valued - it needs to
-// know which numbers came from a price feed, and what they were worth when
-// they were last read.
-//
-// Each priced holding contributes a leg: the feed reading it used (`p`) and
-// what the holding was worth at that reading (`v`). The job re-reads the same
-// feed and scales: v x (newP / p). That ratio cancels every constant in
-// between - quantity, unit conversion, the exchange rate into your base
-// currency, the Nepali tola rate - which is why the job can get the right
-// answer without carrying a second copy of how any of it is worked out.
-// Anything with no live price (a bank balance, land, a hand-typed price)
-// carries its value unchanged, and everything left over - debts, accrued
-// interest - is one `fixed` number.
-//
-// This is a copy of the branches in getAssetCurrentPrice(), and has to stay
-// one: it names the exact feed field that function read.
+// Recipe for api/snapshot.js: each priced holding is a leg with the feed reading (`p`)
+// and its value then (`v`); the job scales v × newP / p. Unpriced holdings carry over.
+// Must mirror the branches in getAssetCurrentPrice().
 function assetPriceLeg(a){
   if(!a)return null;
   if(a.coinId&&livePrices[a.coinId]){
     const lp=livePrices[a.coinId];
     if(a.category==='commodity'&&lp.nepalTolaNpr&&baseCode()==='NPR'){
       const u=a.unit||'troy oz';
-      // gram and kg are quoted per gram when the feed gives a gram rate;
-      // everything else is derived from the tola rate.
+      // Gram/kg use the per-gram rate when there is one.
       if((u==='gram'||u==='kg')&&lp.nepalGramNpr)
         return {k:'coin:'+a.coinId+':nepalGramNpr',p:num(lp.nepalGramNpr)};
       return {k:'coin:'+a.coinId+':nepalTolaNpr',p:num(lp.nepalTolaNpr)};
@@ -2965,24 +2550,15 @@ function valuationRecipe(){
     v:1,
     base:baseCode(),
     nw:Math.round(nw),
-    // Net worth is assets minus what is owed. Everything the legs do not
-    // cover - the debts, and any holding worth nothing - is this one number.
+    // Everything the legs do not cover (debts, zero-value holdings).
     fixed:Math.round((nw-priced)*100)/100,
     legs,
     at:new Date().toISOString(),
   };
 }
 const PNL_HIST_DAYS=365;
-// ── Today, in more detail than once ──
-// A day is the finest the daily series goes, which makes the 1D view a single
-// segment between yesterday and now. Prices move during the day, so a reading
-// is also kept every couple of hours, for the last two days only.
-//
-// It fills while the app is open and not otherwise. Nothing here runs on a
-// server: hours you are not looking are hours nobody recorded, and the chart
-// simply has no point for them rather than a point somebody made up. Closing
-// that gap would need a scheduled job holding your prices, which is a
-// different app from this one.
+// Today in two-hour readings, kept for two days. Written while the app is open and by
+// the scheduled job.
 const INTRADAY_SLOT_MS=2*3600*1000;
 const INTRADAY_KEEP_MS=48*3600*1000;
 function trackIntraday(){
@@ -3008,7 +2584,7 @@ function trackPnLHistory(){
   }
   trackIntraday();
 }
-// ════════ PRICING ════════
+// PRICING
 function getAssetCurrentPrice(a){
   if(a.coinId&&livePrices[a.coinId]){
     const lp=livePrices[a.coinId];
@@ -3030,8 +2606,7 @@ function getAssetCurrentPrice(a){
     }
     return usdToNpr(p);
   }
-  // Quoted in rupees by the exchange, so it converts the other way from
-  // everything else here.
+  // Quoted in NPR.
   {const q=nepseQuote(a);if(q&&q.price>0)return nprToBase(q.price);}
   if(a.currentPrice!=null&&a.currentPrice!==''&&!isNaN(a.currentPrice))return a.currentPrice;return null;
 }
@@ -3071,22 +2646,9 @@ function calcLiquidityAccrued(a){
   const principal=a.value||0;
   return principal*(Math.pow(1+rate/100/365,days)-1);
 }
-// Units held. `qty` is null for things that have no unit count (a property, a
-// bank balance, a one-off), where the whole worth sits in buyPrice and reading
-// that as a single unit is right. Zero is a different thing: it means a
-// position that has been sold out, and it must value at nothing. The old
-// `a.qty||1` collapsed those two cases, so a fully sold holding kept counting
-// as one unit of itself in net worth, cost and P&L.
+// qty null = no unit count (value in buyPrice, one unit); qty 0 = sold out, worth nothing.
 function assetUnits(a){return (a&&a.qty==null)?1:num(a&&a.qty);}
-// How many decimals a quantity is worth showing. The answer depends on what
-// one unit costs: a thousandth of a gram of silver is four paisa and says
-// nothing, while a ten-millionth of a bitcoin is about a rupee and does. So
-// the cap is the number of places it takes for the last digit to be worth
-// roughly one rupee, and everything past that is dropped.
-//
-// It also cleans up the arithmetic. Converting 1.25 tola into grams leaves
-// 37.489999999999995 in binary floating point, and that is what the assets
-// list was printing.
+// Decimals worth showing: until the last digit is worth about one rupee. Also hides float noise.
 function qtyDecimals(pricePerUnit){
   const p=Math.abs(num(pricePerUnit));
   if(!(p>0))return 4;                       // nothing to reason from yet
@@ -3098,16 +2660,13 @@ function fmtQty(qty,asset){
   if(q===0)return '0';
   const price=asset?(getAssetCurrentPrice(asset)||asset.buyPrice||0):0;
   let dp=qtyDecimals(price);
-  // A holding small enough that the price-based cap would round it away, or
-  // badly distort it, keeps the places it needs. Half a percent is the most
-  // the rounding may move the number.
+  // Tiny holdings keep enough places to stay within 0.5%.
   while(dp<8&&Math.abs(q-+q.toFixed(dp))>Math.abs(q)*0.005)dp++;
   let out=q.toFixed(dp);
   if(out.indexOf('.')>=0)out=out.replace(/0+$/,'').replace(/\.$/,'');
   return out;
 }
-// The quantity with whatever it is counted in: grams, a ticker, or bare
-// units. One place, so the assets list and the detail sheet cannot disagree.
+// Quantity with its unit, shared by the list and the detail sheet.
 function qtyWithUnit(a,qty){
   if(!a)return '';
   const q=qty==null?a.qty:qty;
@@ -3117,10 +2676,7 @@ function qtyWithUnit(a,qty){
   return txt+unit;
 }
 function getAssetCurrentValue(a){if(a.category==='liquidity')return(a.value||0)+calcLiquidityAccrued(a);const cp=getAssetCurrentPrice(a),q=assetUnits(a);if(cp!==null)return cp*q;return(a.buyPrice||0)*q;}
-// What a holding cost. A bank balance's cost is the balance: money moved into
-// a savings account is not profit, and counting it as though it were is what
-// made a Rs.1L deposit read as Rs.1L of gain. What the account has actually
-// earned is its interest, which is where the profit on it lives.
+// A bank balance's cost is the balance; its profit is the interest.
 function assetCost(a){
   if(!a)return 0;
   if(a.category==='liquidity')return num(a.value);
@@ -3128,20 +2684,15 @@ function assetCost(a){
 }
 function getAssetPnL(a){
   if(a.category==='liquidity'){
-    // The deposit is not a gain. The interest on it is. An account paying
-    // nothing has no profit and loss to report, rather than a row of zeroes.
+    // The deposit is not a gain; accrued interest is.
     const acc=calcLiquidityAccrued(a);
     return acc>0?acc:null;
   }
   const cp=getAssetCurrentPrice(a);if(cp===null)return null;
   const q=assetUnits(a);return(cp*q)-(num(a.buyPrice)*q);
 }
-// Profit and loss across the whole portfolio: what everything is worth now
-// against what it cost, plus what completed sales actually returned. It is
-// not tied to a date range, which is exactly the difference between it and
-// the change in net worth shown beside it: one is how the holdings have done,
-// the other is how much richer you are than you were on some date, and money
-// simply moved in or out changes the second without touching the first.
+// Portfolio P&L: current value vs cost, plus realised gains. Not tied to a date range,
+// unlike the net-worth change.
 function portfolioPnL(){
   let invested=0,current=0;
   (state.assets||[]).forEach(a=>{invested+=assetCost(a);current+=getAssetCurrentValue(a);});
@@ -3152,20 +2703,14 @@ function portfolioPnL(){
 }
 function getAssetPnLPct(a){const cp=getAssetCurrentPrice(a);if(cp===null||!a.buyPrice)return null;return((cp-a.buyPrice)/a.buyPrice)*100;}
 function debtRemaining(d){if(!d)return 0;const acc=num(calcAccrued(d)),paid=(d.payments||[]).reduce((s,p)=>s+num(p&&p.amount),0);return Math.max(0,num(d.amount)+acc-paid);}
-// The same figure, as it stood on some past day. Everything it needs is
-// dated: when each part was lent or borrowed, when each repayment landed,
-// and calcAccrued already takes an as-of date. So this is a replay rather
-// than an estimate - with one honest caveat, which is that editing a debt's
-// amount now rewrites what it says about then, because an edit leaves no
-// record of what the figure used to be.
+// Debt remaining as of a past day, replayed from dated lends and repayments.
+// Edits to a debt's amount rewrite its past.
 function debtRemainingAsOf(d,key){
   if(!d)return 0;
   const cut=parseDay(key);
   if(isNaN(cut))return debtRemaining(d);
   const lentD=d.lentDate?parseDay(d.lentDate):new Date(d.date);
-  // Same rule calcAccrued uses: trust lendHistory as the breakdown only when
-  // its parts add up to the total, otherwise the whole amount was there from
-  // the start.
+  // Same rule as calcAccrued: lendHistory counts only if it sums to the total.
   const lends=(d.lendHistory||[]).filter(h=>h&&num(h.amount)>0)
     .map(h=>({t:h.date?parseDay(h.date):lentD,amt:num(h.amount)}))
     .filter(h=>!isNaN(h.t));
@@ -3194,27 +2739,15 @@ function debtTotalsAsOf(key){
   });
   return {owed,iowe};
 }
-// Coerce anything to a finite number. Every money path runs through this so a
-// single bad/blank/hand-edited field can't turn a total into NaN and blank out
-// the dashboard.
+// Finite number or 0, so one bad field cannot turn a total into NaN.
 function num(v){const n=typeof v==='number'?v:parseFloat(v);return Number.isFinite(n)?n:0;}
 function calcNetWorth(){const ta=state.assets.reduce((s,a)=>s+getAssetCurrentValue(a),0),to=state.debts.filter(d=>d.type==='owed').reduce((s,d)=>s+debtRemaining(d),0),ti=state.debts.filter(d=>d.type==='iowe').reduce((s,d)=>s+debtRemaining(d),0);return ta+to-ti;}
-// ════════ NAV ════════
+// NAV
 const PAGES=['dash','assets','spend','debts','plan','analytics','settings'];
 let currentPage='dash';
-// Tab order, so a switch knows which way it is travelling: moving right
-// through the bar slides the new page in from the right, and vice versa.
+// Tab order sets the page slide direction.
 const PAGE_ORDER=['dash','assets','spend','debts','plan','analytics','settings'];
-// Slides the single nav indicator under the active tab. Items are flex:1 and
-// therefore equal width, so the offset is arithmetic, no per-item measuring,
-// and the only thing that animates is a transform.
-// Measured off the tab itself, never worked out from PAGE_ORDER.
-//
-// Dividing the bar by the number of PAGES assumes every page has a visible
-// tab, and the moment one does not the marker slides under the wrong word:
-// eight pages against seven tabs put Reports a whole slot to the left. It has
-// been wrong that way twice, so the arithmetic is gone. Where the button
-// actually is, is where the line goes.
+// Measured from the tab button itself, not computed from PAGE_ORDER.
 function positionNavIndicator(page){
   const ind=el('navInd');
   if(!ind)return;
@@ -3223,9 +2756,7 @@ function positionNavIndicator(page){
   ind.style.setProperty('--ind-x',(btn.offsetLeft+(btn.offsetWidth-22)/2).toFixed(1)+'px');
 }
 window.addEventListener('resize',()=>positionNavIndicator(),{passive:true});
-// The logo is the way home. Tapping it from anywhere lands on the dashboard,
-// scrolled to the top, with any open sheet closed, which is what a masthead
-// does everywhere else. Already home means just going back to the top.
+// Logo: back to the dashboard, top, sheets closed.
 function goHome(){
   while(modalStack.length)closeModal(modalStack[modalStack.length-1]);
   if(currentPage==='dash'){window.scrollTo({top:0,behavior:'smooth'});playPageArrival('page-dash');}
@@ -3236,10 +2767,7 @@ function goPage(p,dir){if(p===currentPage){window.scrollTo({top:0,behavior:'smoo
   const from=PAGE_ORDER.indexOf(currentPage),to=PAGE_ORDER.indexOf(p);
   // An explicit dir (from a swipe) wins; otherwise infer it from tab order.
   const goingRight=dir?(dir==='left'):(from>=0&&to>=0?to>from:true);
-  // A page id that does not exist would otherwise deactivate every page and
-  // then throw, leaving a blank screen with no way back, reachable from a
-  // stale lastPage in synced settings, or a renamed tab. Check before
-  // tearing the current page down.
+  // Unknown page id (stale lastPage): bail before tearing down the current page.
   const np=el('page-'+p), nv=el('nav-'+p);
   if(!np||!nv)return;
   haptic('tap');const pages=document.querySelectorAll('.page');pages.forEach(e=>e.classList.remove('active','from-left','from-right'));
@@ -3255,23 +2783,13 @@ function restorePage(){let p;try{p=localStorage.getItem('paisafolio_lastpage');}
   document.querySelectorAll('.nav-item').forEach(e=>{e.classList.remove('active');e.setAttribute('aria-selected','false');});
   el('page-'+p).classList.add('active');const nv=el('nav-'+p);if(nv){nv.classList.add('active');nv.setAttribute('aria-selected','true');}
   currentPage=p;positionNavIndicator(p);}
-// renderDashboard() used to run on every renderAll() regardless of which page
-// was open, so sitting on Settings still rebuilt two Chart.js instances plus
-// the movers, insights and recent-transaction lists every time prices
-// refreshed, every 15s, entirely invisibly. goPage() re-renders the
-// dashboard on the way back in, so skipping it here loses nothing.
+// Only the visible page renders; goPage() renders on arrival.
 function renderAllNow(){if(currentPage==='dash')renderDashboard();if(currentPage==='assets')renderAssets();if(currentPage==='spend')renderSpend();if(currentPage==='debts')renderDebts();if(currentPage==='plan')renderPlan();if(currentPage==='analytics')renderAnalytics();syncChartFallbacks();bindScrollHints();}
-// Chart.js is a CDN dependency. Every chart call site already bails out with
-// `if(!window.Chart)return` so nothing throws, but that left a fixed-height
-// empty box on screen, which is what an offline launch or a blocked CDN
-// actually looked like: a dashboard full of holes. Collapse those boxes and
-// say why instead.
+// Chart.js failed to load (offline/blocked CDN): collapse chart boxes and say why.
 const CHART_CANVAS_IDS=['miniChart','pnlChart','catBarChart','assetBarChart','monthlyChart','forecastChart','compositionChart','debtTimeChart'];
 function syncChartFallbacks(){
   const missing=!window.Chart;
-  // The allocation donut sits in a fixed 92px square beside its legend, so a
-  // notice placed inside it just overlaps the legend text. Drop the ring and
-  // let the legend, which is real, readable data on its own, take the row.
+  // Donut box is too small for a notice; let the legend take the row.
   const dw=document.querySelector('.donut-wrap');
   if(dw)dw.style.display=missing?'none':'';
   CHART_CANVAS_IDS.forEach(id=>{
@@ -3288,27 +2806,17 @@ function syncChartFallbacks(){
         box.appendChild(note);
       }
     }else{
-      // Don't undo a canvas that renderMiniChart hid on purpose because there
-      // is not enough history to plot, that is a different empty state.
+      // Leave renderMiniChart's own empty state alone.
       const ownEmpty=box.querySelector(':scope > .chart-empty');
       if(!ownEmpty){c.style.display='';box.classList.remove('chart-na-host');}
       if(existing)existing.remove();
     }
   });
 }
-// renderAll() is called from ~32 places, and several code paths call it more
-// than once in the same tick (e.g. saveState -> renderAll -> renderTicker ->
-// renderAll). Each pass rebuilds charts and recomputes every total, so those
-// duplicates were pure waste. Collapsing them into one frame keeps behaviour
-// identical while cutting redundant work; _renderNow() stays available for
-// the rare spot that needs a synchronous repaint.
+// Coalesce renderAll() calls into one frame; _renderNow() for synchronous repaints.
 let _renderRaf=null;
-// ════════ ENTRANCE ANIMATIONS ════════
-// An entrance belongs to arriving at a view, not to every re-render of it.
-// A sync badge landing, a habit tick, a price tick and a save all call
-// renderAll, and each one used to replay every row's entrance and run every
-// progress bar from zero again. The render count was right; the animation
-// count was not, which is what reads as 'everything refreshes twice'.
+// ENTRANCE ANIMATIONS
+// Only when arriving at a view, not on every re-render.
 let _animateEnter=true;
 function enterCls(){ return _animateEnter?' enter':''; }
 // Run one render with entrances on (arriving at a page, first paint).
@@ -3316,19 +2824,11 @@ function renderAnimated(fn){
   _animateEnter=true;
   try{ fn(); } finally { requestAnimationFrame(()=>{
     _animateEnter=false;
-    // A hidden page has no width, so anything measured while it was off
-    // screen decided it had nowhere to scroll and cached that. The category
-    // bar on Assets could scroll 145px and had no edge fade at all because
-    // the only measurement ever taken was the one from before it was shown.
+    // Re-measure scroll hints now the page has a width.
     try{ bindScrollHints(); }catch(e){}
   }); }
 }
-// Arriving at a page should feel like arriving. Most pages rebuild their
-// charts on entry and animate as a side effect; the dashboard's are cached,
-// which is right for cost and wrong for feel. Rather than throw good charts
-// away to buy an animation, the cards get their own arrival: one class,
-// removed when it finishes, so it replays on the next visit and never runs
-// on a plain refresh.
+// Card arrival animation on page entry; the class is removed when done.
 function playPageArrival(pageId){
   if(state.settings.reduceMotion)return;
   const page=el(pageId);if(!page)return;
@@ -3346,31 +2846,13 @@ function renderAll(){
   if(_renderRaf)return;                 // already queued for this frame
   _renderRaf=requestAnimationFrame(()=>{_renderRaf=null;renderAllNow();});
 }
-// ════════ PNL RANGE ════════
+// PNL RANGE
 function bindPnlPills(){document.querySelectorAll('.pnl-pill').forEach(p=>p.addEventListener('click',()=>{document.querySelectorAll('.pnl-pill').forEach(x=>x.classList.remove('active'));p.classList.add('active');currentPnlRange=p.dataset.range;haptic('tap');const cr=el('customRangeRow');if(cr)cr.style.display=currentPnlRange==='custom'?'block':'none';renderDashboard();}));}
 function applyCustomRange(){customFromDate=el('customFrom').value;customToDate=el('customTo').value;renderMiniChart(calcNetWorth());}
-// ════════ NET-WORTH HISTORY ════════
-// trackPnLHistory() records exactly ONE snapshot, for TODAY. So pnlHistory
-// grows by a single point per day the app is opened, and knows nothing about
-// anything that happened before you installed it.
-//
-// That is why the dashboard chart looked broken: a brand-new account has one
-// point, which renderMiniChart padded into Array(12).fill(nw), twelve
-// identical values, i.e. a dead-flat line. Two days in you get exactly one
-// straight segment, up or down. And a backdated purchase never showed at all,
-// because an asset's own date was never consulted.
-//
-// The ledger already knows when money actually moved: every transaction has a
-// date, an amount and a quantity, and every debt has lend and payment dates.
-// That is enough to reconstruct the shape of the past.
-//
-// The honest caveat is that there are no historical market prices here, so a
-// reconstructed point is COST BASIS, what you had put in, not mark-to-market.
-// So: a real observed snapshot always wins for its date, reconstruction fills
-// the gaps, and today is always the live figure. Points are flagged
-// `estimated` so the chart can draw them differently instead of pretending
-// they were measured. As real snapshots accumulate the series converges on
-// measured truth.
+// NET-WORTH HISTORY
+// Reconstructed from the dated ledger at cost basis (no historical prices), anchored
+// to real snapshots: a recorded snapshot wins for its date, today is live, and filled
+// points are flagged `estimated`.
 function ymdUTC(dt){
   return dt.getUTCFullYear() + '-' +
     String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' +
@@ -3384,11 +2866,7 @@ function netWorthEvents(){
   const ev = [];
   (state.transactions || []).forEach(t => {
     const k = nwDayKey(t && t.date); if (!k) return;
-    // A sell returns proceeds but removes cost basis. realized = proceeds -
-    // cost, so the cost that leaves the book is (amount - realized).
-    // Income is recorded against the holding that paid it, but the money
-    // itself is either in a cash account already (its own leg) or was never
-    // tracked. Counting it here would be the same rupees twice.
+    // A sell removes (amount - realized) of cost. Income is skipped: its cash is counted elsewhere.
     if (t.txType === 'income') return;
     const v = t.txType === 'sell'
       ? -(num(t.amount) - num(t.realized))
@@ -3413,9 +2891,7 @@ function buildNetWorthSeries(){
   (state.pnlHistory || []).forEach(pt => { const k = nwDayKey(pt && pt.date); if (k) snaps.set(k, num(pt.netWorth)); });
   const events = netWorthEvents();
   const today = todayStr();
-  // One recorded figure and today's live one are two real points and a line
-  // worth drawing. Requiring two recordings meant a brand-new account showed
-  // nothing at all until it had been opened on two separate days.
+  // One recording plus today is already a line.
   if (!events.length && !snaps.size) return [];
 
   const sig = events.length + ':' + (events[0] ? events[0].d : '') + ':' + snaps.size + ':' + today
@@ -3430,27 +2906,13 @@ function buildNetWorthSeries(){
   const start = new Date(startKey + 'T00:00:00Z');
   const end = new Date(today + 'T00:00:00Z');
   const days = Math.max(1, Math.round((end - start) / DAY) + 1);
-  // Cap the point count: a five-year ledger should not push 1800 points into a
-  // chart that is 84px tall.
-  // One point per day. The step used to be set by how LONG the whole ledger
-  // is, so a five-year history was sampled every fifteen days and the 1W pill
-  // then had nothing inside its window to draw. How coarse to draw is a
-  // question about the range being LOOKED at, and it is answered after the
-  // filter instead, in nwStepForRange().
+  // One point per day; thinning is per range (nwStepForRange).
   const step = Math.max(1, Math.ceil(days / 2200));
 
   const out = [];
   let running = 0, ei = 0;
-  // A day with no snapshot used to take the ledger's running total outright.
-  // Where the ledger does not account for everything, which is any holding
-  // typed in with a value rather than built up from transactions, that total
-  // is far below the truth, so the line plunged between recorded days and
-  // climbed back on each one: a chart full of crashes that never happened.
-  //
-  // Anchored instead: a day in between moves by what the ledger DID since the
-  // last figure we actually know, not by the ledger's absolute total. When
-  // the ledger explains everything the two are identical; when it explains
-  // nothing the line holds its level, which is the honest answer.
+  // Between known figures, move by what the ledger did since the last one rather than
+  // taking its absolute total, which misses holdings typed in by value.
   let anchorValue = null, anchorRunning = 0;
   for (let i = 0; i < days; i += step) {
     const key = ymdUTC(new Date(start.getTime() + i * DAY));
@@ -3471,21 +2933,9 @@ function buildNetWorthSeries(){
   _nwSeriesCache = out; _nwSeriesSig = sig;
   return out;
 }
-// ════════ DAILY PROFIT AND LOSS ════════
-// What a day made or lost, which is not the same as what changed hands.
-// Paying Rs.10,000 into an account raises its value by Rs.10,000 and earns
-// nothing; selling a coin lowers the holding's value by the proceeds and
-// earns nothing at the moment of sale. So a day's profit is the change in
-// what the holdings are worth MINUS the money that moved in or out of them:
-//
-//   pnl(day) = value(day) - value(day-1) - (bought - sold)
-//
-// Interest and dividends are deliberately not treated as money moving in:
-// they raise the value and they are genuinely earnings.
-//
-// Every figure comes from a snapshot that was actually taken. A day the app
-// was never opened has no reading and gets no bar and no square, rather than
-// a number worked out from a guess.
+// DAILY PROFIT AND LOSS
+// pnl(day) = value(day) - value(day-1) - (bought - sold). Interest and dividends
+// count as earnings. Days without a real reading are absent.
 function pnlScopeAssets(scope){
   const all=state.assets||[];
   if(!scope||scope==='all')return all;
@@ -3500,14 +2950,11 @@ function pnlScopeLabel(scope){
   }
   return catLabel(scope);
 }
-// Money in and out of a set of holdings, by day. A sale takes its proceeds
-// out; a purchase puts its cost in; income is left out because it is profit.
+// Money in and out of a set of holdings, by day. Income is excluded.
 function pnlFlowsByDay(ids){
   const flows={};
   (state.transactions||[]).forEach(t=>{
-    // A transfer between two accounts is money leaving one and arriving in
-    // the other, so it is a flow for each of them and no profit for either.
-    // Across a scope that holds both ends it cancels out on its own.
+    // A transfer is a flow for each side; within one scope it cancels.
     if(!t)return;
     if(t.txType==='income')return;
     if(!ids.has(t.assetId))return;
@@ -3516,27 +2963,14 @@ function pnlFlowsByDay(ids){
   });
   return flows;
 }
-// [{date, pnl, value}] for every day two consecutive readings exist for,
-// oldest first. Days without a reading are simply absent.
+// [{date, pnl, value}] for each pair of consecutive readings, oldest first.
 function dailyPnlSeries(scope){
   const list=pnlScopeAssets(scope);
   if(!list.length)return [];
   const ids=new Set(list.map(a=>a.id));
   const isAll=!scope||scope==='all';
-  // A reading only started carrying a value per holding recently. Every day
-  // before that has one number on it, the net worth - and for one holding or
-  // one category that is not enough, because a total cannot be taken apart.
-  //
-  // For EVERYTHING it is enough, though, and this is the difference between
-  // a card that fills in tomorrow and one that fills in across every day the
-  // app has ever recorded. Net worth is what the holdings are worth plus
-  // what is owed to you minus what you owe, and the debts are all dated:
-  // when each was taken on, when each repayment landed, what interest has
-  // run. So the two sides can be separated again:
-  //
-  //     holdings = net worth - owed to you + what you owe
-  //
-  // replayed for that day rather than guessed at.
+  // Older readings have only the net worth. For scope 'all' the holdings are recovered
+  // as net worth - owed to you + what you owe, with debts replayed for that day.
   const valOf=p=>{
     if(p.assets){let v=0;ids.forEach(id=>{v+=num(p.assets[id]);});return v;}
     if(!isAll)return null;
@@ -3563,9 +2997,7 @@ function pnlByDayMap(series){
   (series||[]).forEach(p=>{if(p&&p.date)m.set(p.date,p);});
   return m;
 }
-// A calendar square is about forty pixels across. The figure inside drops the
-// currency symbol, since the card above already says what currency this is,
-// and shortens hard: +1,247 reads as +1.2K while +6.68 stays +6.68.
+// Compact, symbol-free figure for a ~40px calendar cell.
 function pnlCellNum(v){
   if(state.settings.hideBalance)return '••';
   const a=Math.abs(num(v)*getCurrRate(currentCurrency.code));
@@ -3576,11 +3008,8 @@ function pnlCellNum(v){
   if(a>=1e3)return (a/1e3).toFixed(1)+'K';
   return a<10?a.toFixed(2):a.toFixed(0);
 }
-// ── The card itself ──
-// One component, three scopes. The dashboard opens it on everything, the
-// scope chips narrow it to one kind of holding, and an asset's own sheet
-// opens it on that holding alone. Two ways to read the same numbers: a month
-// at a glance, or a bar per day across the range the page is already set to.
+// The card: one component, three scopes (all, category, one holding), shown as a
+// month calendar or daily bars.
 let pnlCalView='cal';        // 'cal' | 'bar'
 let pnlCalScope='all';
 let pnlCalMonth=null;        // its own anchor, browsing here moves nothing else
@@ -3605,20 +3034,14 @@ function pickPnlDay(key){
   pnlCalPicked=(pnlCalPicked===key)?null:key;
   haptic('tap');renderPnlCal();
 }
-// The range pills the page already shows decide how far the bars go back, so
-// the two never disagree about what "this month" means.
+// Bars follow the page's range pills.
 function pnlRangeDays(){
   const r=currentPnlRange||'1M';
   return {'1D':2,'1W':7,'1M':30,'3M':90,'6M':180,'1Y':365,'5Y':1825,'ALL':100000,'all':100000}[r]
     ||{'1d':2,'1w':7,'1m':30,'3m':90,'6m':180,'1y':365,'5y':1825}[String(r).toLowerCase()]||30;
 }
-// The card is one element that moves: the dashboard shows it for everything,
-// an asset's sheet moves it inside and scopes it to that holding. Moving the
-// node rather than keeping two of them means one set of ids, one renderer,
-// and no chance of the two drifting apart.
-// Back to the dashboard. Called before an asset sheet rebuilds its markup,
-// because that rebuild replaces everything inside it — including this card,
-// if it were still there — and the card would be gone for good.
+// The card is one node moved between the dashboard and an asset sheet.
+// Move it back before the sheet rebuilds, or it is destroyed with the markup.
 function parkPnlCal(){
   const card=el('pnlCalCard'),home=el('pnlCalHome');
   if(!card||!home)return;
@@ -3636,8 +3059,7 @@ function mountPnlCal(where,assetId){
     if(pnlCalHost!==assetId){pnlCalHost=assetId;pnlCalPicked=null;}
     pnlCalScope='asset:'+assetId;
   }else{
-    // A dashboard redraw while the sheet is open must not take the card
-    // out from under it.
+    // Don't pull the card out of an open asset sheet.
     const m=el('assetDetailModal');
     if(m&&m.classList.contains('open')&&card.closest('#adPnlCalSlot'))return;
     parkPnlCal();
@@ -3680,18 +3102,11 @@ function renderPnlCal(){
 
   const empty=el('pnlCalEmpty');
   if(!series.length){
-    // Three different reasons there is nothing to draw, and they were all
-    // saying the same thing: "nothing recorded for Everything", which reads
-    // as "your holdings have no history" when usually the history is there
-    // and it is the per-holding detail that is not. A day's P&L is the
-    // difference between two days' worth of each holding, so it needs a
-    // value per holding on two days running - and readings only started
-    // carrying one recently, so every day before that has the total and
-    // nothing else.
+    // Four distinct empty states: no history, no per-holding values, only one detailed
+    // day, or no movement.
     const days=(state.pnlHistory||[]).length;
     const isAll=!scope||scope==='all';
-    // Everything reads straight off the net worth on every day ever recorded,
-    // so for it the only thing that can be missing is days.
+    // 'all' works from net worth, so only days can be missing.
     const detailed=isAll?days
       :(state.pnlHistory||[]).filter(p=>p&&p.assets&&Object.keys(p.assets).length).length;
     if(empty){empty.hidden=false;
@@ -3729,8 +3144,7 @@ function renderPnlCalGrid(byDay){
   if(nx){const now=new Date();const future=y>now.getFullYear()||(y===now.getFullYear()&&m>=now.getMonth());
     nx.disabled=future;nx.style.opacity=future?'.3':'';}
 
-  // The biggest move in the month sets the scale, so a quiet month is not
-  // painted the same as a violent one.
+  // The month's biggest move sets the colour scale.
   let peak=0;
   for(let d=1;d<=dim;d++){const p=byDay.get(dayKey(new Date(y,m,d)));if(p)peak=Math.max(peak,Math.abs(p.pnl));}
 
@@ -3813,16 +3227,13 @@ function renderPnlCalBars(series){
       +(best&&best.pnl>0?`<div class="pnl-foot-cell"><b style="color:var(--green)">+${pnlCellNum(best.pnl)}</b><span>best day</span></div>`:'');
   }
 }
-// The same colours the donut and category table already use, in one place so
-// every report that splits by category agrees.
+// Shared category colours for every report.
 const CAT_COLORS = { crypto:'#f5a623', stock:'#4a9eff', commodity:'#ffd700',
                      liquidity:'#16d6a4', property:'#a78bfa', other:'#ff7b3a' };
 const CAT_ORDER = ['crypto','stock','commodity','liquidity','property','other'];
 
-// Walk the ledger day by day, carrying one running total per bucket, and
-// sample at most `maxPoints` dates. Shared by every time-series report so they
-// all land on identical dates and can be read side by side.
-// events: [{ d:'YYYY-MM-DD', bucket:string, v:number }]
+// Running total per bucket, sampled to at most maxPoints dates, so reports align.
+// events: [{ d:'YYYY-MM-DD', bucket, v }]
 function accumulateByBucket(events, buckets, maxPoints){
   const today = todayStr();
   const dated = events.filter(e => e && e.d).sort((a,b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
@@ -3853,8 +3264,7 @@ function accumulateByBucket(events, buckets, maxPoints){
   return { dates, series: out };
 }
 
-// How the portfolio mix shifted over time, at cost basis. Exact from the
-// ledger: every transaction carries a category, a date and an amount.
+// Portfolio mix over time at cost basis, from the ledger.
 function buildCompositionSeries(){
   const ev = [];
   (state.transactions || []).forEach(t => {
@@ -3871,9 +3281,7 @@ function buildCompositionSeries(){
   return active.length ? { dates: res.dates, cats: active, series: res.series } : null;
 }
 
-// Lending is a first-class part of this app, so it deserves its own history:
-// what people owe you against what you owe, over time, from lend and payment
-// dates. Interest is not accrued per-date here, this is principal outstanding.
+// Principal owed to you vs owed by you over time (no interest).
 function buildDebtSeries(){
   const ev = [];
   (state.debts || []).forEach(dbt => {
@@ -3889,11 +3297,7 @@ function buildDebtSeries(){
   const any = res.series.owed.some(v => v > 0.005) || res.series.iowe.some(v => v > 0.005);
   return any ? { dates: res.dates, series: res.series } : null;
 }
-// Start of the selected window. One definition, used by both the chart and the
-// P&L figure beside it; these were two separate copies of the same if/else
-// chain, so a new range had to be added twice or the two would disagree.
-// 'ytd' is no longer offered as a pill, but stays here so a device that had it
-// selected still resolves the range instead of silently falling back to 'all'.
+// Window start, shared by the chart and its P&L figure. 'ytd' kept for devices that still have it selected.
 const PNL_RANGES = ['1d','7d','30d','3m','6m','ytd','1y','5y','all','custom'];
 function rangeCutDate(range){
   const now = new Date(), cut = new Date();
@@ -3917,14 +3321,8 @@ function rangeLabel(range){
            '6m':'past 6 months', 'ytd':'year to date', '1y':'past year', '5y':'past 5 years',
            'all':'all time', 'custom':'selected range' }[range] || '';
 }
-// ════════ ALLOCATION TARGETS & REBALANCE ════════
-// You pick a target weight per category; this works out how far each one has
-// drifted and what to buy to close the gap. Everything is derived from
-// holdings you already have, and nothing is ever sold automatically, the plan
-// only ever suggests where new money should go, which is the safe direction to
-// be wrong in.
-//
-// Targets live in settings so they ride the existing sync and export paths.
+// ALLOCATION TARGETS & REBALANCE
+// Target weight per category; the plan only suggests buys, never sells.
 function allocTargets(){ return (state.settings && state.settings.allocTargets) || {}; }
 function setAllocTarget(cat, pct){
   if (!state.settings.allocTargets) state.settings.allocTargets = {};
@@ -3950,8 +3348,7 @@ function allocCurrentByCat(){
   return by;
 }
 
-// Per-category drift, plus a buy-only plan to reach the targets.
-// Returns null when no targets are set, so callers can show the empty state.
+// Per-category drift plus a buy-only plan; null when no targets are set.
 function buildRebalancePlan(extraCash){
   const targets = allocTargets();
   const cats = Object.keys(targets).filter(c => num(targets[c]) > 0);
@@ -3963,8 +3360,7 @@ function buildRebalancePlan(extraCash){
 
   const targetSum = cats.reduce((s, c) => s + num(targets[c]), 0);
   const rows = cats.map(c => {
-    // Normalise against whatever the targets add up to, so a set that does not
-    // total 100% still produces sane relative weights instead of nonsense.
+    // Normalise so targets need not total 100%.
     const targetPct = num(targets[c]) / targetSum * 100;
     const currentPct = by[c] / total * 100;
     return { cat: c, value: by[c], currentPct, targetPct, driftPct: currentPct - targetPct };
@@ -3972,8 +3368,7 @@ function buildRebalancePlan(extraCash){
 
   const maxDrift = rows.reduce((m, r) => Math.max(m, Math.abs(r.driftPct)), 0);
 
-  // Buy-only plan: with `cash` added, how much goes to each underweight
-  // category to get as close to target as possible without selling anything.
+  // How much of `cash` goes to each underweight category.
   const cash = Math.max(0, num(extraCash));
   const after = total + cash;
   const buys = [];
@@ -4004,17 +3399,11 @@ function buildRebalancePlan(extraCash){
   return { rows, buys, total, cash, maxDrift, maxDriftAfter,
            targetSum, unallocatedPct: Math.max(0, 100 - targetSum) };
 }
-// ════════ REALISED vs UNREALISED P&L ════════
-// Every sell already stores `realized` (proceeds minus the cost basis that
-// left the book), but nothing surfaced it: the app only ever showed one P&L
-// number, which was the unrealised mark-to-market on what you still hold.
-// Money you actually banked was invisible.
+// REALISED vs UNREALISED P&L
 function buildPnLSplit(){
   const sells = (state.transactions || []).filter(t => t && t.txType === 'sell' && t.realized != null);
   const realized = sells.reduce((s, t) => s + num(t.realized), 0);
-  // Unrealised is only meaningful where a live price exists; getAssetPnL()
-  // returns null for liquidity and for anything unpriced, and those are
-  // skipped rather than counted as zero gain.
+  // Unpriced holdings are skipped, not counted as zero gain.
   let unrealized = 0, pricedCost = 0, priced = 0, unpriced = 0;
   (state.assets || []).forEach(a => {
     const p = getAssetPnL(a);
@@ -4039,9 +3428,7 @@ function buildPnLSplit(){
   };
 }
 
-// ════════ RECEIVABLES AGEING ════════
-// How long money you are owed has been outstanding, and how much of it is past
-// its due date. Bucketed the way a ledger would age an invoice.
+// RECEIVABLES AGEING
 const AGE_BUCKETS = [
   { key:'0-30',  label:'Under 30d', max:30 },
   { key:'31-60', label:'31-60d',    max:60 },
@@ -4077,36 +3464,19 @@ function buildDebtAgeing(type){
            overdueCount: overdue.length,
            noDueCount: rows.filter(r => !r.hasDue).length };
 }
-// How far apart the points should be, per range. A week reads day by day; a
-// year every fifth day, which is fifty-odd points rather than three hundred
-// and sixty-five crammed into a chart 84px tall.
+// Days between points per range.
 const NW_STEP_DAYS={'1d':1,'7d':1,'30d':2,'3m':3,'6m':4,'ytd':4,'1y':5,'5y':10};
 function nwStepForRange(range,count){
   const fixed=NW_STEP_DAYS[range];
   if(fixed)return fixed;
-  // "All" and a custom window have no fixed answer, so aim for a readable
-  // number of points whatever the span turns out to be.
+  // All/custom: aim for about 120 points.
   return Math.max(1,Math.ceil(count/120));
 }
-// Thin the series to one point per step, but NEVER at the cost of a real
-// reading.
-//
-// Taking every nth point threw away the days that actually mattered. With a
-// reading on the 10th, 13th, 15th and 18th and a two-day step, the chart
-// plotted the 10th, 12th, 14th, 16th and 18th: the 13th and the 15th, the
-// two days the price genuinely moved, were dropped and replaced by filler
-// carrying the previous value. The line still went up and down, but not on
-// the days it really did, which is the opposite of the point.
-//
-// Each bucket now gives up its measured point if it has one, and only falls
-// back to filler when nobody was there to look. The last point is always
-// kept: the right-hand end of the line is today, and the figure printed
-// above the chart is today's.
+// Thin to one point per step, preferring a real reading in each bucket over filler.
+// The last point (today) is always kept.
 function sampleForRange(arr,n){
   if(n<=1||arr.length<=2)return arr;
-  // Today is appended on its own at the end, so it is held out of the
-  // bucketing: in the last bucket it would otherwise win over yesterday's
-  // reading and swallow it.
+  // Today is appended separately so it cannot displace yesterday's reading.
   const body=arr.slice(0,-1),last=arr[arr.length-1];
   const out=[];
   for(let i=0;i<body.length;i+=n){
@@ -4119,8 +3489,7 @@ function sampleForRange(arr,n){
   return out;
 }
 function getFilteredHistory(){
-  // Today is the one range a daily series cannot draw: it has two points in
-  // it at best. The two-hourly readings are what that view is for.
+  // 1D is drawn from the two-hourly readings.
   if(currentPnlRange==='1d'){
     const floor=Date.now()-26*3600*1000;
     const intra=(state.intraday||[]).filter(x=>x&&x.t>=floor);
@@ -4130,44 +3499,30 @@ function getFilteredHistory(){
   if (!hist.length) return [];
   const cut = rangeCutDate(currentPnlRange);
   const win = cut ? hist.filter(p => p.date >= ymdUTC(cut)) : hist;
-  // A window with one point in it is not a line. Fall back to the last two
-  // readings there are, so a 1D view on an account recorded yesterday still
-  // draws something true rather than nothing.
+  // One point is not a line; use the last two readings.
   const pts = win.length>=2 ? win : hist.slice(-2);
   return sampleForRange(pts, nwStepForRange(currentPnlRange, pts.length));
 }
 function nwYesterday(){if(!state.pnlHistory||state.pnlHistory.length<2)return null;const today=todayStr();const prev=[...state.pnlHistory].reverse().find(p=>p.date!==today);return prev?num(prev.netWorth):null;}
-// ════════ COUNT-UP ════════
+// COUNT-UP
 const lastNum={};
 const _numRaf={};
 function animateNum(id,to,fmtFn){const e=el(id);if(!e)return;const f=fmtFn||fmt;
-  // Every renderDashboard() calls this 4x, and renderAll() runs from 32 places.
-  // Without cancelling, each call spawned a NEW rAF chain while old ones were
-  // still running, so a burst of renders left several loops writing to the
-  // same element every frame, wasted CPU and visibly janky numbers.
+  // Cancel the previous count-up so renders don't stack loops.
   if(_numRaf[id]){cancelAnimationFrame(_numRaf[id]);_numRaf[id]=null;}
   if(state.settings.hideBalance||state.settings.reduceMotion){e.textContent=f(to);lastNum[id]=to;return;}
   const from=lastNum[id]||0;lastNum[id]=to;if(Math.abs(to-from)<0.5){e.textContent=f(to);return;}const dur=600,t0=performance.now();
   function step(t){const k=Math.min(1,(t-t0)/dur),e2=1-Math.pow(1-k,3),v=from+(to-from)*e2;e.textContent=f(v);if(k<1){_numRaf[id]=requestAnimationFrame(step);}else{_numRaf[id]=null;e.textContent=f(to);}}
   _numRaf[id]=requestAnimationFrame(step);}
-// ════════ DASHBOARD ════════
+// DASHBOARD
 function renderDashboard(){
   const ta=state.assets.reduce((s,a)=>s+getAssetCurrentValue(a),0),to=state.debts.filter(d=>d.type==='owed').reduce((s,d)=>s+debtRemaining(d),0),ti=state.debts.filter(d=>d.type==='iowe').reduce((s,d)=>s+debtRemaining(d),0),nw=ta+to-ti;
-  // Two different questions, and they had been answering both with one
-  // number. How the holdings have done is profit and loss and does not depend
-  // on a date range. How much the net worth has moved since some date does,
-  // and counts money simply put in or taken out, which is not profit at all.
+  // Holding P&L (range-independent) and net-worth change (range-dependent, includes
+  // deposits) are separate figures.
   const PL=portfolioPnL();
-  // Same reconstructed series the chart uses. Reading pnlHistory directly meant
-  // the range pills did nothing at all until the app had been opened on enough
-  // separate days to have snapshots to compare.
+  // Same reconstructed series as the chart.
   const hist=buildNetWorthSeries();
-  // The change over the selected window: net worth now against net worth
-  // when the window opened. On "All" that is the earliest record there is,
-  // so every range answers the same question and none of them pretends to be
-  // profit. num() guards a snapshot from an older version, a truncated backup
-  // or a hand-edited export; without it one missing `netWorth` turns the whole
-  // card into NaN.
+  // Change over the window: now vs when it opened.
   let pnlBase=null;
   if(hist.length){
     if(currentPnlRange==='all'){pnlBase=num(hist[0].netWorth);}
@@ -4179,37 +3534,24 @@ function renderDashboard(){
     }
   }
   const rangeChange=pnlBase!==null?(nw-pnlBase):PL.pnl;
-  // Measured against where the window started, so the percentage belongs to
-  // the same period as the number beside it.
+  // Relative to the window start.
   const badgePct=(pnlBase!==null&&pnlBase>0)?(rangeChange/pnlBase)*100:PL.pct;
   const pos=rangeChange>=0;
   animateNum('nwAmount',nw);el('nwAssets').textContent=fmt(ta);el('nwLiab').textContent=fmt(ti);
-  // The card was carrying three different change figures at once: this one
-  // for today, the badge for the selected range, and the amount beside it.
-  // Today already has its own chip in the strip below, so the label goes
-  // back to being a label.
   {const note=el('nwTrendNote');if(note)note.textContent='';}
   const badge=el('nwBadge');badge.className='nw-badge '+(pos?'pos':'neg');badge.setAttribute('aria-label',(pos?'Up ':'Down ')+Math.abs(badgePct).toFixed(2)+'%, '+rangeLabel(currentPnlRange));badge.innerHTML=(pos?`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`:`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>`)+(pos?'+':'')+badgePct.toFixed(2)+'%';
   const chg=el('nwChange');
   chg.className='nw-change '+(pos?'pos':'neg');
   chg.textContent=state.settings.hideBalance?fmt(rangeChange):(pos?'+':'\u2212')+fmt(Math.abs(rangeChange));
-  // Two numbers were sitting there with nothing saying what they were a
-  // change since, or how they differed from the profit on the holdings
-  // themselves. Both are spelled out now.
   {const since=el('nwSince');
    if(since)since.textContent='Change in net worth, '+(rangeLabel(currentPnlRange)||'all time');}
   {const gain=PL.pnl, pnlEl=el('nwPnl'), wrap=el('nwPnlWrap'), dot=el('nwPnlDot');
-   // Nothing bought and nothing earning: there is no profit or loss to have
-   // an opinion about, so the figure stays off rather than reading zero.
+   // Nothing bought or earning: hide the figure.
    const show=PL.invested>0&&(Math.abs(PL.pnl)>0.005||state.assets.some(a=>a.category!=='liquidity'));
    if(wrap)wrap.style.display=show?'':'none';
    if(dot)dot.style.display=show?'':'none';
    if(pnlEl&&show){pnlEl.textContent=(gain>=0?'+':'\u2212')+fmt(Math.abs(gain));
      pnlEl.style.color=gain>=0?'var(--green)':'var(--red)';}}
-  // These four used to be their own row of tiles under the range pills,
-  // saying the same kind of thing as the chip strip above it in a second
-  // shape. They are chips now, in the one place the dashboard summarises
-  // itself, and the row is gone.
   let best=null,worst=null;state.assets.forEach(a=>{const p=getAssetPnLPct(a);if(p===null)return;if(best===null||p>best.pct)best={name:a.name,pct:p};if(worst===null||p<worst.pct)worst={name:a.name,pct:p};});
   animateNum('statAssets',ta);el('statAssetsCount').textContent=plural(state.assets.length,'asset');
   const toR=state.debts.filter(d=>d.type==='owed').reduce((s,d)=>s+debtRemaining(d),0);
@@ -4226,14 +3568,7 @@ function renderTopMovers(){const card=el('moversCard'),sc=el('moversScroll');if(
   items.sort((x,y)=>Math.abs(y.chg)-Math.abs(x.chg));card.style.display='block';
   sc.innerHTML=items.slice(0,10).map(m=>{const p=m.chg>=0;return `<div class="mover" role="button" tabindex="0"><div class="mover-top">${m.img?`<img src="${m.img}" onerror="this.onerror=null;this.style.display='none'" loading="lazy" decoding="async"/>`:''}<span class="mover-sym">${esc(m.sym)}</span></div><div class="mover-row"><span class="mover-price">${fmt(m.price)}</span><span class="mover-chg ${p?'green':'red'}">${p?'▲ +':'▼ '}${Math.abs(m.chg).toFixed(2)}%</span></div></div>`;}).join('');}
 const sharedCrosshairPlugin={id:'crosshair',afterDraw(chart){if(chart._hoverX==null)return;const{ctx,chartArea:{top,bottom}}=chart;ctx.save();ctx.strokeStyle='rgba(128,128,128,.3)';ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(chart._hoverX,top);ctx.lineTo(chart._hoverX,bottom);ctx.stroke();ctx.restore();}};
-// A line chart left to its own devices anchors the axis at zero, so a portfolio
-// that started from nothing sits flat along the very bottom edge of the card
-// and then spikes. The shape is real but unreadable: all the movement gets
-// squashed into the top few pixels.
-// Fitting the axis to the data instead, with padding on both sides, lets the
-// line use the full height and keeps it off the floor. Only for the two
-// sparklines, which have no visible axis; bar charts must keep their zero
-// baseline or the bar lengths stop meaning anything.
+// Fit the axis to the data with padding (sparklines only; bars keep zero).
 function paddedYRange(values, padRatio){
   const nums = (values || []).filter(v => Number.isFinite(v));
   if (!nums.length) return {};
@@ -4246,10 +3581,6 @@ function paddedYRange(values, padRatio){
   const pad = (max - min) * (padRatio || 0.18);
   return { min: min - pad, max: max + pad };
 }
-// A tooltip that says only "Rs.123" and a raw ISO date answers the least
-// interesting question. What a person wants off a net-worth line is: what
-// was it worth, when exactly, how far had it moved by then, and what did
-// that day do on its own.
 function fmtTipDate(iso,withTime){
   const dte=new Date(iso);
   if(isNaN(dte))return String(iso||'');
@@ -4265,15 +3596,13 @@ function buildHoverTooltip(ctx,tooltipElId,labelForIndex,opts){
   const o=opts||{};
   const i=p[0].dataIndex,val=p[0].parsed.y;
   const raw=labelForIndex(i)||'';
-  // 1D is the only window where a time of day is meaningful; on a year of
-  // daily closes the clock is noise.
+  // Time of day only on 1D.
   const withTime=o.withTime!==undefined?o.withTime:(currentPnlRange==='1d');
   const series=o.series||[];
   const first=series.length?series[0]:null;
   const prev=i>0?series[i-1]:null;
   let rows='';
-  // A row that reads "+Rs.0.00 (+0.00%)" on every flat day is worse than no
-  // row, so a day that did nothing says so once instead.
+  // Flat days say so once instead of +0.00.
   if(prev!=null&&Number.isFinite(prev)&&Math.abs(val-prev)>=0.005){
     const dd=val-prev,pct=prev!==0?(dd/Math.abs(prev))*100:null;
     const up=dd>=0;
@@ -4295,53 +3624,26 @@ function buildHoverTooltip(ctx,tooltipElId,labelForIndex,opts){
     +(raw?`<div class="tip-date">${esc(fmtTipDate(raw,withTime))}</div>`:'')
     +(rows?`<div class="tip-rows">${rows}</div>`:'');
   t.classList.add('show');
-  // Was pinned 24px BELOW the point, which on an 84px sparkline put it off
-  // the bottom of the card more often than not. Sits above the point now,
-  // clamped so it never hangs outside the chart on the first or last reading,
-  // and flips below when there is no room above it.
+  // Above the point, clamped inside the chart; flips below when there is no room.
   const host=t.parentElement;if(!host)return;
   const hw=host.clientWidth,hh=host.clientHeight;
   const tw=t.offsetWidth||110,th=t.offsetHeight||30;
   t.style.left=Math.max(tw/2+4,Math.min(m.caretX,hw-tw/2-4))+'px';
-  // Prefer above the point. The readout is taller than an 84px sparkline, so
-  // when there is no room it sits over the card rather than being clipped,
-  // and only flips below when even that would run off the top of the card.
+  // May overflow the chart onto the card rather than clip.
   const card=host.closest('.card,.nw-card,.chart-card')||host;
   const room=host.getBoundingClientRect().top-card.getBoundingClientRect().top;
   const above=m.caretY-th-10;
   t.style.top=(above>=-room+4?above:Math.min(hh-th-2,m.caretY+12))+'px';
 }
-// Chart.js instances are destroyed and rebuilt from scratch on every call,
-// each with its own entry animation. renderAll() fires from ~32 places, so on
-// a busy screen that meant tearing down and re-creating every chart many
-// times a second, the single biggest cause of the page feeling laggy and the
-// phone getting warm. These guards skip the rebuild entirely when the data
-// behind a chart hasn't actually changed.
+// Skip rebuilding a chart when its data has not changed.
 const _chartSig={};
-// Values used in a cache signature must be quantised first. A liquidity asset
-// with an interest rate accrues continuously, so getAssetCurrentValue() returns
-// a different number every millisecond, down in the 11th decimal place. That
-// made both dashboard signatures unique on every single call, so the cache
-// never hit once and the mini chart and donut were destroyed and rebuilt from
-// scratch on every render, each running a 550ms animation. Anyone holding a
-// savings account, which is most people, paid that on every price refresh.
-// A fraction of a rupee is not a visible change on an 84px sparkline.
+// Round before signing: accruing interest changes values every millisecond.
 function chartSigNum(v){return Math.round(num(v));}
 function chartUnchanged(key,sig){if(_chartSig[key]===sig)return true;_chartSig[key]=sig;return false;}
 function invalidateCharts(){for(const k in _chartSig)delete _chartSig[k];_chartGen++;}
 
-// ── DEFERRED CHARTS ───────────────────────────────────────────────────────
-// The Reports page is about four screens tall and used to build all seven of
-// its Chart.js instances the moment you opened it, including the ones three
-// thousand pixels below the fold. Chart construction is the expensive part
-// (measured: 47ms of a 68ms page switch on a 129-asset portfolio, and a
-// mid-range phone is several times slower than that), and most of it was for
-// pictures nobody was looking at yet.
-//
-// So each chart registers itself instead, and builds the first time its
-// section comes near the viewport. Opening the page pays for what is on
-// screen; the rest arrives as you scroll, ahead of you by 400px so it is
-// already there when you get to it.
+// DEFERRED CHARTS
+// Charts build when their section nears the viewport (400px ahead), not all on page open.
 let _chartGen=0;
 const _deferSlots=new Map();
 let _deferObserver=null;
@@ -4358,13 +3660,8 @@ function deferObserver(){
   },{rootMargin:'400px 0px',threshold:0});
   return _deferObserver;
 }
-// Register a builder against the element that holds the chart. Runs now if
-// the element is already on screen, otherwise when it gets close.
-// `redraw` says this chart no longer exists and must be built again whatever
-// generation it was last drawn at. Without it, a chart destroyed while its
-// card was hidden stayed destroyed: the slot still claimed to have been drawn
-// at the current generation, so clearing a budget and setting a new one gave
-// back the card with an empty space where its pace chart should be.
+// Build now if on screen, else when close. `redraw` forces a rebuild of a chart
+// destroyed while hidden.
 function deferChart(node,fn,redraw){
   if(!node){try{fn();}catch(e){}return;}
   const ob=deferObserver();
@@ -4373,18 +3670,12 @@ function deferChart(node,fn,redraw){
   if(slot){slot.fn=fn;if(redraw)slot.gen=-1;}
   else{_deferSlots.set(node,{fn,gen:-1});ob.observe(node);}
 }
-// Draw every registered chart that is on or near the screen and has not been
-// drawn at the current generation. Called at the end of the render that
-// registers them, so a visible chart never waits a frame for the observer,
-// and, because it runs AFTER registration, it always uses the builders that
-// were just handed the current currency, rate and theme rather than the ones
-// captured before the change.
+// Draw registered charts on or near screen, after registration so they use current settings.
 function drawVisibleDeferred(){
   if(!_deferObserver)return;
   _deferSlots.forEach((slot,node)=>{
     if(!node.isConnected){_deferSlots.delete(node);return;}
-    // Rect check rather than waiting for the observer, which only fires on a
-    // crossing and would leave a visible chart stale until you scrolled.
+    // Rect check; the observer only fires on crossings.
     const r=node.getBoundingClientRect();
     if(slot.gen!==_chartGen&&r.bottom>-400&&r.top<(window.innerHeight||0)+400&&r.width>0){
       slot.gen=_chartGen;
@@ -4395,21 +3686,12 @@ function drawVisibleDeferred(){
 function renderMiniChart(nw){const c=el('miniChart');if(!c||!window.Chart)return;
   if(miniChartInst&&chartUnchanged('mini',getFilteredHistory().map(p=>chartSigNum(p.netWorth)).join(',')+'|'+chartSigNum(nw)+'|'+state.settings.theme))return;
   const hist=getFilteredHistory();
-  // Array(12).fill(nw) used to stand in for missing history: twelve copies of
-  // today's number, drawn as a confident flat line. That is a picture of data
-  // that does not exist, so it was replaced with a message, and a card with
-  // nothing in it reads as broken.
-  //
-  // Both were wrong in the same way: twelve invented points overstate what is
-  // known, an empty box understates it. One recorded figure is one real point
-  // and today's total is another, so the line is drawn from what there is and
-  // it is flat when nothing has moved, which is the truth. A caption says how
-  // thin the history still is rather than a wall standing in for the chart.
+  // Draw from real points only (history plus today); flat if nothing moved, with a
+  // caption when history is thin.
   const thin=hist.length<2;
   c.style.display='';
   {const box=c.parentElement;if(box){const n=box.querySelector(':scope > .chart-empty');if(n)n.remove();box.classList.remove('chart-na-host');}}
-  // After the chart box, not inside it: the box is a fixed 84px of chart and
-  // anything appended to it was drawn clipped by its own bottom edge.
+  // After the fixed-height chart box, not inside it.
   {const box=c.parentElement,host=box&&box.parentElement;
    if(host){
      let cap=host.querySelector(':scope > .chart-thin');
@@ -4431,9 +3713,7 @@ function renderDonut(ta){
   body.innerHTML=`<div class="alloc-body"><div class="donut-wrap"><canvas id="donutChart" role="img" aria-label="Allocation chart"></canvas><div class="donut-center"><div class="dc-val">${entries.length}</div><div class="dc-lbl">${allocMode==='asset'?'assets':'types'}</div></div></div><div class="alloc-legend" id="allocLegend"></div></div>`;
   const c=el('donutChart');if(donutChartInst){try{donutChartInst.destroy();}catch(e){}donutChartInst=null;}
   el('allocLegend').innerHTML=entries.map(([k,v],i)=>`<div class="legend-item"><span class="legend-dot" style="background:${colors[i]}"></span><span class="legend-name">${esc(allocMode==='asset'?k:catLabel(k))}</span><span class="legend-pct">${ta>0?(v/ta*100).toFixed(1)+'%':'-'}</span></div>`).join('');
-  // The legend is plain DOM and carries the same numbers as the ring, so it
-  // renders before the Chart.js guard below, otherwise an offline launch or a
-  // blocked CDN left the Allocation card empty apart from its heading.
+  // The legend is DOM; render it even without Chart.js.
   if(!window.Chart)return;
   donutChartInst=new Chart(c,{type:'doughnut',data:{labels:entries.map(([k])=>allocMode==='asset'?k:catLabel(k)),datasets:[{data:entries.map(([,v])=>v),backgroundColor:colors,borderWidth:0,hoverOffset:5}]},options:{responsive:false,cutout:'72%',animation:{duration:state.settings.reduceMotion?0:550},plugins:{legend:{display:false},tooltip:{enabled:false}}}});}
 function setAllocMode(m){allocMode=m;haptic('tap');el('allocSegCat').classList.toggle('on',m==='cat');el('allocSegAsset').classList.toggle('on',m==='asset');renderDonut(state.assets.reduce((s,a)=>s+getAssetCurrentValue(a),0));}
@@ -4441,7 +3721,7 @@ function renderBreakdown(ta,to,ti){const rows=[{label:'Investments & Assets',val
   el('breakdownList').innerHTML=rows.map(r=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">${r.label}</span><span style="font-size:13px;font-weight:700;color:${readableInk(r.color)}">${r.neg?'-':''}${fmt(r.val)}</span></div>`).join('');}
 function renderRecentTx(){const tx=el('recentTx'),recent=[...(state.transactions||[])].filter(t=>!t.transfer).reverse().slice(0,6);if(!recent.length){tx.innerHTML='<div class="empty-state" style="padding:20px"><p>No transactions yet</p></div>';return;}const tm={};ASSET_TYPES.forEach(t=>tm[t.id]=t);
   tx.innerHTML=recent.map((t,i)=>{const type=tm[t.category]||ASSET_TYPES[5],img=t.coinImage||'';let amtClass='neutral';if(t.txType==='sell'&&t.realized!=null)amtClass=t.realized>=0?'sell':'loss';return `<div class="tx-item${enterCls()}" style="animation-delay:${_animateEnter?i*40:0}ms"><div class="tx-icon" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.style.display='none'" loading="lazy"/>`:`<div style="color:${readableInk(type.color)}">${svgIcon(t.icon||'coins',15)}</div>`}</div><div class="tx-info"><div class="tx-name">${esc(txDisplayName(t))}</div><div class="tx-date">${formatDate(t.date)}${t.notes?' · '+esc(t.notes):''}</div></div><div class="tx-vals"><div class="tx-amount ${amtClass}">${fmt(t.amount)}</div><div class="tx-type">${txTypeLabel(t)}${t.qty&&t.category!=='liquidity'?' · '+esc(fmtQty(t.qty,(state.assets||[]).find(x=>x.id===t.assetId)))+' units':''}</div></div></div>`;}).join('');}
-// ════════ ASSETS ════════
+// ASSETS
 function onAssetSearch(){assetQuery=el('assetSearch').value.trim().toLowerCase();renderAssets();}
 function cycleAssetSort(){const i=SORTS.indexOf(assetSort);assetSort=SORTS[(i+1)%SORTS.length];state.settings.assetSort=assetSort;saveState();el('assetSortLbl').textContent=SORT_LBL[assetSort];haptic('tap');renderAssets();}
 function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sbarWrap=el('assetsSummaryBar'),isTable=assetView==='table';list.style.display=isTable?'none':'';tw.style.display=isTable?'block':'none';if(sbarWrap)sbarWrap.style.display=isTable?'none':'';const target=isTable?tw:list;let assets=state.assets.slice();
@@ -4452,10 +3732,7 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
   else if(assetSort==='pnl')assets.sort((a,b)=>(getAssetPnLPct(b)??-1e9)-(getAssetPnLPct(a)??-1e9));
   else if(assetSort==='recent')assets.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
   if(!assets.length){target.innerHTML=state.assets.length&&(assetQuery||activeCat!=='all')?`<div class="empty-state"><div class="empty-ico">${svgIcon('wallet',30)}</div><h3>No matches</h3><p>Try a different search or category filter.</p><button class="empty-cta" onclick="clearAssetFilters()">Clear filters</button></div>`:`<div class="empty-state"><div class="empty-ico">${svgIcon('wallet',30)}</div><h3>No assets yet</h3><p>Start tracking your crypto, stocks, gold, bank balances & property in one place.</p><button class="empty-cta" onclick="openAddAsset()">${svgIcon('rocket',14)} Add your first asset</button></div>`;
-    // This early return skips the summary-bar code further down, so the bar
-    // must be cleared and hidden HERE too, otherwise it keeps showing
-    // whatever it last held (e.g. "1 total") right underneath the "No
-    // assets yet" empty state, which is exactly backwards.
+    // Clear the summary bar on this early return too.
     if(sbarWrap){sbarWrap.innerHTML='';sbarWrap.style.display='none';}
     return;}
   if(isTable){renderAssetsTable(target,assets);return;}
@@ -4463,18 +3740,11 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
   const renderRow=(a,i)=>{const type=tm[a.category]||ASSET_TYPES[5],cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),hasLive=a.coinId&&livePrices[a.coinId],nq=nepseQuote(a),img=a.coinImage||'';let sub='';
     if(a.category==='liquidity')sub=a.liquidityType||'Cash';else if(a.qty)sub=qtyWithUnit(a)+' · '+catLabel(a.category);else sub=catLabel(a.category);
     let badges='';if(isNepseListed(a))badges+=' <span class="nepse-badge">NEPSE</span>';
-    // A NEPSE share carries the day's move the same way a coin carries its
-    // 24 hours: same badge, same colours, so the row reads the same either way.
+    // NEPSE day change uses the same badge as crypto 24h.
     let chg='';const c24=hasLive?livePrices[a.coinId].change24h:(nq?nq.change:null);
     if(c24!=null)chg=`<span style="font-size:9.5px;font-weight:700;color:${c24>=0?'var(--green)':'var(--red)'}">${c24>=0?'▲':'▼'}${Math.abs(c24).toFixed(1)}%</span>`;
     return `<div class="asset-item${enterCls()}${isPendingSync('assets',a.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-asset-id="${a.id}" onclick="openAssetDetail('${a.id}')" aria-label="${esc(a.name)}, ${fmt(cv)}">${isPendingSync('assets',a.id)?pendingBadge():''}<div class="asset-ico" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'" decoding="async" loading="lazy"/><div style="display:none;color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`}</div><div class="asset-info"><div class="asset-name">${esc(a.name)}</div><div class="asset-sub">${esc(sub)}${badges} ${chg}</div></div><div class="asset-vals"><div class="asset-val">${fmt(cv)}</div><div class="asset-pnl ${pnl===null?'neu':pnl>=0?'pos':'neg'}">${a.category==='liquidity'?'':(pnl===null?fmt((a.buyPrice||0)*assetUnits(a))+' cost':(pnl>=0?'▲+':'▼')+fmt(Math.abs(pnl))+(pp!==null?' ('+Math.abs(pp).toFixed(1)+'%)':''))}</div></div></div>`;};
-  // Every category in one flat run reads as a pile. Grouped, each category
-  // is one line you can take in without opening it — what it holds, what it
-  // is worth, how it is doing — and you open the one you came for.
-  //
-  // Only when the filter is on All: picking a single category has already
-  // done the same job, and wrapping its list in a header of the same name
-  // says it twice.
+  // Grouped by category on All; a single-category filter stays flat.
   const groupIds=CAT_ORDER.filter(c=>assets.some(a=>a.category===c))
     .concat(assets.some(a=>!CAT_ORDER.includes(a.category))?['__rest']:[]);
   const grouped=activeCat==='all'&&groupIds.length>1;
@@ -4489,13 +3759,9 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
         const q=getAssetPnL(a);if(q!==null){gPnl+=q;gHasPnl=true;}});
       return {id,items:inIt,value:gv,inv:gInv,pnl:gPnl,hasPnl:gHasPnl};
     })
-    // Biggest first, so the question "where is my money" is answered by the
-    // order before a single group is opened.
+    // Biggest first.
     .sort((a,b)=>b.value-a.value);
-    // A search is a question, and hiding the answers behind a closed header
-    // does not answer it. Matching groups open regardless of what is stored,
-    // and the stored choice is left alone so it comes back when the search
-    // is cleared.
+    // Search opens matching groups without changing the stored choice.
     const forceOpen=!!assetQuery;
     let i0=0;
     list.innerHTML=groups.map(g=>{
@@ -4505,8 +3771,7 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
       const pnlTxt=g.hasPnl?`<span class="ag-pnl ${g.pnl>=0?'pos':'neg'}">${g.pnl>=0?'+':''}${fmt(g.pnl)}${pct!==null?' ('+(pct>=0?'+':'')+pct.toFixed(1)+'%)':''}</span>`:'';
       const label=g.id==='__rest'?'Other':catLabel(g.id);
       const body=g.items.map(a=>renderRow(a,i0++)).join('');
-      // The rail down the contents carries the category's own colour, so an
-      // open section is tied to the header it belongs to at a glance.
+      // Rail in the category's colour.
       return `<section class="ag-group${open?' open':''}" data-cat="${esc(g.id)}" style="--ag-col:${type.color}">`
         +`<button type="button" class="ag-head" aria-expanded="${open?'true':'false'}" onclick="toggleAssetGroup('${esc(g.id)}')">`
         +`<span class="ag-ico" style="background:${type.bg};color:${readableInk(type.color)}">${type.svg||svgIcon('coins',16)}</span>`
@@ -4517,15 +3782,10 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
         +`</button>`
         +`<div class="ag-body"><div class="ag-items">${body}</div></div></section>`;
     }).join('')
-    // One tap back to the flat list, and one tap to the overview. Without it
-    // a portfolio spread over six categories is six taps from being fully
-    // open, every time.
     +`<div class="ag-all"><button type="button" class="ag-all-btn" onclick="setAllAssetGroups(true)">Expand all</button>`
     +`<button type="button" class="ag-all-btn" onclick="setAllAssetGroups(false)">Collapse all</button></div>`;
   }
-  // Totals summary bar, own container outside the asset grid, so it never gets
-  // pulled into the desktop grid-cell sizing meant for asset cards. Scrolls
-  // horizontally only when the screen is too narrow to fit all 4 cells.
+  // Totals bar sits outside the grid; scrolls sideways only when narrow.
   let tInv=0,tVal=0,tPnl=0,hasPnl=false;
   assets.forEach(a=>{const inv=a.category==='liquidity'?(a.value||0):((a.buyPrice||0)*assetUnits(a));const cv2=getAssetCurrentValue(a);const pnl2=getAssetPnL(a);tInv+=inv;tVal+=cv2;if(pnl2!==null){tPnl+=pnl2;hasPnl=true;}});
   const totPp=tInv>0?(tPnl/tInv*100):0;
@@ -4543,9 +3803,7 @@ function clearAssetFilters(){assetQuery='';activeCat='all';state.settings.active
 function setAssetView(v){assetView=v;state.settings.assetView=v;saveState();el('viewCardsBtn').classList.toggle('on',v==='cards');el('viewTableBtn').classList.toggle('on',v==='table');haptic('tap');renderAssets();}
 let ledgerFilter='all';
 function openLedger(){ledgerFilter='all';el('ledgerSearch').value='';document.querySelectorAll('.ledger-pill').forEach(p=>p.classList.toggle('active',p.dataset.f==='all'));renderLedger();openModal('ledgerModal');}
-// ════════ GLOBAL SEARCH ════════
-// Searches across assets, debts, goals, and transactions, including their notes -
-// in one place, since each page previously only had its own scoped search box.
+// GLOBAL SEARCH
 let globalSearchTimeout=null;
 function openGlobalSearch(){
   el('globalSearchInput').value='';
@@ -4568,10 +3826,7 @@ function renderGlobalSearch(){
   const debts=(state.debts||[]).filter(d=>matches(d.name)||matches(d.note));
   const goals=(state.goals||[]).filter(g=>matches(g.name));
   const txs=(state.transactions||[]).filter(t=>matches(txDisplayName(t))||matches(t.notes)).slice(-200).reverse(); // cap for performance on very large histories
-  // Household spending was the one page not searchable, which made "what did
-  // I pay for that" the one question this box could not answer. Category and
-  // account names count too: "food" and "eSewa" are how people look for a row
-  // they cannot remember the note for.
+  // Category and account names are searchable too.
   const acctName=id=>{const a=(state.assets||[]).find(x=>x.id===id);return a?a.name:'';};
   const spends=(state.spends||[]).filter(x=>x&&(matches(x.note)||matches(catOf(x).label)||matches(acctName(x.account))))
     .slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,40);
@@ -4638,15 +3893,9 @@ function renderLedger(){
   if(q)txs=txs.filter(t=>txDisplayName(t).toLowerCase().includes(q));
   txs.sort((a,b)=>new Date(b.date)-new Date(a.date));
   const list=el('ledgerList'),summary=el('ledgerSummary');
-  // Cash legs created by a trade are the same money counted twice, so they
-  // are shown as rows but kept out of every total.
+  // Cash legs from trades are shown but not totalled.
   const real=txs.filter(t=>!t.transfer);
-  // Putting money into a savings account is not buying anything, and taking
-  // it out again is not a sale. Counted together with trades they made
-  // "Bought Rs.3.72L · Sold Rs.2.23L · P&L +Rs.20.92" out of a portfolio
-  // where almost all of that was cash moving in and out of an account: three
-  // figures on the same line, measuring three different things, and a P&L
-  // that looked broken because it was the only one counting trades alone.
+  // Deposits and withdrawals are not trades; total them separately.
   const isCash=t=>t.category==='liquidity';
   const sum=l=>l.reduce((s,t)=>s+(t.amount||0),0);
   const buys=real.filter(t=>t.txType==='buy'&&!isCash(t));
@@ -4658,9 +3907,7 @@ function renderLedger(){
   const cells=[['Transactions',String(txs.length),null,null]];
   if(buys.length)cells.push(['Bought',fmt(sum(buys)),null,plural(buys.length,'purchase')]);
   if(sells.length)cells.push(['Sold',fmt(sum(sells)),null,plural(sells.length,'sale')]);
-  // Realized is proceeds against what those holdings cost, so it answers a
-  // different question from Bought and Sold and is labelled to say so
-  // rather than reading as one minus the other.
+  // Realised = proceeds - cost; not Sold - Bought.
   if(sells.length)cells.push(['Realized P&L',(realized>=0?'+':'')+fmt(realized),
     realized>0?'var(--green)':realized<0?'var(--red)':null,'on what was sold']);
   if(depos.length)cells.push(['Money in',fmt(sum(depos)),'var(--green)',plural(depos.length,'deposit')]);
@@ -4678,14 +3925,9 @@ function renderLedger(){
     if(dateKey!==lastDateKey){html+=`<div class="ledger-date-hdr">${dateKey}</div>`;lastDateKey=dateKey;}
     const type=tm[t.category]||ASSET_TYPES[5];
     const isSell=t.txType==='sell';
-    // On a holding a sale is proceeds and green means it made money. On a
-    // bank account the same row is a WITHDRAW, and green on money leaving is
-    // the wrong signal however well the account is doing: there green is
-    // arriving and red is leaving. A Rs.1.20L withdrawal read as a gain.
+    // Withdrawals from cash are red: green means money arriving.
     let amtClass='buy';
-    // Income is neither a purchase nor a sale, and the rest of the app already
-    // paints it in the accent, so it does here too rather than picking up
-    // whichever of the two branches it happened to fall through.
+    // Income uses the accent colour.
     if(t.txType==='income')amtClass='income';
     else if(isCash(t))amtClass=t.txType==='sell'?'loss':'cashin';
     else if(isSell)amtClass=(t.realized==null||t.realized>=0)?'sell':'loss';
@@ -4694,29 +3936,15 @@ function renderLedger(){
     html+=`<div class="ledger-row"><div class="ledger-ico" style="background:${type.bg}">${t.coinImage?`<img src="${esc(t.coinImage)}" style="width:18px;height:18px;border-radius:50%" onerror="this.style.display='none'"/>`:`<div style="color:${readableInk(type.color)}">${svgIcon(t.icon||'coins',15)}</div>`}</div><div class="ledger-info"><div class="ledger-name">${esc(txDisplayName(t))}</div><div class="ledger-meta">${txTypeLabel(t)}${qtyTxt?' · '+esc(qtyTxt):''}${t.notes?' · <em>'+esc(t.notes)+'</em>':''}</div></div><div class="ledger-amt ${amtClass}">${fmt(t.amount)}</div></div>`;
   });
   list.innerHTML=html;
-  // The summary is rebuilt on every filter and keystroke, so how far it can
-  // scroll changes with it. Without this the edge fade keeps describing the
-  // row it used to be.
+  // Summary width changes per filter; re-measure the edge fade.
   if(typeof bindScrollHints==='function')bindScrollHints(el('ledgerModal')||undefined);
 }
-// ════════ TRANSACTION REPLAY, recompute an asset's qty/buyPrice from its transaction history ════════
-// What a transaction is worth in the unit the holding is kept in today.
-// enteredQty/enteredUnit record what was actually typed, and that stays true
-// whatever unit the holding is moved to afterwards, so they are read first:
-// a purchase of 2 tola is 2 tola forever, and reading it back through them
-// means changing a commodity from tola to grams cannot silently multiply the
-// holding by the conversion factor on the next replay. Rows without them
-// (older entries, an imported backup) fall back to the stored base quantity.
-// A bank account and a house are both bought whole: one deposit, one
-// purchase. Neither has a quantity, so neither has a price per unit, and
-// every column, label and toggle built around one is asking a question the
-// asset cannot answer. A property showed QUANTITY, PRICE / UNIT and TOTAL
-// PRICE beside a house, and recording a second payment on it counted as a
-// second house.
+// TRANSACTION REPLAY
+// Recompute an asset's qty/buyPrice from its transactions. Quantities are read from
+// enteredQty/enteredUnit so changing the holding's unit cannot rescale history.
+// Bank accounts and property have no quantity: amounts only.
 function assetNoQty(a){return !!(a&&(a.category==='liquidity'||a.category==='property'));}
-// Cash, specifically. Both kinds lose the quantity, but the words and the
-// colours differ: an account is money in and money out, a house is bought
-// and sold, and green on a sale means profit rather than an arrival.
+// Cash specifically: deposit/withdraw wording and colours.
 function assetIsCash(a){return !!(a&&a.category==='liquidity');}
 function txQtyInBase(t,asset){
   const u=asset&&asset.unit;
@@ -4727,24 +3955,16 @@ function txQtyInBase(t,asset){
   }
   return t.qty||0;
 }
-// `opts.emptied` says the caller has just deleted the last transaction, as
-// opposed to this holding never having had any. The two look identical from
-// in here and mean opposite things: one is a property typed in directly whose
-// own figures are all there is, the other is a holding whose ledger now says
-// nothing was ever bought, and zero is the honest answer.
+// `opts.emptied`: the last transaction was just deleted, so zero is correct (unlike a
+// holding that never had any).
 function recalcAssetFromTransactions(asset,opts){
   if(asset.category==='liquidity')return; // liquidity has no transaction-based qty model
   const txs=txsForAsset(asset).map((t,i)=>({t,i})).sort((a,b)=>(new Date(a.t.date)-new Date(b.t.date))||(a.i-b.i)).map(x=>x.t);
-  // A house, a painting, a one-off holding: there is no quantity, and its
-  // cost is simply the money that went into it. Replaying those through the
-  // per-unit maths below divided by a quantity of zero, so the replay set
-  // both the quantity and the cost to zero and a property lost what it cost
-  // the moment anyone edited one of its transactions.
+  // No quantity anywhere: cost is the money put in; skip the per-unit maths.
   const anyQty=txs.some(t=>t.txType!=='income'&&txQtyInBase(t,asset)>0);
   if(!anyQty){
     if(!txs.length){
-      // Nothing left in the ledger. Zero it only when the caller says that is
-      // because it was emptied, never on the way past.
+      // Zero only when the caller says it was emptied.
       if(opts&&opts.emptied){
         if(asset.qty!=null)asset.qty=0;
         asset.buyPrice=0;
@@ -4754,17 +3974,13 @@ function recalcAssetFromTransactions(asset,opts){
     let cost=0,sold=false;
     txs.forEach(t=>{ if(t.txType==='income')return; if(t.txType==='sell')sold=true; cost+=(t.txType==='sell'?-1:1)*(t.amount||0); });
     asset.buyPrice=Math.max(0,cost);
-    // A house is held or it is sold, and which one is a question the ledger
-    // answers. Derived here rather than decremented at the point of sale, so
-    // deleting or re-editing that sale puts the holding back.
+    // Held or sold, derived from the ledger so undoing a sale restores it.
     if(asset.category==='property'&&asset.qty!=null)asset.qty=sold?0:1;
     return;
   }
   let qty=0,avgCost=0;
   txs.forEach(t=>{
-    // Income (a dividend, interest) is a return on the holding, not more of
-    // it. Falling through to the buy branch below would inflate both the
-    // quantity and the average cost.
+    // Income is a return, not more of the holding.
     if(t.txType==='income')return;
     const q=txQtyInBase(t,asset);
     if(t.txType==='sell'){
@@ -4777,21 +3993,15 @@ function recalcAssetFromTransactions(asset,opts){
       qty=newQty;
     }
   });
-  // Rounded at the source, not just where it is printed. Summing converted
-  // quantities in binary floating point turns 1.25 tola into
-  // 37.489999999999995 grams, and that number then goes into exports, the
-  // CSV and the sync payload where no display formatter can reach it. Ten
-  // places is past the smallest unit anything real is denominated in.
+  // Round at the source: exports and sync see this value.
   asset.qty=+qty.toFixed(10);asset.buyPrice=avgCost;
 }
 let editingTxId=null;
 let editTxPriceEntryCcy=null;
 let isEditTxPerUnitMode=true;
-// Which shape the open sheet is in, so the label sync does not have to
-// re-derive it from whether a column happens to be hidden.
+// Shape of the open sheet.
 let editTxNoQty=false,editTxIsCash=false;
-// On an account the figure is an AMOUNT. On a property it is still a buy
-// or a sell price, just the whole of it rather than a price per unit.
+// Accounts take an AMOUNT; property a whole buy/sell price.
 function noQtyPriceLbl(type){return editTxIsCash?'AMOUNT':(type==='sell'?'SELL PRICE':'BUY PRICE');}
 function setEditTxPriceEntryMode(perUnit){
   if(perUnit===isEditTxPerUnitMode)return;
@@ -4806,8 +4016,7 @@ function setEditTxPriceEntryMode(perUnit){
   haptic('tap');
 }
 function onEditTxPriceCcyChange(v){
-  // Convert what is typed, the way every other money field in the app does.
-  // The amount of money has not changed, only the unit it is written in.
+  // Convert what is typed; the amount is unchanged.
   const fromRate=getCurrRate(editTxPriceEntryCcy||currentCurrency.code);
   editTxPriceEntryCcy=(v===currentCurrency.code)?null:v;
   const toRate=getCurrRate(editTxPriceEntryCcy||currentCurrency.code);
@@ -4816,9 +4025,7 @@ function onEditTxPriceCcyChange(v){
   {const _t=state.transactions.find(x=>x.id===editingTxId);syncEditTxPriceLbl(_t?(_t.txType||'buy'):'buy');}
   syncEditTxLiveHint();
 }
-// Changing how many you bought does not change what one of them cost. In
-// per-unit mode the price is left exactly alone; in total mode the total is
-// rescaled so the per-unit price stays put, which is the same statement.
+// Changing quantity keeps the per-unit price (total mode rescales the total).
 let _editTxLastQty=null;
 function onEditTxQtyChange(){
   const inp=el('editTxPrice'),q=parseFloat(el('editTxQty').value);
@@ -4829,8 +4036,7 @@ function onEditTxQtyChange(){
   if(isFinite(q)&&q>0)_editTxLastQty=q;
   syncEditTxLiveHint();
 }
-// Today's price, but only when asked for. The hint says what it would become
-// so nobody taps it blind.
+// Today's price, on request.
 function editTxLivePerUnit(){
   const t=state.transactions.find(x=>x.id===editingTxId);if(!t)return null;
   const a=state.assets.find(x=>x.id===t.assetId)||state.assets.find(x=>x.name===t.name&&x.category===t.category);
@@ -4848,8 +4054,6 @@ function syncEditTxLiveHint(){
   const shown=(isEditTxPerUnitMode?per:per*(q>0?q:1))*rate;
   row.style.display='';
   const lbl=el('editTxLiveLbl');
-  // The field label above already says per-unit or total, so repeating it
-  // here only pushed the number into an ellipsis.
   if(lbl)lbl.textContent='Today '+(currentCurrency.sym)+shown.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function useLiveEditTxPrice(){
@@ -4865,15 +4069,9 @@ function openEditTx(txId){
   const t=state.transactions.find(x=>x.id===txId);if(!t)return;
   editingTxId=txId;
   editTxPriceEntryCcy=null;
-  // This mode is module level and used to survive between opens: switching one
-  // transaction to TOTAL left the next one pre-filled with a total under a
-  // per-unit label, which reads as a wildly wrong price. Every open starts
-  // from the same known state, and the control is re-synced to match.
+  // Reset to per-unit on every open.
   isEditTxPerUnitMode=true;
-  // A cash account and a property both have no quantity and no per-unit
-  // price: the transaction IS an amount. Showing "Quantity" and "Buy price /
-  // unit" next to a deposit, or beside a house, asks a question that has no
-  // answer.
+  // Cash and property: the transaction is an amount.
   {const _a0=state.assets.find(x=>x.id===t.assetId);
    const _noQty=assetNoQty(_a0);
    editTxNoQty=_noQty;editTxIsCash=assetIsCash(_a0);
@@ -4886,30 +4084,17 @@ function openEditTx(txId){
   renderEditTxTypeBadge(t);
   el('editTxQty').value=t.enteredQty!=null?t.enteredQty:(t.qty||'');
   const _rate=getCurrRate(currentCurrency.code);
-  // Pre-fill price from stored perUnit × qty; autoFillEditTxPrice will update when unit changes
-  // perUnit is stored in the ASSET's base unit, but the quantity field shows
-  // the unit the transaction was entered in. When those differ the sheet was
-  // showing one against the other: 2 tola of gold is 0.75 troy oz, so a
-  // 613,200 purchase stored 817,600 per troy oz and displayed it beside a
-  // quantity of 2, which reads as an absurd price per tola.
-  //
-  // The transaction already knows its own total and the quantity as typed,
-  // so the price per entered unit is just one divided by the other. No unit
-  // conversion, nothing to fall out of step, and it stays right for any
-  // combination of units.
+  // Price per entered unit = stored total / entered quantity; no unit conversion needed.
   {const _q=parseFloat(t.enteredQty!=null?t.enteredQty:t.qty)||0;let _pv='';
   const _totalNPR=num(t.amount);
   const _noQtyAsset=assetNoQty(a);
   if(_noQtyAsset){
-    // A deposit, a withdrawal or a property purchase has no quantity to
-    // divide by; the amount is the whole of it. Requiring a quantity left
-    // this field blank.
+    // No quantity: the amount is the price.
     if(_totalNPR>0)_pv=(_totalNPR*_rate).toFixed(2);
   }else if(_totalNPR>0&&_q>0){
     _pv=((isEditTxPerUnitMode?_totalNPR/_q:_totalNPR)*_rate).toFixed(2);
   }else if(a&&_q>0){
-    // No stored total (a hand-edited backup): fall back to a live or last
-    // known price, which is per base unit, so convert it into the entered one.
+    // No stored total: use the live/last price, converted to the entered unit.
     const _u=t.enteredUnit||a.unit||null;
     const _perBase=a.coinId&&livePrices[a.coinId]
       ?usdToBase(livePrices[a.coinId].usd)
@@ -4920,12 +4105,8 @@ function openEditTx(txId){
   el('editTxPrice').value=_pv;}
   el('editTxDate').value=t.date?t.date.split('T')[0]:'';
   el('editTxNotes').value=t.notes||'';
-  // The unit IS the label. "QUANTITY (TOLA)" says the same word twice; the
-  // field is plainly a quantity from the number in it.
+  // The unit is the label.
   el('editTxQtyLbl').textContent=unitQtyLabel(t.enteredUnit||(a&&a.unit)||'')||'QUANTITY';
-  // "total holdings and average cost" describes a holding made of units. A
-  // bank account and a house have neither, and saying so beside one reads
-  // as a warning about something that is not going to happen.
   el('editTxHint').textContent=esc(txDisplayName(t))+' · editing this transaction '+(editTxNoQty?'recalculates what this has cost you.':'recalculates the asset\u2019s total holdings and average cost.')+' The buy/sell type can\u2019t be changed here, delete and re-add the transaction if you recorded it as the wrong type.';
   buildCompactCcySelect('editTxPriceCcyWrap',null,onEditTxPriceCcyChange);
   // Unit selector for commodities
@@ -4943,10 +4124,6 @@ function openEditTx(txId){
   syncEditTxLiveHint();
   openModal('editTxModal');
 }
-// The badge says what the transaction IS, in the words the rest of the app
-// already uses for it. On a bank account that is Deposit and Withdraw; "BUY"
-// against a salary credit is nonsense, and the table one screen up had been
-// saying Deposit all along.
 function renderEditTxTypeBadge(tx){
   const badge=el('editTxTypeBadge');if(!badge)return;
   const t=(typeof tx==='string')?{txType:tx}:(tx||{});
@@ -4957,14 +4134,10 @@ function renderEditTxTypeBadge(tx){
   badge.style.background=isSell?'var(--green-bg)':'var(--blue-bg)';
   syncEditTxPriceLbl(type);
 }
-// One label, saying both what it is and how it is being read. Half of this
-// said "BUY PRICE" whether the number was per unit or the whole lot.
 function syncEditTxPriceLbl(type){
   const lbl=el('editTxPriceLbl');
   const kind=type==='sell'?'SELL':'BUY';
-  // Without a quantity there is no per-unit reading to describe, so neither
-  // half of that label applies. It ran after the open and overwrote the right
-  // word with the wrong one.
+  // No quantity: no per-unit wording.
   if(editTxNoQty){if(lbl)lbl.textContent=noQtyPriceLbl(type);return;}
   if(lbl)lbl.textContent=isEditTxPerUnitMode?(kind+' PRICE / UNIT'):('TOTAL '+kind+' PRICE');
   const u=el('editTxPriceModeSegUnit'),tt=el('editTxPriceModeSegTotal');
@@ -4977,10 +4150,7 @@ function saveEditTx(){
   const qty=parseFloat(el('editTxQty').value)||0,priceEntered=parseFloat(el('editTxPrice').value)||0;
   const rate=getCurrRate(editTxPriceEntryCcy||currentCurrency.code);
   const type=t.txType||'buy'; // type is fixed at edit time, buy/sell can't be toggled here
-  // A deposit, a withdrawal or a property purchase is an amount and nothing
-  // else. The sheet has said so since it opened, no quantity field, but
-  // saving still insisted on a quantity, so Save Changes could only ever
-  // fail.
+  // No quantity required for amount-only assets.
   const noQty=assetNoQty(a);
   if(noQty){
     if(priceEntered<=0){toast(assetIsCash(a)?'Enter an amount':'Enter a price','error');return;}
@@ -4999,27 +4169,19 @@ function saveEditTx(){
   }
   if(qty<=0){toast('Enter a quantity','error');return;}
   if(priceEntered<=0){toast('Enter a price','error');return;}
-  // This field was pre-filled with the TOTAL (perUnit x qty) but then saved as
-  // if it were the per-unit price, so opening a transaction and pressing Save
-  // silently multiplied its value by the quantity. The explicit mode removes
-  // the ambiguity.
-  // Everything typed here is in the entered unit. What gets stored has to be
-  // in the asset's base unit, exactly as saveTx does it, or the holding drifts
-  // by the conversion factor every time a transaction is edited.
+  // Entered in the entered unit; stored in the asset's base unit, as saveTx does.
   const enteredUnit=(a&&a.category==='commodity')?(editTxUnit||t.enteredUnit||a.unit||null):(t.enteredUnit||(a&&a.unit)||null);
   const baseQty=(a&&a.category==='commodity'&&a.unit&&enteredUnit&&enteredUnit!==a.unit)
     ?convertUnit(qty,enteredUnit,a.unit):qty;
   if(!(baseQty>0)){toast('That quantity does not convert','error');return;}
-  // The total is the one figure that means the same thing in any unit, so it
-  // is what the per-unit price is derived from rather than the other way.
+  // Derive per-unit from the total, which is unit-independent.
   const totalNPR=(isEditTxPerUnitMode?priceEntered*qty:priceEntered)/rate;
   t.txType=type;
   t.qty=baseQty;
   t.enteredQty=qty;
   if(enteredUnit)t.enteredUnit=enteredUnit;
   t.date=el('editTxDate').value?dayToISO(el('editTxDate').value):t.date;
-  // Before the amount is written, so a refusal leaves the transaction as it
-  // was rather than half-corrected.
+  // Before writing, so a refusal leaves the transaction untouched.
   {const err=resyncCashLegs(t,totalNPR);if(err){toast(err,'error');return;}}
   t.amount=totalNPR;
   t.perUnit=totalNPR/baseQty;                 // per base unit, matching saveTx
@@ -5027,12 +4189,7 @@ function saveEditTx(){
   if(a){if(!t.assetId)t.assetId=a.id;recalcAssetFromTransactions(a);trackPnLHistory();}
   saveState();closeModal('editTxModal');renderAll();if(a)openAssetDetail(a.id);haptic('success');toast('Transaction updated','success');
 }
-// Editing a trade changed its amount but left the cash leg it created at the
-// old figure, so a buy corrected from Rs.6,000 to Rs.8,000 still showed
-// Rs.6,000 leaving the bank and the two halves of one movement disagreed
-// forever. The leg is the same movement as the trade; it has to follow it.
-// Returns an error string when the correction cannot be applied, so the caller
-// can refuse before writing anything.
+// Keep a trade's cash leg equal to the trade. Returns an error string if it cannot.
 function resyncCashLegs(t,newTotalNPR){
   if(!t||!t.linkId)return null;
   const legs=(state.transactions||[]).filter(x=>x.linkId===t.linkId&&x.transfer);
@@ -5077,18 +4234,13 @@ function resyncCashLegs(t,newTotalNPR){
 }
 async function deleteEditTx(){
   const t=state.transactions.find(x=>x.id===editingTxId);if(!t)return;
-  // If this trade moved cash, undoing it pulls that money back out of the
-  // account. Where the money has since been spent the account would go
-  // negative, and silently overdrawing someone's cash balance is worse than
-  // saying so, so the warning names the account and the number.
+  // Warn when undoing the trade would overdraw its cash account.
   let _msg='This asset\u2019s quantity and average cost will be recalculated from the remaining transactions.';
   const _legs=t.linkId?state.transactions.filter(x=>x.linkId===t.linkId&&x.transfer):[];
   const _overdrawn=[];
   _legs.forEach(leg=>{
     const acct=state.assets.find(x=>x.id===leg.assetId);if(!acct)return;
-    // A stablecoin leg is units, not a balance. Undoing it puts the units
-    // back, so the sentence has to count units too, reading `value` on a
-    // holding that has none said every stablecoin goes back to zero.
+    // Stablecoin legs are units, not a balance.
     if(isStablecoin(acct)){
       const units=(leg.txType==='buy'?-1:1)*(leg.qty||0);
       const after=(acct.qty||0)+units;
@@ -5104,25 +4256,17 @@ async function deleteEditTx(){
   if(_overdrawn.length)_msg+=' '+_overdrawn.join(', ')+', because that money has already been spent.';
   if(!await askConfirm({title:'Delete transaction?',message:_msg,confirmText:'Delete'}))return;
   const a=state.assets.find(x=>x.id===t.assetId)||state.assets.find(x=>x.name===t.name&&x.category===t.category);
-  // Every other delete in the app is undoable; this one was not, and it is the
-  // most destructive of them: removing a transaction also recalculates the
-  // asset's quantity and average cost, so a mistake quietly rewrites your cost
-  // basis. 'assets' is in the key list for exactly that reason.
+  // Undoable: deleting a transaction rewrites the asset's cost basis.
   const _txLabel=(txDisplayName(t)?txDisplayName(t)+' ':'')+txTypeNoun(t)+' deleted';
   withUndo(_txLabel,['transactions','assets'],()=>{
-  // A trade that moved cash has a matching leg on the cash account. Deleting
-  // one without the other would leave a balance the ledger cannot explain, so
-  // both go, and the balance is put back. withUndo snapshots the account too,
-  // which is what makes that reversible.
+  // Delete the linked cash leg too and restore the balance.
   const _link=t.linkId;
   if(_link){
     const _touched=[];
     state.transactions.filter(x=>x.linkId===_link&&x.transfer).forEach(leg=>{
       const acct=state.assets.find(x=>x.id===leg.assetId);
       if(!acct)return;
-      // A stablecoin's quantity comes from its own ledger, so dropping the
-      // leg below and replaying is the undo; nudging `value` would invent a
-      // field the holding does not use and leave the units untouched.
+      // Stablecoins replay from their own ledger.
       if(isStablecoin(acct)){_touched.push(acct);return;}
       acct.value=(acct.value||0)+(leg.txType==='buy'?-1:1)*(leg.amount||0);
     });
@@ -5132,7 +4276,7 @@ async function deleteEditTx(){
   state.transactions=state.transactions.filter(x=>x.id!==editingTxId);
   if(a){recalcAssetFromTransactions(a,{emptied:!txsForAsset(a).length});trackPnLHistory();
     if(a.qty<=0&&!txsForAsset(a).length){
-      // No quantity left and no remaining transactions, nothing meaningful to show; leave the asset as a zero-qty record rather than silently deleting it
+      // Keep a zero-qty record rather than deleting the asset.
     }
   }
   saveState();
@@ -5155,9 +4299,7 @@ function openAssetEditPicker(id){
 function openEditTxFromPicker(txId){openEditTx(txId);}
 function openEditAssetDetailsFromPicker(){const id=ctxAssetId;closeModal('assetEditPickerModal');setTimeout(()=>openEditAsset(id),200);}
 async function deleteAllPickerTx(){const a=state.assets.find(x=>x.id===ctxAssetId);if(!a)return;const txs=txsForAsset(a);if(!txs.length){toast('No transactions to delete');return;}if(!await askConfirm({title:'Delete all transactions?',message:'All '+txs.length+' transaction'+(txs.length>1?'s':'')+' for '+a.name+'? The asset will remain with zero holdings.',confirmText:'Delete all'}))return;const txIds=new Set(txs.map(t=>t.id));
-  // Undoable, like deleting one is. Emptying a ledger rewrites the holding's
-  // quantity and cost, which is the most destructive thing this sheet can do,
-  // and it was the one delete with no way back.
+  // Undoable, like a single delete.
   withUndo(plural(txs.length,'transaction')+' deleted',['transactions','assets'],()=>{
     state.transactions=(state.transactions||[]).filter(t=>!txIds.has(t.id));
     recalcAssetFromTransactions(a,{emptied:!txsForAsset(a).length});
@@ -5165,9 +4307,7 @@ async function deleteAllPickerTx(){const a=state.assets.find(x=>x.id===ctxAssetI
   });
   closeModal('assetEditPickerModal');renderAll();haptic('tap');}
 function buildTxTable(txs,a){const baseUnit=a.unit||'unit';
-  // A bank account holds money, not units of anything. Quantity and
-  // amount-per-quantity are meaningless for it, and printing an empty column
-  // plus a rate equal to the amount was just noise.
+  // A bank account has no quantity or rate columns.
   const noQty=assetNoQty(a),isCash=assetIsCash(a);
 let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0;
   const isCommodity=!!a.commodityId;
@@ -5185,14 +4325,11 @@ let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0
     const qtyCell=noQty?'':`<td>${qtyDisp?esc(qtyDisp):'<span class="muted">-</span>'}</td>`;
     const perSub=(isSell&&costBasisPerUnit!=null)?`<div style="font-size:8.5px;font-weight:500;color:var(--text3)">Avg buy price ${fmt(costBasisPerUnit)}</div>`:'';
     const perCell=noQty?'':`<td>${perDisp?perDisp:'<span class="muted">-</span>'}${perSub}</td>`;
-    // On an investment a sale is proceeds, so green reads as good. On a bank
-    // account the same row is a WITHDRAW, money leaving, and green there is
-    // simply the wrong signal. Cash colours by direction: in green, out red.
+    // Cash colours by direction (in green, out red); holdings by outcome.
     const chipCol=isInc?'var(--accent)':isCash?(isSell?'var(--red)':'var(--green)'):(isSell?'var(--green)':'var(--blue)');
     const chipBg=isInc?'var(--accent-glow)':isCash?(isSell?'var(--red-bg)':'var(--green-bg)'):(isSell?'var(--green-bg)':'var(--blue-bg)');
     return `<tr style="cursor:pointer" onclick="openEditTx('${t.id}')"><td>${formatDate(t.date)}</td><td><span class="atype-chip" style="color:${chipCol};background:${chipBg}">${txTypeLabel(t)}</span></td>${qtyCell}${unitCell}${perCell}<td style="font-weight:800;color:${isInc?'var(--accent)':isSell?sellColor:'var(--text)'}">${fmt(t.amount)}${realizedSub}</td><td class="tx-note-cell" title="${t.notes?esc(t.notes):''}">${t.notes?`<span class="tx-note">${esc(t.notes)}</span>`:'<span class="muted">-</span>'}</td><td style="text-align:center"><button class="tx-edit-btn" onclick="event.stopPropagation();openEditTx('${t.id}')" aria-label="Edit transaction"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button></td></tr>`;}).join('');
-  // Holding Now uses the asset's own maintained qty (authoritative, kept in sync by recalcAssetFromTransactions/save logic)
-  // rather than re-deriving via date sort here, since same-day transactions have no reliable time order to sort by.
+  // The asset's maintained qty; same-day transactions have no reliable order to replay here.
   const netQty=+((a.qty||0).toFixed(6));
   totalBoughtQty=+totalBoughtQty.toFixed(6);
   // Build unit options for held-qty toggle (tola, gram, etc)
@@ -5224,14 +4361,8 @@ let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0
   const heldValue=curPriceEach!==null?curPriceEach*netQty:null;
   const unitHeaderCell=isCommodity?'<th>Unit</th>':'';
   const table=`<table class="atable tx-history-table${noQty?' tx-narrow':''}"><thead><tr><th>Date</th><th>Type</th>${noQty?'':'<th>Qty</th>'}${unitHeaderCell}${noQty?'':'<th>Amount/Qty</th>'}<th>${noQty?'Amount':'Total Amount'}</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
-  // The summary is about the holding, not about the columns above it, so it
-  // lives outside the table. Inside it inherited the table's width and the
-  // last two figures sat off the right-hand edge, reachable only by scrolling
-  // the transaction rows sideways, you could not see what you own without
-  // hunting for it. Out here it is as wide as the sheet and wraps.
-  // Three shapes, because three different things are being summarised. An
-  // account is money in and money out. A house has no quantity to hold, so
-  // the row of unit figures a holding gets would all be blank.
+  // Summary sits outside the table so it wraps to the sheet width. Three shapes: cash,
+  // property, unit holdings.
   const cells=isCash?[
     `<div class="tx-sum-cell"><span class="tx-summary-lbl">Paid in</span><span class="tx-summary-val" style="color:var(--green)">+${fmt(buyAmt)}</span></div>`,
     `<div class="tx-sum-cell"><span class="tx-summary-lbl">Taken out</span><span class="tx-summary-val" style="color:var(--red)">${sellAmt?'-'+fmt(sellAmt):fmt(0)}</span></div>`,
@@ -5253,8 +4384,7 @@ let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0
 function switchNetHeldUnit(spanId,baseQty,fromUnit,toUnit,btn){
   const span=document.getElementById(spanId);if(!span)return;
   const converted=convertUnit(baseQty,fromUnit,toUnit);
-  // Priced in the unit being switched to, so the number of decimals follows
-  // what a unit is worth there: grams need more places than tola.
+  // Decimals follow the value of the unit being switched to.
   const a=(state.assets||[]).find(x=>x.id===span.dataset.asset);
   const asUnit=a?Object.assign({},a,{unit:toUnit}):null;
   span.textContent=fmtQty(converted!=null?converted:baseQty,asUnit)+' '+toUnit;
@@ -5272,15 +4402,10 @@ function renderAssetsTable(target,assets){const tm={};ASSET_TYPES.forEach(t=>tm[
   requestAnimationFrame(()=>initTableScrollFade('assetsTableWrap','assetsTableFade'));
   attachContextMenu(target,'tr[data-asset-id]',openAssetContextMenu);}
 
-// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 DEBT DETAIL & PAYMENTS \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// DEBT DETAIL & PAYMENTS
 let viewingDebtId=null;
-// ════════ DEBT LEDGER ════════
-// A debt was one number you edited, plus a log you could only append to. A
-// lend recorded a month ago with the wrong figure could not be corrected;
-// the only way out was to change the debt's total, which then disagreed with
-// its own history. Every lend and every repayment is now an entry you open
-// and edit, the way a buy or a sell is on an asset, and the debt's amount is
-// the sum of its lends rather than a figure kept alongside them.
+// DEBT LEDGER
+// Every lend and repayment is an editable entry; the debt's amount is the sum of its lends.
 function debtLedger(d){
   if(!d)return [];
   if(!Array.isArray(d.lendHistory)||!d.lendHistory.length){
@@ -5294,13 +4419,11 @@ function recalcDebtAmount(d){
   if(!d||!Array.isArray(d.lendHistory)||!d.lendHistory.length)return;
   d.amount=d.lendHistory.reduce((s,h)=>s+num(h&&h.amount),0);
 }
-// Every debt gets its opening entry, so there is nothing that can only be
-// edited as a total. Idempotent: a debt that already has one is left alone.
+// Give every debt its opening entry. Idempotent.
 function migrateDebtLedgers(){
   (state.debts||[]).forEach(d=>{ if(d&&!(Array.isArray(d.lendHistory)&&d.lendHistory.length))debtLedger(d); });
 }
-// Lending hands money over, so it leaves the account; being repaid brings it
-// back. Borrowing is the mirror of both.
+// Lending takes money out of the account, repayment brings it back; borrowing mirrors both.
 function debtCashDir(isOwed,kind){
   return kind==='pay' ? (isOwed?'in':'out') : (isOwed?'out':'in');
 }
@@ -5318,10 +4441,7 @@ function applyDebtCash(d,entry,kind){
   applyCashLegBalance(acct,amt,dir);
   pushCashLeg(acct,amt,dir,entry.date||todayStr(),entry.linkId,debtLegNote(d,kind));
 }
-// Lending hands money over, so the account has to actually have it, and an
-// account that cannot carry a leg at all has to say so. Every sheet that can
-// create a lend or a repayment asks this same question, and used to answer it
-// with its own copy of the same eight lines.
+// Shared check: does the account have the money, and can it carry a leg at all.
 function debtCashError(d,acct,amtN,kind){
   const blk=cashLegBlocked(acct);
   if(blk)return blk;
@@ -5337,8 +4457,7 @@ function reverseDebtCash(d,entry,kind){
   const dir=debtCashDir(d.type==='owed',kind);
   if(acct)applyCashLegBalance(acct,num(entry.amount),dir==='in'?'out':'in');
   state.transactions=(state.transactions||[]).filter(t=>!(t.linkId===entry.linkId&&t.transfer));
-  // A stablecoin keeps its money in the quantity the leg carried, not in a
-  // balance, so removing the leg is only half of it until the replay runs.
+  // Stablecoin balances live in the quantity; replay after removing the leg.
   if(acct&&isStablecoin(acct))recalcAssetFromTransactions(acct);
 }
 function openDebtDetail(id){
@@ -5350,10 +4469,7 @@ function openDebtDetail(id){
   openModal('debtDetailModal');
 }
 function openDebtDetailEdit(){closeModal('debtDetailModal',true);setTimeout(()=>openDebtEdit(viewingDebtId),200);}
-// The same two letters and the same colour follow a person everywhere they
-// appear, so the row in the list and the sheet it opens read as one person
-// rather than two unrelated cards. Derived from the name, so it needs no
-// storage and never goes stale.
+// Same initials and colour for a person everywhere, derived from the name.
 function debtInitials(name){
   const parts=String(name||'').trim().split(/\s+/).filter(Boolean);
   if(!parts.length)return '?';
@@ -5367,17 +4483,13 @@ function debtHue(name){
 const DTX_OUT='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>';
 const DTX_IN='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>';
 const DTX_WALLET='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2"/><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><circle cx="17" cy="14" r="1.2"/></svg>';
-// Newest first, and for two entries logged on the same day the one added last
-// comes first: a plain reverse got that right only by accident, and got the
-// order wrong the moment anything was backdated.
+// Newest first; same-day entries by insertion order.
 function debtEntriesNewestFirst(list){
   return (list||[]).map((e,i)=>({e,i}))
     .sort((A,B)=>{const c=String(B.e&&B.e.date||'').localeCompare(String(A.e&&A.e.date||''));return c||(B.i-A.i);})
     .map(x=>x.e);
 }
-// The two forms start folded. A debt is read far more often than it is added
-// to, and two always-open forms pushed the history — the thing you opened the
-// sheet for — off the bottom of the screen.
+// Forms start folded so the history stays in view.
 let debtAddOpen=false,debtPayOpen=false;
 function toggleDebtAddForm(){debtAddOpen=!debtAddOpen;debtPayOpen=false;renderDebtDetailBody();haptic('tap');if(debtAddOpen)setTimeout(()=>{const f=el('debtAddAmt');if(f)f.focus();},60);}
 function toggleDebtPayForm(){debtPayOpen=!debtPayOpen;debtAddOpen=false;renderDebtDetailBody();haptic('tap');if(debtPayOpen)setTimeout(()=>{const f=el('debtPayAmt');if(f)f.focus();},60);}
@@ -5399,9 +4511,7 @@ function renderDebtDetailBody(){
   if(sub)sub.textContent=isOwed?'Owes you':'You owe';
 
   const acctName=e=>{const a=e&&e.account?(state.assets||[]).find(x=>x.id===e.account):null;return a?a.name:null;};
-  // Colour says which way the money went, not which kind of entry it is.
-  // Being repaid on a debt owed to you and repaying one you owe are opposite
-  // events, and used to be drawn the same green.
+  // Colour follows the money's direction, not the entry kind.
   const entryRow=(e,kind)=>{
     const inward=debtCashDir(isOwed,kind)==='in';
     const col=inward?'var(--green)':'var(--red)';
@@ -5492,16 +4602,10 @@ function renderDebtDetailBody(){
   buildDebtAcctSelect('debtAddAcctWrap','lend',undefined,undefined,debtCashDir(isOwed,'lend')==='in');
   buildDebtAcctSelect('debtPayAcctWrap','pay',undefined,undefined,debtCashDir(isOwed,'pay')==='in');
 }
-// Where the money comes from, or lands. Same accounts the rest of the app
-// offers, plus the honest option of money that never touched one.
-// Null until something picks one, rather than CASH_NONE: that constant is
-// declared further down the file, and naming it here runs into its temporal
-// dead zone and throws on load. Null reads as "not a tracked account" too.
+// Null until picked (CASH_NONE is declared later; referencing it here would hit the TDZ).
 let debtAddAcct=null,debtPayAcct=null;
 function debtAcctOptions(dirIn){
   const opts=cashAccounts().map(a=>({value:a.id,label:a.name+' · '+fmt(a.value||0)}));
-  // Money that never touched an account is a real answer, and it reads
-  // backwards when the option says "from" about money coming in.
   opts.push({value:CASH_NONE,label:dirIn?'Did not land in a tracked account':'Not from a tracked account'});
   return opts;
 }
@@ -5555,11 +4659,9 @@ function recordDebtAddition(){
   saveState();renderAll();renderDebtDetailBody();
   haptic('success');toast((d.type==='owed'?'Lend':'Borrow')+' recorded','success');
 }
-// ════════ EDITING ONE ENTRY ════════
-// Opening a lend or a repayment on its own, so a wrong figure is corrected
-// where it was entered. Editing the amount re-derives the debt's total, and
-// any cash the entry moved is put back before the new version moves it
-// again, so an edit that only changes a note leaves every balance alone.
+// EDITING ONE ENTRY
+// Editing an amount re-derives the debt's total; any cash it moved is reversed first,
+// then re-applied.
 let editingDebtEntry=null;   // {debtId, kind, id}
 let debtEntryAcct=null;
 function debtEntryList(d,kind){ return kind==='pay'?(d.payments||[]):debtLedger(d); }
@@ -5584,8 +4686,7 @@ function openDebtEntry(debtId,kind,entryId){
   el('debtEntryNote').value=e.note||'';
   debtEntryAcct=e.account||CASH_NONE;
   buildDebtAcctSelect('debtEntryAcctWrap',kind,debtEntryAcct,v=>{debtEntryAcct=v;},dir==='in');
-  // The only lend is what the debt IS. Deleting it would leave a debt of
-  // nothing; deleting the debt is the thing they actually want.
+  // The only lend is the debt itself; delete the debt instead.
   const solo=kind==='lend'&&debtLedger(d).length<2;
   const del=el('debtEntryDeleteBtn');
   del.style.display=solo?'none':'';
@@ -5601,8 +4702,7 @@ function saveDebtEntry(){
   if(isNaN(amt)||amt<=0){toast('Enter an amount','error');return;}
   const acct=(debtEntryAcct&&debtEntryAcct!==CASH_NONE)?resolveCashAccount(debtEntryAcct):null;
   {const blk=cashLegBlocked(acct);if(blk){toast(blk,'error');return;}}
-  // Put the old movement back first, so the check below and the new leg both
-  // measure against the balance as it would be without this entry.
+  // Reverse the old movement first so checks see the balance without this entry.
   reverseDebtCash(d,e,kind);
   {const err=debtCashError(d,acct,amt,kind);
    if(err){applyDebtCash(d,e,kind);toast(err,'error');return;}}
@@ -5650,7 +4750,7 @@ async function deleteDebtPayment(debtId,payId){
   saveState();renderAll();renderDebtDetailBody();
   haptic('tap');toast('Payment deleted');
 }
-// ════════ DEBTS ════════
+// DEBTS
 function onDebtSearch(){debtQuery=el('debtSearch').value.trim().toLowerCase();renderDebts();}
 function onGoalSearch(){goalQuery=el('goalSearch').value.trim().toLowerCase();renderPlan();}
 function cycleGoalSort(){const i=GOAL_SORTS.indexOf(goalSort);goalSort=GOAL_SORTS[(i+1)%GOAL_SORTS.length];state.settings.goalSort=goalSort;saveState();el('goalSortLbl').textContent=GOAL_SORT_LBL[goalSort];haptic('tap');renderPlan();}
@@ -5687,10 +4787,7 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
   let list=activeDebtTab==='owed'?owed:iowe;const isOwed=activeDebtTab==='owed';if(debtQuery)list=list.filter(d=>(d.name||'').toLowerCase().includes(debtQuery)||(d.note||'').toLowerCase().includes(debtQuery));
   const dl=el('debtList');if(!list.length){dl.innerHTML=debtQuery?`<div class="empty-state"><div class="empty-ico">${svgIcon('coins',30)}</div><h3>No matches</h3><p>No debts match "${esc(debtQuery)}".</p></div>`:`<div class="empty-state"><div class="empty-ico">${svgIcon(isOwed?'trending':'coins',30)}</div><h3>${isOwed?'No one owes you':"You don't owe anyone"}</h3><p>${isOwed?'Track money lent to friends, family or clients with optional interest.':'Keep tabs on loans and dues so nothing slips.'}</p><button class="empty-cta" onclick="openAddDebt()">${svgIcon('zap',14)} Record a debt</button></div>`;return;}
   const sorted=sortDebts(list.filter(d=>!debtQuery||d.name?.toLowerCase().includes(debtQuery)||d.note?.toLowerCase().includes(debtQuery)));dl.innerHTML=sorted.map((d,i)=>{const over=d.due&&parseDay(d.due)<today,ini=debtInitials(d.name),acc=calcAccrued(d);
-    // Four stacked lines on the right against two on the left made every card
-    // as tall as its longest column and mostly empty down the middle. The
-    // status belongs beside the name, where the eye already is, and the rest
-    // reads as one meta line instead of a column of fragments.
+    // Status beside the name, the rest on one meta line.
     const duePill=d.due
       ? (over?`<span class="debt-pill over">OVERDUE ${formatDate(d.due)}</span>`
              :`<span class="debt-pill">Due ${formatDate(d.due)}</span>`)
@@ -5703,21 +4800,8 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
     const accHtml=acc?`<span style="color:var(--accent)">+${fmt(acc)} interest</span>`:'';
     const totalPaid=(d.payments||[]).reduce((s,p)=>s+p.amount,0);const remaining=Math.max(0,d.amount+(acc||0)-totalPaid);const paidBadge=totalPaid>0?`<span style="color:var(--green)">Paid ${fmt(totalPaid)}</span>`:'';return `<div class="debt-item${enterCls()}${isPendingSync('debts',d.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-debt-id="${d.id}" onclick="openDebtDetail('${d.id}')" aria-label="${esc(d.name)}, ${fmt(remaining)}">${isPendingSync('debts',d.id)?pendingBadge():''}<div class="debt-avatar" style="--dav-h:${debtHue(d.name)}">${esc(ini)}</div><div class="debt-info"><div class="debt-name-row"><span class="debt-name">${esc(d.name)}</span>${d.interest&&d.interest.enabled?`<span class="debt-int-badge">${d.interest.type==='pct'?d.interest.rate+'%/'+freqShort(d.interest.freq):'Flat'}</span>`:''}${duePill}</div><div class="debt-note">${metaHtml}</div></div><div class="debt-vals"><div class="debt-val ${isOwed?'grn':'rd'}">${fmt(remaining)}</div><div class="debt-due">${[paidBadge,accHtml].filter(Boolean).join('')}</div></div></div>`;}).join('');
   attachContextMenu(dl,'.debt-item',openDebtContextMenu);}
-// Interest on what is actually outstanding, over the stretch it was outstanding.
-//
-// This used to charge the current total for the whole period no matter what had
-// happened in between, which was wrong in both directions. Lend 10,000 at 12%,
-// take 5,000 back at six months, and at twelve months it still billed a year of
-// interest on the whole 10,000. Lend someone another 5,000 today and it billed
-// a year of interest on that too, backdated to a loan that did not exist yet.
-// Nobody lending money to a friend means either of those.
-//
-// Lends and repayments are both dated, so they are merged into one timeline and
-// each stretch is charged on the balance that stood during it. A debt paid off
-// stops accruing on the day it is settled, for a percentage and for a flat fee
-// alike, and starts again only if more is lent.
-// One line saying what the interest was charged on, because a number that
-// moves when you record a payment should say why it moved.
+// Interest on the balance actually outstanding over each stretch: lends and repayments
+// form one dated timeline. A settled debt stops accruing until more is lent.
 function accruedBasis(d){
   if(!d||!d.interest||!d.interest.enabled)return '';
   const moves=((d.payments||[]).filter(p=>p&&num(p.amount)>0).length)
@@ -5741,10 +4825,8 @@ function calcAccrued(d,asOf){
   const flat=parseFloat(d.interest.flatAmount)||0;
   const rate=(parseFloat(d.interest.rate)||0)/100;
 
-  // The principal timeline. lendHistory only exists once something was added
-  // after the fact; when it does its parts sum to d.amount, so it can be
-  // trusted as the breakdown. Otherwise the whole amount was there from
-  // the start.
+  // lendHistory is the breakdown only when it sums to d.amount; otherwise the whole
+  // amount counts from the start.
   const lends=(d.lendHistory||[]).filter(h=>h&&num(h.amount)>0)
     .map(h=>({t:h.date?parseDay(h.date):lentD,delta:num(h.amount)}))
     .filter(h=>!isNaN(h.t));
@@ -5758,8 +4840,7 @@ function calcAccrued(d,asOf){
 
   let principal=0,accrued=0,cursor=startDate;
   const settle=()=>{ if(principal<1e-9)principal=0; };
-  // Anything dated at or before the clock starting is simply the opening
-  // balance, however many moves it took to get there.
+  // Everything up to the start date is the opening balance.
   events.forEach(e=>{ if(e.t<=startDate)principal+=e.delta; });
   settle();
   const charge=(from,to,bal)=>{
@@ -5771,8 +4852,7 @@ function calcAccrued(d,asOf){
   };
   for(const e of events){
     if(e.t<=startDate)continue;
-    // Dated in the future: it has not happened, so the closing charge below
-    // covers the rest of the timeline on the balance as it stands.
+    // Future-dated entries have not happened yet.
     if(e.t>=now)break;
     charge(cursor,e.t,principal);
     cursor=e.t;
@@ -5787,10 +4867,9 @@ const DEBT_SORT_LBL={amount:'Amount',due:'Due Date',interest:'Interest',name:'Na
 function cycleDebtSort(){const i=DEBT_SORTS.indexOf(debtSort);debtSort=DEBT_SORTS[(i+1)%DEBT_SORTS.length];state.settings.debtSort=debtSort;saveState();el('debtSortLbl').textContent=DEBT_SORT_LBL[debtSort];haptic('tap');renderDebts();}
 function sortDebts(list){return [...list].sort((a,b)=>{if(debtSort==='amount')return (b.amount+calcAccrued(b))-(a.amount+calcAccrued(a));if(debtSort==='due'){if(!a.due&&!b.due)return 0;if(!a.due)return 1;if(!b.due)return -1;return new Date(a.due)-new Date(b.due);}if(debtSort==='interest')return calcAccrued(b)-calcAccrued(a);return (a.name||'').localeCompare(b.name||'');});}
 function setDebtTab(tab){activeDebtTab=tab;state.settings.activeDebtTab=tab;saveState();haptic('tap');el('dTabOwed').className='d-tab'+(tab==='owed'?' active grn':'');el('dTabIOwe').className='d-tab'+(tab==='iowe'?' active rd':'');renderDebts();}
-// ════════ HABIT TRACKER ════════
-// Lives inside state.settings so it rides the existing settings JSON blob to
-// Supabase, no schema migration, syncs across devices automatically.
-//   habits:   [{id,name,color,goal}]   goal = times per month aimed for
+// HABIT TRACKER
+// Stored in state.settings so it syncs with the settings blob.
+//   habits:   [{id,name,color,goal}]   goal = times per month
 //   habitLog: { habitId: { 'YYYY-MM-DD': 1 } }
 const HABIT_COLORS = ['#f5a623','#16d6a4','#4a9eff','#a78bfa','#ff7b3a','#ff5b75','#ffd700','#00d4c8'];
 let habitMonth = null;
@@ -5807,10 +4886,7 @@ function habitGoal(h,daysInMonth){
   return daysInMonth;
 }
 
-// A habit tracker you can back-fill a month later is a diary of intentions,
-// not of what happened. The window is deliberately generous rather than
-// strict: a few days covers forgetting over a weekend, which is the honest
-// case, without letting anyone reconstruct a perfect month from memory.
+// Ticks allowed up to this many days back.
 const HABIT_BACKFILL_DAYS = 7;
 function habitDayAge(key){
   const d=new Date(key+'T12:00:00');
@@ -5835,25 +4911,18 @@ function toggleHabit(id,key){
   const nowOn=!log[id][key];
   if(log[id][key]) delete log[id][key]; else log[id][key]=1;
   saveState(); haptic(nowOn?'success':'tap');
-  // Keep the column you just tapped under your finger. renderHabits rebuilds
-  // the grid, and re-running the scroll-to-today would drag the month back to
-  // wherever today is, which is not where you were looking.
+  // Keep the scroll position after a tick.
   renderHabits({keepScroll:true});
-  // The grid is rebuilt from scratch, so the new cell is born already ticked
-  // and the CSS transition never runs, the tap landed with nothing to show
-  // for it. Replay the pop on the one cell that changed.
+  // The grid is rebuilt, so replay the pop on the changed cell.
   const cell=document.querySelector('.hb-cell[data-habit="'+CSS.escape(id)+'"][data-key="'+CSS.escape(key)+'"]');
   if(cell&&!state.settings.reduceMotion){
     cell.classList.add(nowOn?'hb-pop':'hb-unpop');
     setTimeout(()=>cell.classList.remove('hb-pop','hb-unpop'),420);
   }
-  // Every habit ticked for a day is the thing the grid exists to produce, so
-  // it is worth a moment rather than one more identical square.
+  // All habits done for the day.
   if(nowOn)habitDayCelebration(key,cell);
 }
-// A day where nothing is left undone gets its column lit and a short buzz.
-// Deliberately quiet: a full-screen confetti burst every time would be a
-// punishment by the third day.
+// Light the column and buzz; deliberately quiet.
 function habitDayCelebration(key,cell){
   const list=(state.settings.habits||[]).filter(h=>h&&h.id);
   if(list.length<2)return;
@@ -5877,24 +4946,18 @@ function moveHabit(id,dir){
   if(i<0||j<0||j>=list.length)return;
   [list[i],list[j]]=[list[j],list[i]];
   saveState();haptic('tap');renderHabits({keepScroll:true});
-  // The row moved out from under the caret, so follow it: pressing the
-  // shortcut twice should move the same habit twice, not two different ones.
+  // Keep focus on the moved row.
   const n=document.querySelector('.hb-row[data-hid="'+CSS.escape(id)+'"] .hb-name-cell');
   if(n)n.focus();
 }
-// Alt+Up/Down does the same thing from the keyboard. Drag is the obvious
-// gesture but it is not one you can perform without a pointer.
+// Alt+Up/Down reorders from the keyboard.
 function habitNameKey(e,id){
   if(!e.altKey)return;
   if(e.key==='ArrowUp'){e.preventDefault();e.stopPropagation();moveHabit(id,-1);}
   else if(e.key==='ArrowDown'){e.preventDefault();e.stopPropagation();moveHabit(id,1);}
 }
 
-// ── reorder by dragging ──────────────────────────────────────────────
-// Press and hold a habit name, then drag it up or down. A plain drag is
-// left alone on purpose: the same surface scrolls sideways through the
-// month and pages to the next one at the edges, so picking a row up has to
-// be something you clearly meant.
+// Reorder by press-and-hold then drag; a plain drag scrolls the month.
 const HB_HOLD_MS=340, HB_HOLD_SLOP=9;
 let _hbDrag=null, _hbDragged=false;
 function bindHabitReorder(wrap){
@@ -5940,15 +5003,13 @@ function startHabitDrag(row,startY,pid){
 }
 function hbDragMove(e){
   const d=_hbDrag; if(!d||e.pointerId!==d.pid)return;
-  // Cancels the scroll the browser would otherwise start. Still cancellable
-  // here because the finger sat still through the hold.
+  // Still cancellable because the finger stayed still through the hold.
   if(e.cancelable)e.preventDefault();
   const dy=Math.max(-d.from*d.h,Math.min((d.rows.length-1-d.from)*d.h,e.clientY-d.startY));
   d.row.style.transform='translate3d(0,'+dy.toFixed(1)+'px,0)';
   const to=Math.max(0,Math.min(d.rows.length-1,d.from+Math.round(dy/d.h)));
   if(to!==d.to){ d.to=to; haptic('tap'); }
-  // Everything between where it came from and where it is going steps aside
-  // by exactly one row, so the gap is always under the row you are holding.
+  // Rows between origin and target shift by one row.
   d.rows.forEach((r,i)=>{
     if(r===d.row)return;
     let shift=0;
@@ -5966,8 +5027,7 @@ function hbDragEnd(){
   window.removeEventListener('touchmove',hbBlockTouch);
   document.body.classList.remove('hb-reordering');
   d.rows.forEach(r=>{ r.classList.remove('hb-drag','hb-shift'); r.style.transform=''; });
-  // A drag always ends on a click, and that click would open the edit sheet
-  // for the habit you just moved. Swallow the next one.
+  // Swallow the click that ends a drag.
   _hbDragged=true; setTimeout(()=>{_hbDragged=false;},280);
   if(d.to===d.from)return;
   const list=habits();
@@ -5991,34 +5051,22 @@ function habitMonthCount(id,anchor){
   for(let i=1;i<=days;i++) if(log[dayKey(new Date(y,m,i))]) n++;
   return n;
 }
-// Swiping past either end of the month goes to the next one, but it should
-// feel like you are pulling it into view, not like the app decided something
-// on your behalf. Pulling past the edge stretches the grid against a rubber
-// band and slides a label in from that side naming the month you are heading
-// for. Let go before the threshold and it springs back with nothing changed;
-// pull past it and the month you were shown is the month you get.
-// Deliberately a long pull. Changing month is not something to do by accident
-// while reaching for the last column of the grid.
+// Pull past either end of the month to change month, against a rubber band; release
+// before the threshold springs back.
 const HB_PULL_TRIGGER=140;    // how far past the edge before it commits
 const HB_PULL_MAX=190;        // the band stops giving beyond this
 function bindHabitMonthPaging(){
   const sc=document.querySelector('.habit-scroll');
   if(!sc||sc._pagingBound)return;
   sc._pagingBound=true;
-  // Only the day cells move. Stretching the whole grid dragged the habit
-  // names and the goal column with it, which looked like the card itself was
-  // sliding off; the columns you are actually swiping are the checkboxes.
+  // Only the day cells move.
   const strips=()=>sc.querySelectorAll('.hb-days');
 
-  // The month you are pulling towards is shown in the month heading itself.
-  // A floating label over the grid covered a habit's name, and the heading is
-  // where you are already looking to see which month you are in.
+  // The target month shows in the heading.
   const lbl=()=>el('habitMonthLbl');
   let realMonth=null;
 
-  // startY and axis exist so a drag that is really a page scroll, started
-  // anywhere over the grid, still scrolls the page. Only once the movement
-  // is plainly sideways does this take the gesture over.
+  // Take over only once the movement is clearly sideways.
   let startX=null,startY=null,axis=null,pinned=null,pull=0,busy=false;
   const monthName=dir=>{
     const a=habitMonthAnchor();
@@ -6026,8 +5074,7 @@ function bindHabitMonthPaging(){
       .toLocaleDateString(undefined,{month:'short',year:'numeric'});
   };
   const paint=()=>{
-    // Resistance, so it stretches less the further you pull: the band gets
-    // stiffer rather than sliding away under your finger.
+    // Stiffer the further you pull.
     const eased=Math.sign(pull)*HB_PULL_MAX*(1-Math.exp(-Math.abs(pull)/HB_PULL_MAX));
     strips().forEach(st=>{st.style.transform='translate3d('+eased.toFixed(1)+'px,0,0)';});
     const dir=pull>0?-1:1;                       // pulling right reveals the past
@@ -6047,8 +5094,7 @@ function bindHabitMonthPaging(){
   const release=()=>{
     const armed=Math.abs(pull)>=HB_PULL_TRIGGER;
     const dir=pull>0?-1:1;
-    // Spring back either way; when it is armed the month changes underneath
-    // the spring so the new one arrives already settled.
+    // Spring back; if armed, the month changes underneath.
     if(!armed){
       strips().forEach(st=>{
         st.style.transition='transform .34s cubic-bezier(.34,1.56,.64,1)';
@@ -6064,9 +5110,7 @@ function bindHabitMonthPaging(){
     realMonth=null;
     if(armed&&!busy){
       busy=true;
-      // Carry the stretch straight into the swap: the strips are already
-      // held out under the finger, so they continue on their way rather than
-      // springing back first and then leaving again.
+      // Carry the stretch into the swap.
       habitMonthSwap(dir,()=>{busy=false;});
     }
     pull=0;startX=null;startY=null;axis=null;pinned=null;
@@ -6091,11 +5135,7 @@ function bindHabitMonthPaging(){
     if(pinned==='start'&&atStart&&dx>0)pull=dx;
     else if(pinned==='end'&&atEnd&&dx<0)pull=dx;
     else pull=0;
-    // While the grid is stretched there is nothing left to scroll sideways,
-    // so without this the browser hands the movement to the page and it
-    // scrolls up and down under a swipe that was meant to change the month.
-    // Only while actually pulling: any other moment belongs to the grid's
-    // own horizontal scroll, which has to stay native.
+    // Only while stretched; otherwise native horizontal scroll.
     if(pull!==0&&e.cancelable)e.preventDefault();
     paint();
   },{passive:false});
@@ -6119,18 +5159,10 @@ function shiftHabitMonth(delta){
   habitMonth=new Date(a.getFullYear(),a.getMonth()+delta,1);
   haptic('tap'); renderHabits();
 }
-// Changing month as a card swap rather than a cut. The month you are leaving
-// slides out the way you pushed it and the new one arrives from the other
-// side, with the heading, the trend and the rings coming along a beat later, // so it reads as one card turning over, not four things blinking at once.
-//
-// dir<0 is the past: it lives to your left, so it enters from the left and
-// pushes the current month out to the right.
-// Slow enough to read as a movement rather than a redraw: the old month is
-// still visibly leaving when the new one starts arriving.
+// Month change as a card swap. dir<0 is the past: enters from the left.
 const HB_SWAP_OUT=210, HB_SWAP_IN=430;
 let _hbSwapping=false;
-// The arrows go through the same swap, so tapping and swiping feel like the
-// same action rather than two different ones.
+// Arrows use the same swap as swiping.
 function habitMonthStep(dir){ habitMonthSwap(dir); }
 function habitMonthSwap(dir,after){
   const sc=document.querySelector('.habit-scroll');
@@ -6153,16 +5185,14 @@ function habitMonthSwap(dir,after){
     shiftHabitMonth(dir);
     const sc2=document.querySelector('.habit-scroll');
     if(sc2){
-      // Arrive showing the edge you came from, so the eye lands where the
-      // gesture left it instead of jumping to the far side of the month.
+      // Arrive at the edge you came from.
       sc2.scrollLeft=dir<0?Math.max(0,sc2.scrollWidth-sc2.clientWidth):0;
       sc2.querySelectorAll('.hb-days').forEach((st,i)=>{
         st.style.transition='none';
         st.style.transform='translate3d('+enterX.toFixed(1)+'px,0,0)';
         st.style.opacity='0';
         requestAnimationFrame(()=>{
-          // A few milliseconds apart per row, so the month fans in rather
-          // than snapping as one slab.
+          // Stagger rows.
           const d=Math.min(i,6)*26;
           st.style.transition='transform '+HB_SWAP_IN+'ms cubic-bezier(.22,1,.36,1) '+d+'ms, opacity '+(HB_SWAP_IN*0.6)+'ms ease '+d+'ms';
           st.style.transform='translate3d(0,0,0)';
@@ -6187,24 +5217,15 @@ function habitMonthSwap(dir,after){
   },HB_SWAP_OUT);
 }
 
-// ── tiny inline-SVG chart helpers ──────────────────────────────────────────
-// Deliberately hand-rolled rather than Chart.js: these are static, redrawn on
-// every toggle, and a Chart instance would mean a full teardown/rebuild each
-// time. A string of SVG costs almost nothing.
-// Pointer readout for the hand-rolled habit trend. The SVG is stretched with
-// preserveAspectRatio=none, so the x position maps straight to a day index.
+// Habit chart helpers: hand-rolled SVG, cheap to redraw.
+// Hover readout; the SVG uses preserveAspectRatio=none, so x maps straight to a day.
 function bindHabitTrendHover(host,perDay,list,y,m){
   if(!host||!perDay||!perDay.length)return;
-  // Bound once, but the month and habit list change underneath it, so the
-  // handler reads the latest from the node rather than closing over stale
-  // arrays from whichever render happened to attach it.
+  // Read the latest data from the node, not closed-over arrays.
   host._hb={perDay,list,y,m};
   if(host._hbHoverBound)return;
   host._hbHoverBound=true;
-  // The tooltip, the line and the svg are looked up at EVENT time, not here.
-  // renderHabits replaces this element's entire contents on every render, so
-  // nodes captured at bind time are detached the moment anything re-renders, // which is why the readout worked once and then silently did nothing: it was
-  // being written into an orphaned div that was no longer in the document.
+  // Look up nodes at event time: renders replace them.
   const parts=()=>({
     tip:host.querySelector('#hbTrendTip'),
     line:host.querySelector('#hbTrendLine'),
@@ -6236,42 +5257,28 @@ function bindHabitTrendHover(host,perDay,list,y,m){
       +(done.length?`<div class="tip-names">${done.map(h=>esc(h.name)).join(', ')}</div>`
                    :`<div class="tip-names dim">Nothing ticked</div>`);
     tip.classList.add('show');
-    // x is measured across the SVG, but the dot and the line are positioned
-    // inside the host, and the SVG sits inset from it. That gap was being
-    // ignored, so everything landed a fixed distance to the left, far enough
-    // at the first point that half the dot hung outside the chart. Measure the
-    // inset rather than assume it is zero.
+    // Account for the SVG's inset inside the host.
     const hostRect=host.getBoundingClientRect();
     const inset=r.left-hostRect.left, insetY=r.top-hostRect.top;
     const x=inset+(i/((vals.length-1)||1))*r.width;
     const tw=tip.offsetWidth||120;
     tip.style.left=Math.max(tw/2+2,Math.min(x,r.width-tw/2-2))+'px';
     if(line){line.style.left=x+'px';line.classList.add('show');}
-    // A dot on the point being read, like the dashboard chart, so it is
-    // obvious which day the numbers belong to rather than just a bare line.
     const dot=host.querySelector('#hbTrendDot');
     if(dot&&plot){
-      // Same arithmetic hbSmoothPath used, in its own viewBox units, then
-      // scaled to however tall the svg is actually being drawn.
+      // Same maths as hbSmoothPath, scaled to the drawn height.
       const top=4,bot=plot.H-4;
       const svgY=bot-((vals[i]||0)/(plot.maxV||1))*(bot-top);
       dot.style.left=x+'px';
-      // The vertical gap between host and svg counts for exactly the same
-      // reason the horizontal one does: the dot is placed in the host.
       dot.style.top=insetY+(svgY/plot.H)*r.height+'px';
       dot.classList.add('show');
     }
   };
-  // ── mouse / stylus ──
+  // mouse / stylus
   host.addEventListener('pointermove',e=>{if(e.pointerType!=='touch')show(e.clientX);});
   host.addEventListener('pointerleave',e=>{if(e.pointerType!=='touch')hide();});
-  // ── touch ──
-  // Pointer events are not enough here. touch-action:pan-y lets the browser
-  // claim the gesture the moment it looks vertical, and it announces that with
-  // pointercancel, which used to hide the readout mid-scrub. Touch events keep
-  // firing regardless, so they drive it instead, and the readout stays up for
-  // a moment after your finger leaves, on a phone you cannot read a tooltip
-  // that vanishes with the touch that summoned it.
+  // touch: driven by touch events because pan-y fires pointercancel mid-scrub;
+  // the readout lingers briefly after release.
   const touchAt=e=>{const t=e.touches&&e.touches[0];if(t){clearTimeout(hideTimer);show(t.clientX);}};
   host.addEventListener('touchstart',touchAt,{passive:true});
   host.addEventListener('touchmove',touchAt,{passive:true});
@@ -6299,9 +5306,7 @@ function hbSmoothPath(vals,w,h,maxV){
 }
 function hbRing(pct,color,label,sub){
   const r=25,c=2*Math.PI*r,p=Math.max(0,Math.min(1,pct));
-  // The number lives inside a box the exact size of the dial, so it centres
-  // on the ring itself. It used to be positioned by hand at a fixed offset
-  // from the top of the card, which put it a few pixels above the middle.
+  // Number centred in a box the size of the dial.
   return `<div class="hb-ring">
     <div class="hb-ring-dial">
     <svg viewBox="0 0 62 62" aria-hidden="true">
@@ -6316,9 +5321,7 @@ function hbRing(pct,color,label,sub){
   </div>`;
 }
 
-// Centre today's column in the horizontally scrolling grid. Only for the
-// current month: on any other month there is no today to centre on, and
-// jumping somewhere arbitrary would be worse than starting at the 1st.
+// Centre today's column, current month only.
 function scrollHabitsToToday(){
   const scroller=document.querySelector('.habit-scroll');
   if(!scroller)return;
@@ -6349,12 +5352,9 @@ function renderHabits(opts){
   const elapsed=isThisMonth?today.getDate():daysInMonth;
 
   {const _l=el('habitMonthLbl');
-   // Short in the tracker header, where it sits between two arrows and a
-   // calendar button and every pixel is spoken for. The calendar sheet has
-   // room and keeps the full name.
+   // Short month in the header.
    _l.textContent=anchor.toLocaleDateString('en',{month:'short',year:'numeric'});
-   // A gesture the browser cancelled mid-pull used to leave the preview text
-   // and its colour behind, so the heading named a month you were not in.
+   // Clear a cancelled pull's preview.
    _l.classList.remove('hb-month-peek','armed');}
   const nextBtn=el('habitNextBtn');
   if(nextBtn){ nextBtn.disabled=(y>today.getFullYear())||(y===today.getFullYear()&&m>=today.getMonth()); }
@@ -6382,15 +5382,14 @@ function renderHabits(opts){
   const totalGoal=list.reduce((s,h)=>s+habitGoal(h,daysInMonth),0);
   const possible=list.length*elapsed;
   const successRate=possible?totalDone/possible:0;
-  // Pace: measured against how much of the goal *should* be done by today, so
-  // mid-month doesn't look like failure.
+  // Pace against where the goal should be by today.
   const expected=totalGoal*(elapsed/daysInMonth);
   const pace=expected?totalDone/expected:0;
   const last3=perDay.slice(Math.max(0,elapsed-3),elapsed);
   const momentum=last3.length?last3.reduce((a,b)=>a+b,0)/(list.length*last3.length):0;
   const bestStreak=list.reduce((b,h)=>Math.max(b,habitStreak(h.id)),0);
 
-  // ── header: success rate + headline counts ──
+  // header: success rate + headline counts
   if(headEl) headEl.innerHTML=`
     <div class="hb-hero">
       <div class="hb-hero-rate">
@@ -6404,13 +5403,11 @@ function renderHabits(opts){
       </div>
     </div>`;
 
-  // ── trend line ──
+  // trend line
   if(chartEl){
     const W=300,H=54;
     const shown=perDay.slice(0,elapsed);
-    // The line is drawn from these values, with this maximum, across this box.
-    // The crosshair used to recompute all three for itself from the whole
-    // month, so the dot sat at the wrong height and on the wrong day.
+    // The crosshair reads the same values, max and box the line was drawn with.
     chartEl._plot={vals:shown.length?shown:[0],maxV:maxDay||1,W,H};
     const path=hbSmoothPath(shown.length?shown:[0],W,H,maxDay);
     const area=path?path+`L${W},${H}L0,${H}Z`:'';
@@ -6426,13 +5423,10 @@ function renderHabits(opts){
     <div class="hb-trend-dot" id="hbTrendDot" aria-hidden="true"></div>
     <div class="hb-trend-tip" id="hbTrendTip" role="status"></div>
     <div class="hb-trend-cap"><span>Day 1</span><span>peak ${maxDay}/${list.length}</span><span>Day ${daysInMonth}</span></div>`;
-    // Hand-rolled SVG has no tooltip of its own, so it gets one: which day,
-    // how many of the habits were done, and which they were. Reading a
-    // trend line you cannot interrogate is guesswork.
     bindHabitTrendHover(chartEl,shown,list,y,m);
   }
 
-  // ── grid ──
+  // grid
   const DOW=['S','M','T','W','T','F','S'];
   let html='<div class="hb-row hb-head">'
     +'<div class="hb-name-cell hb-corner"><span>HABIT</span><span class="hb-goal-col">GOAL</span></div>'
@@ -6476,7 +5470,7 @@ function renderHabits(opts){
       </div></div>`;
   });
 
-  // ── daily totals row, aligned to the same day columns ──
+  // daily totals row, aligned to the same day columns
   html+='<div class="hb-row hb-total-row"><div class="hb-name-cell hb-corner"><span>DAILY TOTAL</span></div><div class="hb-days">';
   for(let d=1;d<=daysInMonth;d++){
     const v=perDay[d-1], hgt=maxDay?Math.round(v/maxDay*100):0;
@@ -6485,10 +5479,7 @@ function renderHabits(opts){
   html+=`</div><div class="hb-stat-cell hb-corner">${totalDone}</div></div>`;
 
   wrap.innerHTML=html;
-  // Land on today rather than the 1st. Opening a month and asking someone to
-  // swipe across three weeks to find the present is backwards, and it is the
-  // column they came to look at. A re-render caused by a tick keeps the
-  // position instead: you are already looking where you want to be.
+  // Open on today; keep position on re-renders.
   if(heldScroll!=null){
     const sc=document.querySelector('.habit-scroll');
     if(sc)sc.scrollLeft=heldScroll;
@@ -6499,7 +5490,7 @@ function renderHabits(opts){
   bindHabitReorder(wrap);
   {const hint=el('habitHint'); if(hint)hint.hidden=list.length<2;}
 
-  // ── summary rings ──
+  // summary rings
   if(sumEl) sumEl.innerHTML=`<div class="hb-rings">
     ${hbRing(totalGoal?totalDone/totalGoal:0,'#ff5b75','Monthly','of goal')}
     ${hbRing(pace,'#4a9eff','On pace','by today')}
@@ -6507,12 +5498,8 @@ function renderHabits(opts){
   </div>`;
 }
 
-// ── HABIT CALENDAR ────────────────────────────────────────────────────────
-// The grid answers "how consistent am I" across a whole month at a glance,
-// but it is thirty narrow columns and you have to scroll to read it. A month
-// laid out as an actual calendar answers a different question, "what did a
-// given week look like", and that is the shape everyone already reads dates
-// in. Same data, no new state: it reads the same log the grid does.
+// HABIT CALENDAR
+// The same log as a month calendar.
 let hcalMonth=null;        // its own anchor, so browsing here does not move the grid
 let hcalFocus='all';       // 'all' or one habit id
 let hcalPickedDay=null;
@@ -6536,17 +5523,13 @@ function shiftHabitCal(delta){
   hcalPickedDay=null;
   haptic('tap');renderHabitCalendar();
 }
-// Can the calendar go that way? Forward stops at the current month, the
-// same rule the Next button follows, so a swipe cannot reach a month the
-// button refuses to.
+// Forward stops at the current month, like the Next button.
 function hcalCanGo(dir){
   if(dir<0)return true;
   const a=hcalAnchor(),n=new Date();
   return !(a.getFullYear()>n.getFullYear()||(a.getFullYear()===n.getFullYear()&&a.getMonth()>=n.getMonth()));
 }
-// The same swap the habit grid uses, so paging a month feels like one
-// gesture wherever you do it. Only the days move: the weekday header is the
-// same seven letters every month and sliding it about says nothing.
+// Same swap as the grid; only the days move.
 function hcalSwap(dir){
   if(!hcalCanGo(dir))return;
   const g=el('hcalGrid'), d=g&&g.querySelector('.hcal-days');
@@ -6580,9 +5563,7 @@ function hcalSwap(dir){
   },HB_SWAP_OUT);
 }
 let _hcalSwapping=false;
-// Swipe across the month to page it, the way the habit grid does. Nothing
-// here scrolls sideways, so a horizontal drag has only one meaning; a
-// mostly-vertical one is left alone so the sheet still scrolls.
+// Horizontal swipe pages the month; vertical scrolls the sheet.
 const HCAL_TRIGGER=64, HCAL_MAX=130;
 function bindHcalSwipe(){
   const g=el('hcalGrid'); if(!g||g._swipeBound)return;
@@ -6596,8 +5577,7 @@ function bindHcalSwipe(){
   const paint=()=>{
     const d=days(); if(!d)return;
     const dir=dx>0?-1:1;
-    // Resistance both ways, and a lot more of it when that direction is
-    // closed, so the wall is something you feel rather than read about.
+    // Much stiffer towards a closed direction.
     const stiff=hcalCanGo(dir)?1:0.22;
     const eased=Math.sign(dx)*HCAL_MAX*(1-Math.exp(-Math.abs(dx)/HCAL_MAX))*stiff;
     d.style.transition='none';
@@ -6638,8 +5618,7 @@ function bindHcalSwipe(){
     const x=e.touches[0].clientX-sx, y=e.touches[0].clientY-sy;
     if(axis===null){
       if(Math.abs(x)<6&&Math.abs(y)<6)return;
-      // Whichever way it started is the way it stays, so a scroll that
-      // wanders sideways does not turn into a month change halfway down.
+      // Axis locks on the first move.
       axis=Math.abs(x)>Math.abs(y)*1.25?'x':'y';
     }
     if(axis!=='x')return;
@@ -6654,8 +5633,7 @@ function pickHcalDay(key){
   hcalPickedDay=(hcalPickedDay===key)?null:key;
   haptic('tap');renderHabitCalendar();
 }
-// Tapping a day in the calendar toggles it, under the same backfill rule the
-// grid uses. There is no second set of rules to keep in step.
+// Same backfill rule as the grid.
 function toggleHabitFromCal(id,key){
   toggleHabit(id,key);
   renderHabitCalendar();
@@ -6702,9 +5680,7 @@ function renderHabitCalendar(){
     if(!future){monthDone+=done;monthPossible+=possible;if(possible&&done===possible)perfectDays++;}
     const ratio=possible?done/possible:0;
     const locked=!future&&!habitEditable(key);
-    // One habit in focus: the day takes that habit's own colour, so the month
-    // reads as that habit's streak. All habits: a completion ramp instead,
-    // because five colours in one square says nothing.
+    // One habit: its colour. All habits: a completion ramp.
     let style='',cls='hcal-day';
     if(future)cls+=' future';
     if(key===todayKey)cls+=' today';
@@ -6766,8 +5742,7 @@ function renderHabitCalendar(){
     }
   }
 }
-// One delegated listener beats binding ~250 individual cell handlers on every
-// single re-render.
+// One delegated listener for the whole grid.
 function bindHabitGrid(){
   const wrap=el('habitBody'); if(!wrap||wrap._bound) return;
   wrap._bound=true;
@@ -6838,15 +5813,14 @@ async function deleteHabit(){
   habits().splice(idx,1);
   delete habitLog()[id];
   saveState(); closeModal('habitModal'); renderHabits(); haptic('tap');
-  // Habits live in settings rather than a diff-tracked list, so restore
-  // directly instead of going through withUndo's list diffing.
+  // Habits are in settings, not a diffed list; restore directly.
   const undoId=++_undoSeq;
   _undoStack.push({id:undoId,keys:[],diff:{},timer:setTimeout(()=>removeUndoEntry(undoId),UNDO_WINDOW_MS),
     restore:()=>{ habits().splice(Math.min(idx,habits().length),0,savedHabit); habitLog()[id]=savedLog; saveState(); renderHabits(); }});
   toastWithUndo(undoId,h.name+' deleted');
 }
 
-// ════════ PLAN ════════
+// PLAN
 function goalLinkedIds(g){if(g.linkedAssetIds&&g.linkedAssetIds.length)return g.linkedAssetIds;if(g.linkedAssetId)return[g.linkedAssetId];return[];}
 function syncLinkedGoals(){let changed=false;state.goals.forEach(g=>{const ids=goalLinkedIds(g);if(!ids.length)return;const validIds=ids.filter(id=>state.assets.find(x=>x.id===id));if(validIds.length!==ids.length){g.linkedAssetIds=validIds;if(validIds.length)g.linkedAssetId=validIds[0];else{g.linkedAssetId=null;g.linkedAssetIds=[];}changed=true;}const live=validIds.reduce((s,id)=>{const a=state.assets.find(x=>x.id===id);return s+(a?getAssetCurrentValue(a):0);},0);if(Math.abs((g.saved||0)-live)>0.005){g.saved=live;changed=true;}});if(changed)saveState();}
 function renderPlan(){syncLinkedGoals();bindHabitGrid();renderHabits();const tt=state.goals.reduce((s,g)=>s+(g.target||0),0),ts=state.goals.reduce((s,g)=>s+(g.saved||0),0);el('planTarget').textContent=fmt(tt);el('planSaved').textContent=fmt(ts);el('planRemain').textContent=fmt(Math.max(0,tt-ts));renderPnLChart();
@@ -6865,13 +5839,11 @@ function renderPlan(){syncLinkedGoals();bindHabitGrid();renderHabits();const tt=
     const dateHtml=g.date?(overdue?'<span class="goal-overdue-badge">OVERDUE, was due '+formatDate(g.date)+'</span>':'Target: '+formatDate(g.date)):'No target date';
     return `<div class="goal-card${enterCls()} ${done?'done':''} ${overdue?'overdue':''}${isPendingSync('goals',g.id)?' unsynced':''}" style="animation-delay:${_animateEnter?i*45:0}ms" role="button" tabindex="0" data-goal-id="${g.id}" onclick="openGoalDetail('${g.id}')">${isPendingSync('goals',g.id)?pendingBadge():''}<div class="goal-top"><div class="goal-icon" style="background:var(--bg3);color:${readableInk(color)}">${svgIcon(g.icon||'target',18)}</div><div class="goal-info"><div class="goal-name">${esc(g.name)} ${done?'<span class="goal-done-badge" title="Goal reached"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${(goalLinkedIds(g).length)?'<span class="goal-link-badge" title="Linked to savings account(s)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>':''}</div><div class="goal-sub">${dateHtml} · ${fmt(rem)} left</div>${(function(){const p=goalProjection(g.target,g.saved,g.monthly,g.date);if(!p||p.done||p.onTrack==null)return '';return `<span class="goal-chip ${p.onTrack?'on':'off'}">${p.onTrack?'On track':fmt(p.shortfall)+' short'}</span>`;})()}</div><div class="goal-pct">${pct.toFixed(1)}%</div></div><div class="progress-bar"><div class="progress-fill ${col}" data-w="${pct}"></div></div><div class="progress-meta"><span>${fmt(g.saved||0)} saved</span><span>${fmt(g.target||0)} goal</span></div></div>`;}).join('');
     attachContextMenu(gl,'.goal-card',openGoalContextMenu);
-    // Growing from zero is the arrival animation. On a plain refresh the
-    // bar should already be where it belongs, not crawl back out again.
+    // Grow from zero only on arrival.
     if(_animateEnter)requestAnimationFrame(()=>document.querySelectorAll('#goalsList .progress-fill').forEach(f=>f.style.width=f.dataset.w+'%'));
     else document.querySelectorAll('#goalsList .progress-fill').forEach(f=>{f.style.transition='none';f.style.width=f.dataset.w+'%';requestAnimationFrame(()=>{f.style.transition='';});});}
   const rl=el('recurList');if(!state.recurs.length)rl.innerHTML='<div class="empty-state" style="padding:16px"><p>Nothing repeating yet</p></div>';
-  else{const tm={};ASSET_TYPES.forEach(t=>tm[t.id]=t);const today=todayStr();// Bills first when they are due, because a due bill is the one thing here
-  // that costs you something if it is missed.
+  else{const tm={};ASSET_TYPES.forEach(t=>tm[t.id]=t);const today=todayStr(); // Due bills first: a missed one costs money.
   const ordered=state.recurs.slice().sort((a,b)=>{
     const da=(a.nextDue||a.start||''),db=(b.nextDue||b.start||'');
     const oa=(a.active!==false&&da<=today)?0:1, ob=(b.active!==false&&db<=today)?0:1;
@@ -6902,17 +5874,13 @@ function openGoalContextMenu(itemEl){const id=itemEl.dataset.goalId;if(!id)retur
   openModal('assetCtxModal');}
 function quickToggleRecur(id){const r=state.recurs.find(x=>x.id===id);if(!r)return;r.active=r.active===false;saveState();renderPlan();haptic('tap');toast(r.active===false?'Paused':'Resumed','success');}
 async function quickDeleteRecur(id){const r=state.recurs.find(x=>x.id===id);if(!r)return;const _bill=recurKind(r)==='bill';if(!await askConfirm({title:_bill?'Delete recurring bill?':'Delete recurring investment?',message:'“'+r.name+'” will stop running. '+(_bill?'Expenses it already recorded are kept.':'Investments it already made are kept.'),confirmText:'Delete'}))return;withUndo(r.name+' deleted',['recurs'],()=>{state.recurs=state.recurs.filter(x=>x.id!==id);});saveState();renderPlan();haptic('tap');}
-function renderPnLChart(){const c=el('pnlChart');if(!c||!window.Chart)return;if(pnlChartInst){try{pnlChartInst.destroy();}catch(e){}pnlChartInst=null;}let labels=[],data=[];// Was reading pnlHistory directly, so it showed the same single straight // segment as the dashboard. Same reconstructed series now, so the two agree.
+function renderPnLChart(){const c=el('pnlChart');if(!c||!window.Chart)return;if(pnlChartInst){try{pnlChartInst.destroy();}catch(e){}pnlChartInst=null;}let labels=[],data=[]; // Same reconstructed series as the dashboard.
   const _s=buildNetWorthSeries();const hist=_s.length>=2?_s.slice(-30):null;
   if(hist)hist.forEach(p=>{labels.push(new Date(p.date).toLocaleDateString('en',{month:'short',day:'numeric'}));data.push(p.netWorth);});else{const nw=calcNetWorth();for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);labels.push(d.toLocaleDateString('en',{month:'short',day:'numeric'}));data.push(nw);}}
   const pos=data.length<2||data[data.length-1]>=data[0],T=themeColors(),col=pos?T.green:T.red;
   pnlChartInst=new Chart(c,{type:'line',data:{labels,datasets:[{data,label:'Net Worth',borderColor:col,borderWidth:2.2,tension:.4,fill:true,backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,110);g.addColorStop(0,hexA(col,.22));g.addColorStop(1,hexA(col,0));return g;},pointRadius:0,pointHoverRadius:6,pointBackgroundColor:col,pointHoverBackgroundColor:'#fff',pointHoverBorderColor:col,pointHoverBorderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:state.settings.reduceMotion?0:550},plugins:{legend:{display:false},tooltip:{enabled:false,external:ctx=>buildHoverTooltip(ctx,'pnlChartTooltip',i=>labels[i]||'',{series:data,sinceLabel:'Over the window'})}},interaction:{intersect:false,mode:'index'},onHover:(e,els,chart)=>{const wrap=el('pnlChartWrap');if(els&&els.length){const x=els[0].element.x;chart._hoverX=x;if(wrap)wrap.classList.add('hovering');const vl=el('pnlChartVLine');if(vl)vl.style.left=x+'px';}else{chart._hoverX=null;if(wrap)wrap.classList.remove('hovering');}chart.draw();},scales:{x:{display:true,ticks:{color:T.text3,font:{size:9},maxRotation:0},grid:{display:false}},y:{display:false,...paddedYRange(data)}}},plugins:[sharedCrosshairPlugin]});}
-// ════════ SETTINGS ════════
-// Which build this device is actually running. Half the confusion in testing
-// comes from fixing something and then checking it on a copy the service
-// worker had not replaced yet, and there was no way to tell by looking.
-// BUILD_ID is stamped at commit time; the service worker's own version is
-// read back from it so a stale cache is visible rather than merely suspected.
+// SETTINGS
+// Stamped at commit time so a stale service-worker copy is visible.
 const BUILD_ID='65069d4';
 function buildStampText(){
   const sw=(navigator.serviceWorker&&navigator.serviceWorker.controller)?'active':'none';
@@ -6934,9 +5902,6 @@ async function copyBuildInfo(){
   haptic('tap');
 }
 function renderSettings(){renderCurrGrid();updateAuthUI();syncAdminVisibility();['hideBalance','haptics','reduceMotion'].forEach(k=>{const t=el('tog-'+k);if(t){t.className='toggle'+(state.settings[k]?' on':'');t.setAttribute('aria-checked',state.settings[k]?'true':'false');}});const lu=el('lastUpdated');if(lu)lu.textContent=state.lastUpdated?'Synced: '+new Date(state.lastUpdated).toLocaleTimeString():'Never';el('themeOptAuto')&&el('themeOptAuto').classList.toggle('active',state.settings.theme==='auto');el('themeOptDark')&&el('themeOptDark').classList.toggle('active',state.settings.theme==='dark');el('themeOptLight')&&el('themeOptLight').classList.toggle('active',state.settings.theme==='light');syncAppLockUI();renderHapticSeg();renderAiSettings();syncAiEntryPoints();syncBuildStamp();}
-// A three-across grid of thirty currencies is a wall. A searchable list says
-// the same thing in a row each, shows the rate you are actually converting
-// at, and marks the ones you have overridden.
 let rateEditCode=null;
 function renderCurrGrid(){
   const sub=el('currencySub');
@@ -6978,9 +5943,7 @@ function pickCurrency(code){
   if(currMode==='base'){setBaseCurrency(code);return;}
   setCurrency(code);renderCurrList();closeModal('currencyModal');
 }
-// Two things are being chosen in this one list: what the numbers are shown
-// in, and what they are stored in. They were the same control before, which
-// is why the base could never be anything but NPR.
+// 'display' = what numbers are shown in; 'base' = what they are stored in.
 let currMode='display';
 function setCurrMode(m){
   currMode=(m==='base')?'base':'display';
@@ -6994,9 +5957,7 @@ function setCurrMode(m){
   renderCurrList();
 }
 
-// The rate editor. Rates are typed the way they are quoted: how many units of
-// the base one unit buys. Storing the inverse and asking for the inverse
-// would be correct and unusable.
+// Rates are typed as quoted: base units per 1 unit.
 function openRateEditor(code){
   rateEditCode=code;
   const live=basePerUnit(code);
@@ -7041,8 +6002,7 @@ function toggleAiPref(k){
   const p=aiPrefs();
   setAiPref(k,!p[k]);
   haptic('tap');syncAiEntryPoints();renderAiSettings();
-  // Turning off both entry points would leave no way to open it, so say where
-  // the other one is rather than silently stranding the feature.
+  // Keep at least one way to open the assistant.
   const now=aiPrefs();
   if(!now.bubble&&!now.header)toast('Folio is still in Settings and the command palette','success');
 }
@@ -7067,7 +6027,7 @@ function toggleSetting(key){state.settings[key]=!state.settings[key];saveState()
   renderSettings();renderAll();}
 function quickToggleBalance(){state.settings.hideBalance=!state.settings.hideBalance;saveState();haptic('tap');syncPrivacyIcon();renderSettings();renderAll();announce(state.settings.hideBalance?'Balances hidden':'Balances shown');}
 function syncPrivacyIcon(){const i=el('privacyIcon');if(!i)return;i.innerHTML=state.settings.hideBalance?'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>':'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';}
-// ════════ APP LOCK (PIN) ════════
+// APP LOCK (PIN)
 const PIN_KEY='paisafolio_pin_hash';
 let pinEntry='',pinMode=null,pinFirstEntry='',appUnlocked=false;
 const PIN_SALT_KEY='paisafolio_pin_salt';
@@ -7096,8 +6056,7 @@ function getOrCreateSalt(){
   }catch(e){return null;}
 }
 
-// PBKDF2-SHA256. A 4-digit PIN has only 10k possibilities, so the salt stops
-// precomputation and the iteration count is what actually buys time.
+// PBKDF2-SHA256: the salt stops precomputation; the iterations buy time.
 async function derivePinHash(pin,saltHex){
   const salt=new Uint8Array((saltHex.match(/../g)||[]).map(h=>parseInt(h,16)));
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);
@@ -7115,8 +6074,7 @@ function timingSafeEqual(a,b){
   return diff===0;
 }
 
-// ── Attempt throttling ───────────────────────────────────────────────────
-// Persisted, so force-closing the app doesn't hand back unlimited guesses.
+// Attempt throttling
 function readAttempts(){
   try{const r=JSON.parse(localStorage.getItem(PIN_ATTEMPTS_KEY)||'{}');
     return{count:Number(r.count)||0,until:Number(r.until)||0};}catch(e){return{count:0,until:0};}
@@ -7170,10 +6128,7 @@ function startPinSetup(isChange){
   renderLockDots();
   el('lockPinView').style.display='flex';el('lockRecoveryView').style.display='none';
   el('lockForgotBtn').style.display='none';
-  // Choosing a PIN is optional and reversible; only being asked for an
-  // existing one is not. This read `!!isChange`, so the very first time you
-  // turned App Lock on there was no close button and no way back out short of
-  // reloading the page. Setup is always escapable.
+  // Setting a PIN is always escapable; only unlocking is not.
   lockDismissable=true;
   el('lockCloseBtn').style.display='flex';
   el('lockScreen').classList.add('open');
@@ -7192,7 +6147,7 @@ function showLockScreen(){
   el('lockScreen').classList.add('open');
   syncBodyScrollLock();
 }
-function hideLockScreen(){el('lockScreen').classList.remove('open');pinMode=null;syncBodyScrollLock();/* Backing out of setup leaves no PIN, so the toggle has to show off again. */try{syncAppLockUI();}catch(e){}}
+function hideLockScreen(){el('lockScreen').classList.remove('open');pinMode=null;syncBodyScrollLock(); /* Backing out of setup leaves no PIN; show the toggle off. */ try{syncAppLockUI();}catch(e){}}
 function dismissLockScreen(){
   if(!lockDismissable)return;
   hideLockScreen();popModalHistoryIfNeeded();
@@ -7232,9 +6187,7 @@ async function lockKeyPress(d){
   }
   if(pinMode==='setup-confirm'){
     if(pinEntry!==pinFirstEntry){lockShake('PINs didn\u2019t match, try again');setTimeout(()=>{el('lockTitle').textContent='Set a PIN';pinMode='setup-first';pinFirstEntry='';},500);return;}
-    // Refuse to pretend. Without WebCrypto (plain HTTP, ancient browser) the
-    // only thing we could store is a reversible hash, which would give a false
-    // sense of protection, say so instead of quietly storing it.
+    // Without WebCrypto only a reversible hash is possible; refuse instead.
     if(!hasWebCrypto()){
       lockShake('App Lock needs a secure (https) connection');
       setTimeout(()=>{hideLockScreen();syncAppLockUI();
@@ -7266,8 +6219,7 @@ async function lockKeyPress(d){
         try{ok=timingSafeEqual(await derivePinHash(pinEntry,salt),stored);}catch(e){ok=false;}
       }
     }else if(stored){
-      // Legacy unsalted SHA-256 (or the old 32-bit fallback). Verify once,
-      // then immediately re-store as PBKDF2 so it never has to be used again.
+      // Legacy unsalted hash: verify once, then re-store as PBKDF2.
       ok=timingSafeEqual(await legacySha256Hex(pinEntry),stored);
       needsUpgrade=ok;
     }
@@ -7301,23 +6253,16 @@ document.addEventListener('visibilitychange',()=>{
   const elapsedMin=_hiddenAt?(Date.now()-_hiddenAt)/60000:Infinity;
   if(elapsedMin>=delayMin){appUnlocked=false;showLockScreen();}
 });
-// ════════ TICKER ════════
+// TICKER
 let modalStack=[],lastFocus=null;
-function renderTicker(){/* The price marquee was removed: it cost a permanent
-  animation and a strip of every page to repeat coins already on the
-  dashboard. Kept as a no-op so the several callers stay valid. */}
-// One sheet on screen at a time, however many are open. Sheets stack so that
-// closing one puts you back on the one you opened it from; without this they
-// would also all be VISIBLE at once, layered over each other, which is not
-// depth, it is a bug you can see through.
+function renderTicker(){}
+// Only the top sheet is visible; the ones beneath are covered.
 function syncModalCover(){
   const top=modalStack[modalStack.length-1];
   modalStack.forEach(id=>{
     const m=el(id);if(!m)return;
     m.classList.toggle('covered',id!==top);
-    // A covered sheet is not just invisible, it is out of reach: nothing in
-    // it should take a tap, and a screen reader should not read it out from
-    // underneath the one in front.
+    // Covered sheets take no taps and are hidden from screen readers.
     m.setAttribute('aria-hidden',id===top?'false':'true');
   });
 }
@@ -7328,28 +6273,14 @@ function syncBodyScrollLock(){
     (el('authModal')&&el('authModal').classList.contains('open'))||
     (el('onbOverlay')&&el('onbOverlay').classList.contains('open'))||
     (el('cmdk')&&el('cmdk').classList.contains('open'));
-  // Both, deliberately: <html> carries `overflow-x:clip`, which makes the
-  // viewport scroll from <html> and ignore <body>'s overflow entirely. See
-  // the note beside the rule in styles.css.
+  // Both html and body: html has overflow-x:clip, so the viewport ignores body overflow.
   document.body.classList.toggle('modal-open',!!anyOpen);
   document.documentElement.classList.toggle('modal-open',!!anyOpen);
 }
-// ════════ SHEETS AND THE BACK BUTTON ════════
-// Every open sheet owns one history entry, so Back closes it instead of
-// leaving the app. Closing it by its own X winds that entry back off, and
-// that unwind arrives in popstate looking exactly like a real Back press.
-//
-// Two things went wrong with a plain counter. With two sheets stacked — an
-// entry opened from a debt — the unwind closed the debt behind it as well.
-// And a close followed by an open in the SAME tick (tapping a search result,
-// which closes search and opens what you tapped) let the new push land before
-// the old unwind resolved, so the count said one entry more than the history
-// actually held and the next close walked off the page entirely.
-//
-// Each entry now carries a token, and a close only unwinds when the entry on
-// top is still the one that sheet pushed. When it is not, the entry was
-// already consumed; the sheet just closes and a stale forward entry is left
-// for Back to spend harmlessly.
+// SHEETS AND THE BACK BUTTON
+// Each open sheet pushes one history entry so Back closes it. Entries carry a token;
+// closing only unwinds history if the top entry is still this sheet's, so stacked
+// sheets and same-tick close+open stay in step.
 let _suppressHistoryPop=false,_selfPop=false;
 let _modalHistIds=[];
 function pushModalHistory(){
@@ -7386,34 +6317,22 @@ window.addEventListener('beforeunload',(e)=>{
     return Array.from(m.querySelectorAll('input[type="text"],input[type="number"],input:not([type]),textarea')).some(inp=>inp.value&&inp.value.trim()!=='');
   });
   if(hasUnsaved){e.preventDefault();e.returnValue='';return '';}
-  // Flush any debounced-but-not-yet-sent cloud push so a reload right after an
-  // edit doesn't leave the cloud copy stale (best-effort, browsers may not
-  // wait for this to finish, but it gives sendBeacon-less browsers a chance).
+  // Flush a pending cloud push before unload (best effort).
   if(typeof schedulePush==='function'&&typeof pushToCloud==='function'&&supabaseUser){clearTimeout(window._syncDebounceTimerRef);pushToCloud();}
 });
-// True while a sheet is too freshly opened for a click on its own overlay to
-// be a deliberate dismissal.
+// Ignore overlay clicks on a sheet that has only just opened.
 function justOpened(m){
   const t=m&&Number(m.dataset&&m.dataset.openedAt);
   return !!t&&(Date.now()-t)<400;
 }
-function openModal(id){const m=el(id);if(!m)return;lastFocus=document.activeElement;/* A tap that opens a sheet also produces a synthetic click a moment later, and the overlay is under the finger by then. Stamp the open time so the overlay can ignore a click that belongs to the tap that opened it. */m.dataset.openedAt=String(Date.now());m.classList.add('open');m.setAttribute('aria-hidden','false');modalStack.push(id);syncModalCover();haptic('tap');syncBodyScrollLock();pushModalHistory();
-  // Focus the sheet itself rather than its first field. Focusing an input
-  // raises the keyboard before the person has seen what they opened, and on
-  // a phone that covers most of what they came to read.
+function openModal(id){const m=el(id);if(!m)return;lastFocus=document.activeElement; /* Stamp the open time so the opening tap's synthetic click is ignored (justOpened). */ m.dataset.openedAt=String(Date.now());m.classList.add('open');m.setAttribute('aria-hidden','false');modalStack.push(id);syncModalCover();haptic('tap');syncBodyScrollLock();pushModalHistory();
+  // Focus the sheet, not an input, so the keyboard does not cover it.
   setTimeout(()=>{const f=m.querySelector('.modal-sheet')||m;
     try{f.setAttribute('tabindex','-1');f.focus({preventScroll:true});}catch(e){}
-    // A sheet has no width until it is open, so any row inside it that
-    // scrolls sideways was measured at zero and cached as having nowhere to
-    // go. Measure again once it is actually on screen.
+    // Re-measure scroll hints now the sheet has a width.
     try{ bindScrollHints(m); }catch(e){}},120);}
 function closeModal(id,skipHistoryPop){const m=el(id);if(!m)return;if(id==='aiModal')releaseAiViewport();if(id==='assetDetailModal')parkPnlCal();m.classList.remove('open');m.classList.remove('covered');m.setAttribute('aria-hidden','true');modalStack=modalStack.filter(x=>x!==id);syncModalCover();syncBodyScrollLock();if(!skipHistoryPop)popModalHistoryIfNeeded();if(lastFocus&&!modalStack.length){try{lastFocus.focus();}catch(e){}}}
-// There used to be a swapModal here, which closed one sheet as it opened the
-// next. Every use of it was a drill-down - the account and a field of it, the
-// category list and one category, an asset and its ledger - and in a
-// drill-down the thing you came from is exactly what you want back when you
-// close what you opened. It took that away every time, so it is gone: sheets
-// stack, and closing one uncovers the one beneath.
+// Sheets stack: closing one uncovers the one beneath.
 function popModalHistoryIfNeeded(){
   if(_suppressHistoryPop)return;
   const want=_modalHistIds.pop();
@@ -7425,7 +6344,7 @@ function popModalHistoryIfNeeded(){
   setTimeout(()=>{_suppressHistoryPop=false;_selfPop=false;},50);
 }
 function bindModalOverlays(){document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModal(o.id);}));}
-// ════════ CUSTOM SELECT ════════
+// CUSTOM SELECT
 function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap)return;const c=options.find(o=>o.value===cur)||options[0];
   wrap.innerHTML=`<div class="custom-select-trigger" id="cst-${cid}" tabindex="0" role="button" aria-haspopup="listbox"><span class="cst-label">${c.label}</span><svg class="caret" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div class="custom-select-dropdown" id="csd-${cid}" role="listbox">${options.map(o=>`<div class="csd-opt ${o.value===cur?'active':''}" data-val="${o.value}" role="option"><span class="csd-opt-name">${o.label}</span>${o.sub?`<span class="csd-opt-sub">${o.sub}</span>`:''}</div>`).join('')}</div>`;
   const trig=el('cst-'+cid),dd=el('csd-'+cid);trig.addEventListener('click',e=>{e.stopPropagation();document.querySelectorAll('.custom-select-trigger.open').forEach(t=>{if(t!==trig){t.classList.remove('open');const d=el('csd-'+t.id.replace('cst-',''));if(d){d.classList.remove('open');d.classList.remove('drop-up');}}});
@@ -7444,10 +6363,7 @@ function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap
     if(onChange)onChange(v);
   };
   opts().forEach(opt=>opt.addEventListener('click',e=>{e.stopPropagation();choose(opt);}));
-  // Keyboard. This opened on Enter and then went nowhere: the options were
-  // mouse-only, so anyone on a keyboard could see the list and not pick from
-  // it. Arrows move a highlight, Enter or Space takes it, Escape backs out and
-  // returns focus to the trigger, the way a native select behaves.
+  // Keyboard: arrows move, Enter/Space pick, Escape closes and refocuses the trigger.
   let hi=Math.max(0,options.findIndex(o=>o.value===cur));
   const paintHi=()=>{
     const list=opts();
@@ -7460,9 +6376,7 @@ function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap
   const openIt=()=>{ if(!trig.classList.contains('open'))trig.click(); paintHi(); };
   trig.addEventListener('keydown',e=>{
     const k=e.key;
-    // The document-level handler turns Enter and Space on any role=button
-    // into a click. Combined with the one below that is two clicks, open
-    // then straight back shut, so this key stops here.
+    // The document handler also clicks role=button on Enter/Space; stop it here.
     if(k==='Enter'||k===' '||k==='Spacebar'||k==='Escape'||k.startsWith('Arrow')||k==='Home'||k==='End')e.stopPropagation();
     if(k==='Enter'||k===' '||k==='Spacebar'){
       e.preventDefault();
@@ -7503,7 +6417,7 @@ function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap
     o.addEventListener('mousemove',()=>{hi=i;paintHi();});});
   trig.setAttribute('aria-expanded','false');
 }
-// ════════ ASSET TYPE ROW ════════
+// ASSET TYPE ROW
 function renderAssetTypeRow(){el('assetTypeRow').innerHTML=ASSET_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedAssetType?'active':''}" onclick="setAssetType('${t.id}')">${t.svg}<span>${t.label}</span></button>`).join('');}
 function setAssetType(t){if(t===selectedAssetType)return;selectedAssetType=t;state.settings.lastAssetType=t;saveState();haptic('tap');if(t==='stock')ensureNepsePrices();renderAssetTypeRow();
   el('assetQty').value='';el('assetBuyPrice').value='';el('assetCurrentPrice').value='';el('assetName').value='';el('assetNotes').value='';
@@ -7558,8 +6472,7 @@ function autoFillBuyPriceFromLive(){
   updateBuyPriceHint();
 }
 function autoFillBuyPriceFromCurrent(){
-  // For asset types with no live price feed (stock, property, other, and unpriced commodities):
-  // let "Current Price" + Quantity drive the Buy Price field as a starting estimate.
+  // No live feed: Current Price × Quantity pre-fills Buy Price.
   if(selectedAssetType==='crypto'||selectedAssetType==='liquidity')return;
   if(selectedAssetType==='commodity'){
     const comm=COMMODITIES.find(c=>c.id===selectedCommodityId)||COMMODITIES[0];
@@ -7625,11 +6538,7 @@ function updateBuyPriceHint(){
   }else{hint.style.display='none';}
 }
 function updateCurrentPriceVisibility(){
-  // Deliberately always hidden when ADDING an asset. Asking for today's price
-  // up front is redundant, at purchase time it's just the buy price again -
-  // and it made the form longer for every manual type. The current price is
-  // set from the asset's own detail screen instead, which is where you'd
-  // actually go to keep it up to date.
+  // Hidden when adding; current price is set from the asset's detail sheet.
   const row=el('currentPriceRow');
   if(row)row.style.display='none';
 }
@@ -7663,25 +6572,13 @@ function updateCommodityPriceHint(){
     h.textContent='No live price available, enter buy price manually';
   } else h.style.display='none';
 }
-// Existing cash accounts, offered as you type. Typing a name that already
-// exists merges into that account, which is the right behaviour but was
-// invisible until after saving. Picking from a list makes the merge a
-// choice instead of a surprise.
-// ════════ NAME SUGGESTIONS ════════
-// <datalist> is the obvious way to do this and it is why the account name
-// field looked broken: mobile browsers either do not render its dropdown at
-// all or render it somewhere you cannot see, so on a phone nothing happened.
-// The app already draws its own suggestion list for coins, so free-text name
-// fields use the same thing and behave the same everywhere.
+// NAME SUGGESTIONS
+// Our own list instead of <datalist>, which many mobile browsers do not show.
 function nameSuggestions(box,input,items,onPick){
   if(!box||!input)return;
   const q=(input.value||'').trim().toLowerCase();
   if(!q){box.style.display='none';box.innerHTML='';return;}
-  // Rank by how good the match is, not by array order: an exact match first,
-  // then names that start with what you typed, then anything containing it.
-  // An exact match used to be excluded entirely, on the theory that you had
-  // already typed it, but typing "Gold" in full is exactly when you most
-  // want to be told you already own some.
+  // Exact match first, then prefix, then contains.
   const hits=items.map(it=>{
     const nm=(it.name||'').toLowerCase();
     const rank=nm===q?0:(nm.startsWith(q)?1:(nm.includes(q)?2:-1));
@@ -7709,8 +6606,7 @@ function nameSuggestions(box,input,items,onPick){
   });
   box.style.display='block';
 }
-// A suggestion row for one existing holding. It carries the whole asset, so
-// picking it can adopt everything about it rather than copying a label.
+// Carries the whole asset so picking it adopts everything.
 function assetSuggestion(a,showCat){
   const bits=[];
   if(a.category==='liquidity')bits.push(a.liquidityType||'Account');
@@ -7719,10 +6615,7 @@ function assetSuggestion(a,showCat){
   bits.push(fmt(a.category==='liquidity'?(a.value||0):getAssetCurrentValue(a)));
   return {name:a.name,icon:a.icon,sub:bits.join(' · '),asset:a};
 }
-// What to offer under an asset-name field: holdings of the type you are on,
-// and only those. Searching every category meant standing on Stocks and being
-// offered your bank accounts, which is noise, if you are on Stocks you are
-// adding a stock.
+// Only holdings of the selected type.
 function assetsOfCategory(cat){
   return (state.assets||[])
     .filter(a=>a&&a.category===cat&&a.id!==editingAssetId)
@@ -7731,10 +6624,7 @@ function assetsOfCategory(cat){
 // The liquidity dropdown stores a key; the asset stores the label it produced.
 const LIQ_KEY_BY_LABEL={'Savings Account':'savings','Current Account':'current',
   'Fixed Deposit (FD)':'fd','Cash in Hand':'cash','Digital Wallet':'digital','Other':'other'};
-// Picking an existing holding means "add to this one", so the form becomes
-// that holding: its type, its subtype, its ticker or coin or commodity unit,
-// and its NEPSE flag. Filling in only the name left you on the wrong tab with
-// none of the identity set, which is how you end up with two Nabil Banks.
+// Picking a holding makes the form that holding (type, subtype, ticker, unit, NEPSE flag).
 function adoptAsset(a){
   if(!a)return;
   if(selectedAssetType!==a.category)setAssetType(a.category);
@@ -7786,8 +6676,7 @@ function adoptAsset(a){
   // Say plainly that this will merge rather than create a second entry.
   toast('Adding to '+stripParens(a.name),'success');
 }
-// Property and 'other' share one free-text name field, so it offers whatever
-// you already hold in the type currently selected.
+// Property and 'other' share one name field.
 function onAssetNameInput(){
   nameSuggestions(el('assetNameSuggest'),el('assetName'),assetsOfCategory(selectedAssetType),
     it=>adoptAsset(it.asset));
@@ -7805,8 +6694,7 @@ function onLiquidityNameInput(){
   }else hint.style.display='none';
 }
 function buildLiquiditySelect(){buildCustomSelect('liquidityTypeWrap',[{value:'savings',label:'Savings Account'},{value:'current',label:'Current Account'},{value:'fd',label:'Fixed Deposit (FD)'},{value:'cash',label:'Cash in Hand'},{value:'digital',label:'Digital Wallet'},{value:'other',label:'Other'}],selectedLiquidityType||'savings',v=>{selectedLiquidityType=v;state.settings.lastLiquidityType=v;saveState();syncLiquidityFields();});syncLiquidityFields();}
-// Cash in hand and a wallet earn nothing and mature never, so neither
-// field belongs on them. A savings account earns but does not mature.
+// Cash and wallets have no rate or maturity; savings has a rate only.
 function syncLiquidityFields(){
   const t=selectedLiquidityType||'savings';
   const earns=(t==='savings'||t==='fd'||t==='current'||t==='other');
@@ -7819,27 +6707,23 @@ function syncLiquidityFields(){
 }
 function renderPropertyTypeRow(){el('propertyTypeRow').innerHTML=PROPERTY_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedPropertyType?'active':''}" onclick="setPropertyType('${t.id}')" style="min-width:58px"><div style="color:${selectedPropertyType===t.id?'var(--accent)':'var(--text3)'}">${svgIcon(t.icon,16)}</div><span>${t.label}</span></button>`).join('');}
 function setPropertyType(id){selectedPropertyType=id;renderPropertyTypeRow();}
-// ════════ SEARCHES ════════
+// SEARCHES
 let searchTimeout=null;
 function onCryptoSearch(){clearTimeout(searchTimeout);const q=el('cryptoSearch').value.trim();if(!q){el('cryptoSuggestions').style.display='none';const sp=el('cryptoSpinner');if(sp)sp.classList.remove('visible');return;}
-  // Coins you already hold answer instantly and merge into that holding;
-  // the network search below replaces this the moment it returns.
+  // Held coins show instantly; the network search replaces them.
   {const mine=(state.assets||[]).filter(a=>a&&a.category==='crypto'&&a.id!==editingAssetId)
     .map(a=>assetSuggestion(a,false));
    if(mine.length)nameSuggestions(el('cryptoSuggestions'),el('cryptoSearch'),mine,it=>adoptAsset(it.asset));}
   const sp=el('cryptoSpinner');if(sp)sp.classList.add('visible');searchTimeout=setTimeout(async()=>{const res=await searchCryptoWithImages(q);if(sp)sp.classList.remove('visible');if(!res.length){el('cryptoSuggestions').style.display='none';return;}const box=el('cryptoSuggestions');box.innerHTML=res.map((c,i)=>`<div class="coin-sug-item" role="button" tabindex="0" data-i="${i}">${c.image?`<img class="coin-sug-img" src="${esc(c.image)}" onerror="this.style.display='none'" loading="lazy"/>`:`<div class="coin-sug-img"></div>`}<div><div class="coin-sug-name">${esc(c.name)}</div><div class="coin-sug-sym">${esc((c.symbol||'').toUpperCase())}</div></div></div>`).join('');box.querySelectorAll('.coin-sug-item').forEach((node,i)=>node.addEventListener('click',()=>{const c=res[i];selectCoin(c.id,c.name||'',(c.symbol||'').toUpperCase(),c.image||'');}));box.style.display='block';},350);}
 async function selectCoin(id,name,sym,img){img=proxyImg(img);selectedCoinId=id;selectedCoinName=name;selectedCoinImage=img;el('cryptoSearch').value=name;el('cryptoSuggestions').style.display='none';const usd=await fetchCoinPrice(id);if(usd!==null){el('cryptoPriceHint').style.display='block';el('cryptoPriceHint').textContent=`Live: ${fmt(usdToNpr(usd))} per ${sym}`;autoFillBuyPriceFromLive();}}
 let stockSearchTimeout=null;
-// Asked for once, the first time somebody looks at the stock form. Without
-// this the suggestions are empty until you already own a listed share, which
-// is the wrong way round.
+// Load the NEPSE list the first time the stock form is used.
 let _nepseAsked=false;
 function ensureNepsePrices(){
   if(_nepseAsked||_nepseOff||Object.keys(nepsePrices).length)return;
   _nepseAsked=true;
   fetchNepse(true).then(()=>{
-    // If the list arrived while something was already typed, show it now
-    // rather than making them type another letter.
+    // Show results for what is already typed.
     const inp=el('stockSearch');
     if(inp&&inp.value.trim()&&Object.keys(nepsePrices).length)onStockSearch();
   });
@@ -7850,15 +6734,9 @@ function onStockSearch(){
   ensureNepsePrices();
   const raw=inp.value.trim();
   selectedStockName=raw||null;selectedStockSym=raw||null;
-  // Typing a symbol the exchange quotes says the same thing as picking it
-  // from the list, so it counts the same. Set here rather than left to the
-  // save, so what the sheet shows matches what it is about to record.
+  // A typed symbol the exchange quotes counts as picked.
   selectedStockIsNepse=nepseKnows(raw);
-  // Every symbol the exchange quoted today came back with the prices, so the
-  // search can offer the market itself the way the coin search does, without
-  // a second endpoint or a list baked into the app that would go stale. With
-  // no feed configured there is nothing to offer, and it falls back to the
-  // stocks already held, which is what it did before.
+  // Search today's quoted symbols; with no feed, fall back to held stocks.
   const q=raw.toLowerCase();
   const listed=q?Object.keys(nepsePrices).map(sym=>({sym,q:nepsePrices[sym]}))
     .map(x=>{
@@ -7883,58 +6761,38 @@ function onStockSearch(){
     });
     return;
   }
-  // Nothing listed matches: your existing stocks are the next most useful
-  // thing here, since picking one adds to that holding.
+  // No listed match: offer held stocks.
   nameSuggestions(box,inp,assetsOfCategory('stock'),it=>adoptAsset(it.asset));
 }
-// Picking one off the exchange fills in the symbol and the name and turns the
-// NEPSE switch on, because a share you chose from the NEPSE list is on NEPSE.
+// Picking from the NEPSE list sets symbol, name and the NEPSE flag.
 function pickNepseStock(sym,name){
   selectedStockSym=sym;selectedStockName=name;
   selectedStockIsNepse=true;
   const inp=el('stockSearch');if(inp)inp.value=name;
   const box=el('stockSuggestions');if(box){box.style.display='none';box.innerHTML='';}
-  // The price is already known, so the field it would be typed into is filled
-  // in rather than left blank next to a live quote.
+  // Fill the known price.
   const q=nepsePrices[sym];
   const cp=el('assetCurrentPrice');
   if(cp&&q&&q.price>0&&!cp.value)cp.value=(nprToBase(q.price)*getCurrRate(currentPriceEntryCcy||currentCurrency.code)).toFixed(2);
   const hint=el('stockHint');
-  // Worded and coloured like the coin and metal hints, because it is the same
-  // fact. The age of the quote rides along in a quieter colour: an exchange
-  // that trades four hours a day is worth saying "as of" about, which a coin
-  // trading every second is not.
+  // Same hint as coins and metals, plus the quote's age.
   if(hint&&q&&q.price>0){hint.style.display='block';
     hint.innerHTML='Live: '+esc(fmt(nprToBase(q.price)))+' per '+esc(sym)
       +(nepseAsOf?' <span class="hint-age">\u00b7 '+esc(relTime(Date.parse(nepseAsOf)))+'</span>':'');}
-  // The same convenience the coin search gives: with a quantity already in,
-  // the buy price starts from today's, to be corrected rather than typed.
+  // With a quantity entered, start the buy price from today's.
   autoFillBuyPriceFromLive();
   haptic('tap');
 }
 function selectStock(sym,name,isNepse){selectedStockSym=sym;selectedStockName=name;el('stockSearch').value=name;el('stockSuggestions').style.display='none';el('stockHint').style.display='none';}
-// Whether a share is listed is a fact about the exchange, not a preference:
-// a symbol the feed quotes is listed, one it does not is not. Asking the
-// person to confirm it produced a switch that appeared only when the answer
-// was already no, on every name the feed had never heard of.
+// Listed or not is decided by the feed, not the user.
 function syncNepseToggle(){selectedStockIsNepse=nepseKnows(selectedStockSym)||nepseKnows((el('stockSearch')&&el('stockSearch').value||'').trim());}
-// Once every listed symbol is known, asking whether a share is listed is
-// asking a question the app can already answer: NTC is either in today's
-// prices or it is not. So the switch only appears when it is genuinely a
-// question, which is a symbol the exchange did not quote, or no prices to
-// check against because the feed is down. When it is recognised, the hint
-// above already says the price is live and there is nothing to decide.
+// The toggle only appears when the feed cannot answer (unknown symbol or feed down).
 function nepseKnows(sym){
   const k=String(sym||'').trim().toUpperCase();
   return !!(k&&nepsePrices[k]);
 }
-// ════════ GOAL ICONS/COLORS ════════
-// ════════ ICON PICKER ════════
-// Twenty-nine icons laid out across the top of a sheet made choosing one the
-// first thing the sheet asked, ahead of what the goal even is, and cost four
-// rows of height on every open. One row says what is chosen; the choosing
-// happens in a sheet of its own, with a search, because a list this long is
-// faster to search than to scan.
+// GOAL ICONS/COLORS
+// ICON PICKER: one row shows the choice; picking happens in a searchable sheet.
 let _iconPickerPick=null,_iconPickerCur=null;
 function openIconPicker(current,onPick,title){
   _iconPickerCur=current||null;
@@ -7967,7 +6825,7 @@ function renderGoalIconGrid(){
 function openGoalIconPicker(){openIconPicker(selectedGoalIcon,setGoalIcon,'Goal icon');}
 function setGoalIcon(k){selectedGoalIcon=k;renderGoalIconGrid();}
 function renderGoalColors(){el('goalColorGrid').innerHTML=GOAL_COLORS.map(c=>`<button class="color-opt ${c.name===selGoalColor?'sel':''}" style="background:${c.hex}" onclick="selGoalColor='${c.name}';renderGoalColors()" aria-label="${c.name} color"></button>`).join('');}
-// ════════ INTEREST ════════
+// INTEREST
 function refreshAccruedBox(d){
   const box=el('accruedBox');
   if(!box)return;
@@ -8003,8 +6861,7 @@ function toggleCompound(){intCompound=!intCompound;const t=el('compoundToggle');
 let intFlatFreq='month',chargeFrom='lend';
 function setIntFlatFreq(f){intFlatFreq=f;['day','week','month','year'].forEach(x=>{const b=el('intFlatFreq'+x.charAt(0).toUpperCase()+x.slice(1));if(b)b.className='freq-btn'+(x===f?' active':'');});}
 function daysAgoISO(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split('T')[0];}
-// Months ahead, clamped to the end of the month so 31 Jan + 1 month lands on
-// 28 Feb rather than rolling forward into March.
+// Clamped to month end (31 Jan + 1 month = 28 Feb).
 function monthsAheadISO(n){const now=new Date();const day=now.getDate();const d=new Date(now.getFullYear(),now.getMonth()+n,1);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return dayKey(d);}
 let dueDateEnabled=false;
 function daysFromNowISO(n){const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().split('T')[0];}
@@ -8017,15 +6874,9 @@ function syncLentQuickBtns(){const v=el('debtLentDate').value;const map={0:'lent
 function setChargeFrom(v){chargeFrom=v;el('chargeFromLend').className='freq-btn'+(v==='lend'?' active':'');el('chargeFromDue').className='freq-btn'+(v==='due'?' active':'');el('chargeFromHint').textContent=v==='lend'?'Interest accrues from the day you lent / borrowed the money.':'Interest only starts accruing after the due date passes.';}
 function setIntFreq(f){intFreq=f;['day','week','month','year'].forEach(x=>{el('intFreq'+x.charAt(0).toUpperCase()+x.slice(1)).className='freq-btn'+(x===f?' active':'');});}
 function setDebtType(t){selectedDebtType=t;el('dtypeOwed').className='dtype-btn'+(t==='owed'?' active grn':'');el('dtypeIOwe').className='dtype-btn'+(t==='iowe'?' active rd':'');el('dtypeOwed').style.animation='';el('dtypeIOwe').style.animation='';if(typeof syncDebtNewAcct==='function')syncDebtNewAcct(editingDebtId?state.debts.find(x=>x.id===editingDebtId):null);}
-// ════════ ADD/EDIT ASSET ════════
-// Quantity and average cost are read out of the transactions, so typing over
-// them here was never a real edit: the next thing to touch a transaction
-// replayed the ledger and put the old numbers back. Rather than let someone
-// change a figure that will not hold, the two fields go read-only as soon as
-// there is a ledger behind them, and the sheet says where the numbers do come
-// from. A holding with no transactions at all (hand-made, or imported from a
-// backup that carried no ledger) still takes what is typed, and that becomes
-// its opening entry.
+// ADD/EDIT ASSET
+// With a ledger behind it, quantity and cost are read-only (the replay owns them).
+// Without one, what is typed becomes the opening entry.
 function ledgerOwnsNumbers(a){
   return !!(a&&a.category!=='liquidity'&&txsForAsset(a).some(t=>!t.transfer));
 }
@@ -8039,8 +6890,7 @@ function syncLedgerLock(a){
     f.setAttribute('aria-readonly',lock?'true':'false');
   });
   const seg=el('priceModeSeg');
-  // The per-unit / total switch only rewrites the locked field, so it has
-  // nothing left to do.
+  // The per-unit/total switch has nothing to edit.
   if(seg&&lock)seg.style.display='none';
 }
 function openAddAsset(){editingAssetId=null;el('addAssetTitle').textContent='Add Asset';el('saveAssetBtn').textContent='Add Asset';el('deleteAssetBtn').style.display='none';selectedAssetType=state.settings.lastAssetType||'crypto';selectedCoinId=null;selectedCoinName=null;selectedCoinImage=null;selectedCommodityId=state.settings.lastCommodityId||'gold';selectedCommodityUnit=state.settings.lastCommodityUnit||'gram';selectedLiquidityType=state.settings.lastLiquidityType||'savings';selectedStockSym=null;selectedStockName=null;selectedStockIsNepse=false;selectedPropertyType='house';
@@ -8048,7 +6898,7 @@ function openAddAsset(){editingAssetId=null;el('addAssetTitle').textContent='Add
   syncLedgerLock(null);updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=true;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);openModal('addAssetModal');}
 function openEditAsset(id){const a=state.assets.find(x=>x.id===id);if(!a)return;editingAssetId=id;el('addAssetTitle').textContent='Edit Asset';el('saveAssetBtn').textContent='Save Changes';el('deleteAssetBtn').style.display='block';selectedAssetType=a.category;selectedCoinId=a.coinId||null;selectedCoinName=a.name;selectedCoinImage=a.coinImage||null;selectedCommodityId=a.commodityId||'gold';selectedCommodityUnit=a.unit||'gram';selectedStockSym=a.ticker||null;selectedStockName=a.name;selectedStockIsNepse=a.isNepse||false;selectedPropertyType=a.propertyType||'house';
   const liqLabelToVal={'Savings Account':'savings','Current Account':'current','Fixed Deposit (FD)':'fd','Cash in Hand':'cash','Digital Wallet':'digital','Other':'other'};selectedLiquidityType=liqLabelToVal[a.liquidityType]||'savings';
-  el('cryptoSearch').value=a.coinId?a.name:'';el('stockSearch').value=a.category==='stock'?a.name:'';el('assetName').value=a.name;el('assetQty').value=a.qty||'';// For crypto/commodity: show total invested (buyPrice * qty); for others: show per-unit price
+  el('cryptoSearch').value=a.coinId?a.name:'';el('stockSearch').value=a.category==='stock'?a.name:'';el('assetName').value=a.name;el('assetQty').value=a.qty||''; // crypto/commodity/property show total invested; others per unit
   const isTotalMode=(a.category==='crypto'||a.category==='commodity'||a.category==='property');el('assetBuyPrice').value=a.buyPrice?((isTotalMode?a.buyPrice*(a.qty||1):a.buyPrice)*getCurrRate(currentCurrency.code)).toFixed(2):'';el('assetDate').value=a.date||'';el('assetNotes').value=a.notes||'';el('assetCurrentPrice').value=a.currentPrice?(a.currentPrice*getCurrRate(currentCurrency.code)).toFixed(2):'';
   if(a.category==='liquidity'){el('liquidityName').value=a.name;el('liquidityValue').value=a.value?(a.value*getCurrRate(currentCurrency.code)).toFixed(2):'';el('liquidityInterest').value=a.interest||'';el('liquidityMaturity').value=a.maturity||'';el('liquidityNotes').value=a.notes||'';}
   if(a.coinId&&livePrices[a.coinId]){el('cryptoPriceHint').style.display='block';el('cryptoPriceHint').textContent='Live: '+fmt(usdToNpr(livePrices[a.coinId].usd))+' per unit';}
@@ -8070,22 +6920,18 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
   else{name=el('assetName').value.trim();if(!name){toast('Enter a name','error');return;}qty=parseFloat(el('assetQty').value)||null;const bp=parseFloat(el('assetBuyPrice').value)||null;const bpPerUnit=(bp&&qty&&!isPricePerUnitMode)?bp/qty:bp;buyPriceNPR=bpPerUnit?bpPerUnit/bpRate:null;}
   let icon='coins';if(selectedAssetType==='property'){const pt=PROPERTY_TYPES.find(p=>p.id===selectedPropertyType);icon=pt?pt.icon:'home';}else if(selectedAssetType==='other')icon='box';else if(selectedAssetType==='stock')icon='chartline';else if(selectedAssetType==='liquidity')icon='banknote';
   const existingForInterest=editingAssetId?state.assets.find(a=>a.id===editingAssetId):null;
-  // If editing a commodity and the unit was changed in the form, the qty/price typed in the form are in the OLD unit (that's what was shown), convert them to the new unit so the physical holding amount doesn't silently change.
+  // Unit changed while editing: convert what was typed from the old unit.
   if(editingAssetId&&selectedAssetType==='commodity'&&existingForInterest&&existingForInterest.unit&&unit&&existingForInterest.unit!==unit){
     const oldUnit=existingForInterest.unit;
     if(qty!=null)qty=convertUnit(qty,oldUnit,unit);
     if(buyPriceNPR!=null){const conv=convertUnit(1,oldUnit,unit);if(conv)buyPriceNPR=buyPriceNPR/conv;}
   }
-  const asset={id:editingAssetId||uid(),category:selectedAssetType,name,ticker,coinId,coinImage,commodityId,unit,isNepse,propertyType,liquidityType,icon,qty,buyPrice:buyPriceNPR,currentPrice:(function(){const c=parseFloat(el('assetCurrentPrice').value);const cpRate=getCurrRate(currentPriceEntryCcy||currentCurrency.code);if(!isNaN(c)&&c>0)return c/cpRate;/* Nothing entered and nothing to fetch: today's mark is what was paid, until they say otherwise. Leaving it null showed an empty price field on an asset that plainly has one. */return (!coinId&&buyPriceNPR>0)?buyPriceNPR:null;})(),value,interest:el('liquidityInterest').value||null,interestSince:(selectedAssetType==='liquidity'&&el('liquidityInterest').value)?(existingForInterest&&existingForInterest.interestSince?existingForInterest.interestSince:todayStr()):null,maturity:el('liquidityMaturity').value||null,date:selectedAssetType!=='liquidity'?(el('assetDate').value||null):null,notes:(selectedAssetType==='liquidity'?el('liquidityNotes').value:el('assetNotes').value)||null};
+  const asset={id:editingAssetId||uid(),category:selectedAssetType,name,ticker,coinId,coinImage,commodityId,unit,isNepse,propertyType,liquidityType,icon,qty,buyPrice:buyPriceNPR,currentPrice:(function(){const c=parseFloat(el('assetCurrentPrice').value);const cpRate=getCurrRate(currentPriceEntryCcy||currentCurrency.code);if(!isNaN(c)&&c>0)return c/cpRate; /* Nothing to fetch: today's price defaults to the buy price. */ return (!coinId&&buyPriceNPR>0)?buyPriceNPR:null;})(),value,interest:el('liquidityInterest').value||null,interestSince:(selectedAssetType==='liquidity'&&el('liquidityInterest').value)?(existingForInterest&&existingForInterest.interestSince?existingForInterest.interestSince:todayStr()):null,maturity:el('liquidityMaturity').value||null,date:selectedAssetType!=='liquidity'?(el('assetDate').value||null):null,notes:(selectedAssetType==='liquidity'?el('liquidityNotes').value:el('assetNotes').value)||null};
   if(editingAssetId){
     const i=state.assets.findIndex(a=>a.id===editingAssetId);
     const prev=i!==-1?state.assets[i]:null;
     if(i!==-1)state.assets[i]=asset;
-    // And bring the stored copies along, so an export, a sync to another
-    // device, or a row whose asset is later deleted all carry the name the
-    // holding actually has. Matched through the OLD identity: the fallback
-    // in txsForAsset goes by name, and the name has just changed. A row
-    // without an assetId gets one here so it can never orphan again.
+    // Rename the stored copies too, matched by the old identity; backfill assetId.
     if(prev){
       (state.transactions||[]).forEach(t=>{
         const mine=t.assetId?t.assetId===asset.id
@@ -8100,11 +6946,7 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
     }
     let note='Asset updated!';
     if(prev&&selectedAssetType==='liquidity'){
-      // Typing a new balance here is a correction, and a correction moves
-      // money like anything else. Recording the difference is what keeps the
-      // history adding up to the balance: without it you could turn 1,000
-      // into 5,000 and the transaction list would go on saying 500 + 500,
-      // with nothing anywhere to account for the other 4,000.
+      // A balance correction is recorded as a transaction so history adds up.
       const before=num(prev.value), after=num(asset.value);
       const delta=+(after-before).toFixed(2);
       if(Math.abs(delta)>=0.005){
@@ -8118,25 +6960,17 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
       }
     }
     if(prev&&selectedAssetType!=='liquidity'){
-      // Changing a commodity's base unit rescales the holding, so the ledger
-      // has to be rescaled with it. Leaving the transactions in grams while
-      // the asset moved to tola meant the very next replay put the gram
-      // figure back and the holding jumped by the conversion factor. What
-      // was typed at the time (enteredQty/enteredUnit) is left alone: that
-      // is a record of the past and it is still true.
+      // Rescale stored base quantities when a commodity's unit changes; entered values stay.
       if(selectedAssetType==='commodity'&&prev.unit&&unit&&prev.unit!==unit){
         const f=convertUnit(1,prev.unit,unit);
         if(f)txsForAsset(asset).forEach(t=>{
-          // Rows that say what was typed and in what unit need no help; they
-          // are read back through that. It is the ones holding a bare base
-          // quantity that would now be in the wrong unit.
+          // Rows with enteredQty/enteredUnit are read through those.
           if(t.enteredUnit&&t.enteredQty!=null)return;
           if(t.qty!=null)t.qty=+(t.qty*f).toFixed(10);
           if(t.perUnit!=null)t.perUnit=t.perUnit/f;
         });
       }
-      // No ledger to contradict: what was typed becomes the opening entry,
-      // so the holding is never a number with nothing behind it.
+      // No ledger: what was typed becomes the opening entry.
       if(!txsForAsset(asset).some(t=>!t.transfer)&&(asset.qty||asset.buyPrice)){
         state.transactions=state.transactions||[];
         state.transactions.push({id:uid(),assetId:asset.id,name:asset.name,category:asset.category,
@@ -8168,8 +7002,8 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
       state.transactions.push({id:uid(),assetId:existing.id,name:existing.name,category:'liquidity',icon:existing.icon,coinImage:existing.coinImage,amount:addVal,qty:null,txType:'buy',notes:el('liquidityNotes').value.trim()||null,date:new Date().toISOString()});
       toast(name+': added to existing balance','success');
     }else{
-      // Qty-bearing assets: weighted-average the buy price, sum quantities.
-      // Commodities can be added in a different unit than the existing holding (e.g. existing silver is in tola, this purchase was entered in gram), convert into the existing asset's base unit first so they merge into one holding instead of a duplicate.
+      // Weighted-average price, summed quantity. Other-unit commodity purchases convert into
+      // the holding's unit first.
       const enteredUnit=(selectedAssetType==='commodity')?unit:null;
       const targetUnit=(selectedAssetType==='commodity')?(existing.unit||unit):null;
       const qtyInExistingUnit=(enteredUnit&&targetUnit&&enteredUnit!==targetUnit)?convertUnit(qty||0,enteredUnit,targetUnit):(qty||0);
@@ -8179,7 +7013,7 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
       const newQty=oldQty+addQty;
       existing.buyPrice=newQty>0?(oldCost+addCost)/newQty:existing.buyPrice;
       existing.qty=newQty;
-      if(buyPriceNPR==null&&qty==null){/* property/other with no qty: nothing numeric to merge, just keep existing */}
+      if(buyPriceNPR==null&&qty==null){}
       if(asset.currentPrice!=null)existing.currentPrice=asset.currentPrice;
       if((selectedAssetType==='property'||selectedAssetType==='other')&&el('assetNotes')&&el('assetNotes').value.trim())existing.notes=el('assetNotes').value.trim();
       const unitNote=(enteredUnit&&targetUnit&&enteredUnit!==targetUnit)?(qty+' '+enteredUnit):null;
@@ -8194,9 +7028,7 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
   }
   trackPnLHistory();saveState();closeModal('addAssetModal');renderAll();haptic('success');}
 async function deleteAsset(){if(!editingAssetId)return;const linkedGoals=state.goals.filter(g=>g.linkedAssetId===editingAssetId);const warnMsg='Delete this asset? Its transaction history will be removed too.'+(linkedGoals.length?(' This will also unlink '+linkedGoals.length+' goal'+(linkedGoals.length>1?'s':'')+' ('+linkedGoals.map(g=>g.name).join(', ')+').'):'');if(!await askConfirm({title:'Delete asset?',message:warnMsg,confirmText:'Delete asset'}))return;const a=state.assets.find(x=>x.id===editingAssetId);const delId=editingAssetId;
-  // Was a plain delete with a plain toast, no undo at all, which is why the
-  // detail-modal delete never showed the undo bar or stacked like the
-  // context-menu delete (quickDeleteAsset) does. Same behaviour now.
+  // Undoable, like quickDeleteAsset.
   withUndo((a&&a.name?a.name:'Asset')+' deleted',['assets','transactions','goals'],()=>{
     state.assets=state.assets.filter(x=>x.id!==delId);
     if(a){const txIds=new Set(txsForAsset(a).map(t=>t.id));state.transactions=(state.transactions||[]).filter(t=>!txIds.has(t.id));}
@@ -8204,8 +7036,7 @@ async function deleteAsset(){if(!editingAssetId)return;const linkedGoals=state.g
     trackPnLHistory();saveState();
   });
   closeModal('addAssetModal');closeModal('assetDetailModal');renderAll();haptic('tap');}
-// Current price can be typed either per-unit or as the whole holding's value,
-// same choice the buy/sell form already offers. Stored always as per-unit.
+// Typed per unit or as the whole value; stored per unit.
 let isQuickCurPerUnit=true;
 function setQuickCurMode(perUnit,id){
   if(perUnit===isQuickCurPerUnit)return;
@@ -8235,20 +7066,16 @@ function quickUpdateCurrentPrice(id){
   trackPnLHistory();saveState();renderAll();haptic('success');
   toast('Current price updated','success');openAssetDetail(id);
 }
-// ── Liquidity money in / out ───────────────────────────────────────────────
-// Cash and bank balances have no buy/sell, value changes because money moved.
-// Each movement is still written as a transaction so the history, recent-tx
-// list and sync all behave exactly like every other asset type.
+// Liquidity in/out
+// No buy/sell; each movement is still a transaction.
 let liqMode=null;
-// The amount is entered in whatever currency the money actually moved in, so
-// the field carries its own picker and every read goes through moneyBase().
+// Amount in the currency the money moved in.
 function bindLiqAmtCcy(){
   if(!el('liqAmtCcyWrap'))return;
   resetMoneyCcy(['liqAmt']);
   bindMoneyCcy('liqAmt','liqAmtCcyWrap',()=>updateLiqPreview(detailAssetId));
 }
-// Where a transfer is going. Null until something is picked, and every other
-// account is a candidate except this one.
+// Transfer target; any other account.
 let liqXferTo=null;
 function liqXferOptions(fromId){
   return cashAccounts().filter(a=>a.id!==fromId)
@@ -8307,8 +7134,7 @@ function saveLiqTx(id){
   state.transactions.push({
     id:uid(),assetId:a.id,name:a.name,category:'liquidity',
     txType:liqMode==='withdraw'?'sell':'buy',
-    // A deposit has no quantity and no price per unit; the amount is the
-    // whole of it, the same as every other entry on a cash account.
+    // Amount only.
     qty:null,enteredQty:null,perUnit:null,amount:Math.abs(amtNPR),
     date:d,notes:el('liqNote').value||null,
   });
@@ -8318,11 +7144,8 @@ function saveLiqTx(id){
   openAssetDetail(id);
 }
 
-// Money moving between two of your own accounts is not income, not spending
-// and not profit: it is the same rupees in a different place. So it is one
-// event written as two linked legs, the pair the rest of the app already
-// uses for a trade's cash side, which means undoing it, editing it and the
-// daily profit figures all treat it correctly without knowing it is special.
+// A transfer is one event as two linked legs, like a trade's cash side, so undo, edit
+// and daily P&L handle it without special cases.
 function saveLiqTransfer(from,amtNPR){
   const to=(state.assets||[]).find(x=>x&&x.id===liqXferTo);
   if(!to){toast('Pick an account to transfer to','error');return;}
@@ -8347,8 +7170,7 @@ function saveLiqTransfer(from,amtNPR){
   openAssetDetail(from.id);
 }
 function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)return;parkPnlCal();detailAssetId=id;txMode=null;txUnit=null;txCashChoice=null;liqMode=null;const cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),cp=getAssetCurrentPrice(a),pos=pnl===null||pnl>=0,txs=txsForAsset(a).slice().reverse(),type=ASSET_TYPES.find(t=>t.id===a.category)||ASSET_TYPES[5],img=a.coinImage||'';
-  // What the holding is up or down, next to the value it is a gain on. It sat
-  // beside the unit price before, where it read as if the price had moved.
+  // P&L beside the value it is a gain on.
   const adPnl=(a.category!=='liquidity'&&pnl!==null)
     ? `<span class="ad-pl ${pos?'up':'dn'}">${pos?'+':''}${fmt(pnl)}${pp!==null?` (${pos?'+':''}${pp.toFixed(2)}%)`:''}</span>`
     : '';
@@ -8356,9 +7178,7 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
   const canEarn=a.category==='stock'||a.category==='property';
   const txUI=a.category!=='liquidity'?`<div class="mini-actions" role="tablist"><button class="act-pill buy${txMode==='buy'?' active':''}" role="tab" aria-selected="${txMode==='buy'}" onclick="toggleTxForm('buy')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> Record Buy</button><button class="act-pill sell${txMode==='sell'?' active':''}" role="tab" aria-selected="${txMode==='sell'}" onclick="toggleTxForm('sell')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg> Record Sell</button>${canEarn?`<button class="act-pill income${txMode==='income'?' active':''}" role="tab" aria-selected="${txMode==='income'}" onclick="toggleTxForm('income')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Income</button>`:''}</div><div class="mini-form tx-form-box" id="txForm"><div style="font-size:12px;font-weight:700;margin-bottom:8px" id="txFormTitle"></div><div class="form-row-2" style="margin-bottom:8px"><div><label class="form-lbl" id="txQtyLbl" for="txQty">${(a.unit&&!isCommodityTx)?esc(unitQtyLabel(a.unit)):'QUANTITY'}</label><input class="form-input" id="txQty" type="number" step="any" inputmode="decimal" placeholder="0" oninput="autoFillTxPrice();updateTxSellPreview();updateTxCashHint(txMode)"/></div><div><label class="form-lbl" id="txPriceLbl">BUY PRICE</label><div class="input-ccy-group"><input class="form-input" id="txPrice" type="number" step="any" inputmode="decimal" placeholder="0.00" oninput="updateTxSellPreview();updateTxCashHint(txMode)"/><div class="ccy-sel-wrap" id="txPriceCcyWrap"></div></div><div id="txPriceModeSeg" class="seg-control" style="margin-top:6px;float:right"><button type="button" class="seg-btn" id="txPriceModeSegUnit" onclick="setTxPriceEntryMode(true)">PRICE / UNIT</button><button type="button" class="seg-btn" id="txPriceModeSegTotal" onclick="setTxPriceEntryMode(false)">TOTAL PRICE</button></div></div></div><div id="txSellPreview" style="display:none;font-size:11px;font-weight:600;margin:-4px 0 8px;padding:6px 8px;border-radius:6px"></div>${isCommodityTx?`<div style="margin-bottom:8px"><label class="form-lbl">UNIT</label><div id="txUnitWrap" class="custom-select-wrap"></div></div>`:''}<div class="form-row" id="txIncomeRow" style="display:none;margin-bottom:8px"><label class="form-lbl">INCOME TYPE</label><div id="txIncomeWrap" class="custom-select-wrap"></div></div><div class="form-row" id="txCashRow" style="margin-bottom:8px"><label class="form-lbl" id="txCashLbl">PROCEEDS TO</label><div id="txCashWrap" class="custom-select-wrap"></div><div class="form-hint" id="txCashHint" style="margin-top:5px"></div></div><div class="form-row-2" style="margin-bottom:8px"><div><label class="form-lbl">DATE</label><input class="form-input" id="txDate" type="date"/></div><div><label class="form-lbl">NOTES</label><input class="form-input" id="txNotes" placeholder="Optional note"/></div></div><button class="submit-btn" id="txSaveBtn" style="margin-top:0" onclick="saveTx()">Save</button></div>`:'';
   let extra='';if(a.category==='liquidity'){const accrued=calcLiquidityAccrued(a);const _r=getCurrRate(currentCurrency.code);
-    // Liquidity has no buy/sell, money just goes in or out, so it gets its
-    // own deposit/withdraw controls plus a direct balance edit, instead of
-    // being the one asset type with no way to change its value from here.
+    // Liquidity gets deposit/withdraw and a balance edit.
     extra=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px"><div class="d-stat"><div class="d-stat-lbl">TYPE</div><div class="d-stat-val" style="font-size:11px">${esc(a.liquidityType||'Cash')}</div></div>${a.interest?`<div class="d-stat"><div class="d-stat-lbl">INTEREST</div><div class="d-stat-val">${a.interest}% / yr</div></div>`:''}${a.maturity?`<div class="d-stat"><div class="d-stat-lbl">MATURITY</div><div class="d-stat-val" style="font-size:10px">${formatDate(a.maturity)}</div></div>`:''}${accrued>0?`<div class="d-stat"><div class="d-stat-lbl">ACCRUED</div><div class="d-stat-val" style="color:var(--green)">+${fmt(accrued)}</div></div>`:''}</div>
     <div class="mini-actions" role="tablist"><button class="act-pill buy${liqMode==='add'?' active':''}" role="tab" aria-selected="${liqMode==='add'}" onclick="setLiqMode('add')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Deposit</button><button class="act-pill sell${liqMode==='withdraw'?' active':''}" role="tab" aria-selected="${liqMode==='withdraw'}" onclick="setLiqMode('withdraw')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg> Withdraw</button>${cashAccounts().length>1?`<button class="act-pill xfer${liqMode==='transfer'?' active':''}" role="tab" aria-selected="${liqMode==='transfer'}" onclick="setLiqMode('transfer')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 2 21 6 17 10"/><line x1="21" y1="6" x2="7" y2="6"/><polyline points="7 22 3 18 7 14"/><line x1="3" y1="18" x2="17" y2="18"/></svg> Transfer</button>`:''}</div>
     <div class="mini-form" id="liqForm"><div style="font-size:12px;font-weight:700;margin-bottom:8px" id="liqFormTitle"></div>
@@ -8373,26 +7193,15 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
     </div>`;}
   
   else if(a.category!=='liquidity'){const _nq=nepseQuote(a);const hasLive=(a.coinId&&livePrices[a.coinId])||(_nq&&_nq.price>0);if(hasLive){
-    // The price alone says nothing about how you are doing on it. What the
-    // holding is up or down, and by how much, belongs next to it.
-    // The unit is already under the name in the header; repeating it here only
-    // made the line longer.
-    // Where a price came from matters more for a share than for a coin: the
-    // exchange trades for four hours a day, so "live" usually means the last
-    // trade rather than this second, and the number is not the one its owner
-    // typed. Say both.
+    // NEPSE prices: say it is the last trade and not the typed price.
     extra=`<div class="ad-price-row">Current Price: ${fmt(cp)}</div>`
       +(_nq?`<div class="ad-price-src">NEPSE last traded price${nepseAsOf?', '+esc(relTime(Date.parse(nepseAsOf))):''}${nepseStale?' \u00b7 the feed is behind':''}</div>`:'');}else{const rate=getCurrRate(currentCurrency.code);const _q=a.qty||1;const _per=a.currentPrice?a.currentPrice*rate:0;
-      // A flat is worth what a flat is worth. There is no per-unit reading to
-      // offer against a total, so the box asks for the one figure it has.
+      // No per-unit reading; ask for the whole value.
       const _noQ=assetNoQty(a);
       if(_noQ)isQuickCurPerUnit=false;
       extra=`<div style="margin-bottom:12px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:11px"><label class="form-lbl" style="margin-bottom:6px;display:block" id="quickCurLbl">${_noQ?'WHAT IT IS WORTH TODAY':'CURRENT PRICE / '+(a.unit||'unit').toUpperCase()} (${currentCurrency.code}), keep it updated</label><div style="display:flex;gap:8px"><input class="form-input" id="quickCurPrice" type="number" step="any" inputmode="decimal" value="${_per?(isQuickCurPerUnit?_per:_per*_q).toFixed(2):''}" placeholder="${_noQ?'Value today':isQuickCurPerUnit?"Today's price per unit":'Total value today'}"/><button class="add-btn" style="flex-shrink:0;white-space:nowrap" onclick="quickUpdateCurrentPrice('${a.id}')">Update</button></div>${_noQ?'':`<div class="seg-control" style="margin-top:7px;float:right"><button type="button" class="seg-btn${isQuickCurPerUnit?' active':''}" onclick="setQuickCurMode(true,'${a.id}')">PRICE / UNIT</button><button type="button" class="seg-btn${isQuickCurPerUnit?'':' active'}" onclick="setQuickCurMode(false,'${a.id}')">TOTAL PRICE</button></div><div style="clear:both"></div>`}</div>`;}}
-  // Anything with a price feed gets the chart, not just crypto. Gold trades
-  // as PAXG (one token, one troy ounce) so its candles are real gold prices;
-  // silver and platinum come from the series endpoint. Whether a given one
-  // actually has history is only known once the fetch returns, so the block
-  // takes itself away below if nothing comes back.
+  // Any priced holding gets the chart (gold via PAXG); the block removes itself if no
+  // history comes back.
   const hasChart=!!a.coinId&&a.category!=='liquidity';
   el('assetDetailContent').innerHTML=`<div class="modal-hdr"><div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><div style="width:42px;height:42px;border-radius:12px;background:${type.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${img?`<img style="width:30px;height:30px;border-radius:50%;object-fit:cover" src="${img}" onerror="this.style.display='none'" loading="lazy"/>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',20)}</div>`}</div><div style="min-width:0"><div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div><div style="font-size:10px;color:var(--text3)">${catLabel(a.category)}${a.unit?' · '+a.unit:''}</div></div></div><div style="display:flex;gap:6px;flex-shrink:0"><button class="modal-close" onclick="${a.category==='liquidity'?`openEditAsset('${a.id}')`:`openAssetEditPicker('${a.id}')`}" aria-label="Edit asset"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="modal-close" onclick="closeModal('assetDetailModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
     <div class="modal-body"><div class="ad-value-row"><span class="ad-value">${fmt(cv)}</span>${adPnl}</div>${extra}
@@ -8410,21 +7219,10 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
   // Day by day, for this holding on its own.
   mountPnlCal('asset',a.id);
 }
-// The filter is a TIMEFRAME, how much time one candle covers, which is what
-// the control means in a trading app. The window you are looking at is a
-// separate thing, and that is what panning and pinching control.
-//
-// Which means picking 1H should give you months of hourly candles to scroll
-// back through, not a day's worth. Each timeframe therefore pulls the deepest
-// price series the provider will serve at a resolution finer than the candle,
-// and buckets it: `series` is tried in order, `bucket` is how much time one
-// candle covers, and `src`/`group` is the old /ohlc path kept as a fallback for
-// when market_chart is unavailable.
-//
-// Honest limits, because they are CoinGecko's and not ours: five-minute prices
-// exist for one day only, hourly for ninety days, daily forever. So 30m reaches
-// back a day, 1H and 4H reach back three months, and 1D/1W/1M reach back to the
-// coin's first trade, thousands of candles.
+// The filter is the candle timeframe; panning and pinching set the window. Each
+// timeframe buckets the deepest series available: `series` in order, `bucket` per
+// candle, `src`/`group` the /ohlc fallback. CoinGecko limits: 5-min for 1 day,
+// hourly for 90 days, daily forever.
 const CS_HOUR=3600000, CS_DAY=86400000;
 const CS_FULL=[{days:'max',interval:'daily'},{days:365,interval:'daily'},{days:90}];
 const CS_TIMEFRAMES=[
@@ -8435,22 +7233,11 @@ const CS_TIMEFRAMES=[
   {k:'1w', label:'1W', bn:'1w', bucket:CS_DAY*7,  series:CS_FULL,                    src:[365,180,90], group:7},
   {k:'1mo',label:'1M', bn:'1M', bucket:CS_DAY*30, series:CS_FULL,                    src:[365,180,90], group:30},
 ];
-// How many pages of a thousand candles the chart will keep pulling in as you
-// scroll. Twenty is twenty thousand candles, years even at 30 minutes, and a
-// ceiling so a long session cannot grow without bound.
+// Max pages of 1,000 candles kept while scrolling back.
 const CS_MAX_PAGES=20;
-// Holdings whose price history nothing upstream has. Silver and platinum use
-// ids this app invented for its metals feed, so every history endpoint 404s
-// on them; remembering that spares the next nine round trips.
-// ════════ WAITING ════════
-// A blank space says the app is broken; a spinner says wait without saying
-// what for. A skeleton says "a chart goes here, it is on its way", which is
-// the only honest thing to say while something is loading.
-//
-// The rule everywhere below: show a skeleton only where something really is
-// expected to arrive. Where it is already known that nothing will (a metal
-// with no price history), nothing is shown, because a placeholder that never
-// resolves is worse than an empty space.
+// WAITING
+// Skeletons only where something is really on its way: the candle chart and a
+// friend's shared figures.
 function skelLines(n,opts){
   const o=opts||{};
   let h='';
@@ -8460,21 +7247,16 @@ function skelLines(n,opts){
   }
   return h;
 }
-// Small, fixed, and deliberately not Math.random: a placeholder that reshuffles
-// itself on every frame of a re-render draws the eye to the wait.
+// Deterministic, so placeholders don't reshuffle on re-render.
 function skelRand(seed){
   let x=seed||7;
   return ()=>{x=(x*1103515245+12345)&0x7fffffff;return x/0x7fffffff;};
 }
-// What is actually coming here is a candlestick chart, so this is one: a walk
-// of opens and closes with a wick through each body, at market-ish scale.
+// Candle-shaped placeholder.
 function skelCandles(height,count){
   const H=height||190,n=count||20;
   const rnd=skelRand(11);
-  // Walk first in arbitrary units, then rescale the whole thing to fill the
-  // box. Clamping as it went kept the walk hugging its starting value, and a
-  // strip of candles across the middle of an empty frame does not read as a
-  // chart; it reads as something that failed to draw.
+  // Walk, then rescale to fill the box.
   const cs=[];
   let v=50;
   for(let i=0;i<n;i++){
@@ -8500,8 +7282,7 @@ function skelCandles(height,count){
   });
   return `<div class="skel-cs" style="height:${H}px" aria-hidden="true">${out}</div>`;
 }
-// And where a line is coming, the silhouette of one: the shimmer clipped to
-// the shape of an area chart rather than squared off into a block.
+// Area-chart silhouette.
 function skelSpark(height){
   const H=height||54;
   const vs=[26,38,31,48,44,58,52,68,61,74,66,82,77,88];
@@ -8509,21 +7290,10 @@ function skelSpark(height){
   return `<div class="skel skel-spark" style="height:${H}px;clip-path:polygon(${pts},100% 100%,0 100%)" aria-hidden="true"></div>`;
 }
 
-// A placeholder belongs where something is genuinely on its way and cannot
-// be shown yet. There were two of those: the candle chart, which is fetched
-// per timeframe over the network, and a person's shared figures in the
-// circle, which are fetched from their account.
-//
-// For a while there was a third kind, laid over every page and every sheet
-// on the way in, whether or not anything was being waited for. The idea was
-// that an instant swap of one dense screen for another lands as a jolt. The
-// answer to that is not to pretend to load: a placeholder that is not about
-// a wait is a wait, invented, several times a minute, for something that was
-// already there. It is gone.
+// Coins no upstream has history for (e.g. the app's own metal ids); don't refetch.
 const _csNoHistory=new Set();
 const CS_DEFAULT_TF='1d';
-// N candles into one. A trailing partial group is kept, the way the current
-// unfinished candle is kept on a real chart.
+// Merge n candles; keep a trailing partial group.
 function csGroup(ohlc,n){
   if(n<=1)return ohlc;
   const out=[];
@@ -8546,30 +7316,13 @@ async function loadCandles(coinId,tfKey,btn,assetId){
   const wrap=el('csArea')&&el('csArea').parentElement;
   const a=(state.assets||[]).find(x=>x.id===assetId)
     ||(state.assets||[]).find(x=>x.coinId===coinId)||null;
-  // A block saying "Loading price chart…" that never becomes a chart is
-  // worse than no block: it tells you to wait for something that is not
-  // coming. Silver is exactly that case, its id is one this app invented
-  // for the metals feed, the price-history endpoints have never heard of
-  // it, and the 404 they threw took the whole function down with it and
-  // left the placeholder sitting there for good.
-  //
-  // So on a first load the block stays out of the page entirely until there
-  // is a chart to put in it. Not even a timed reveal: showing the loading
-  // line after a moment and taking it away again a few seconds later is the
-  // same lie, just shorter. Either the candles arrive and the block appears
-  // with them, or nothing ever appears.
   const initial=!btn;
-  // A holding already known to have no history shows nothing at all, as
-  // before: no skeleton, because nothing is coming. Everything else shows
-  // the shape of the chart while it loads, and the block is taken away
-  // again if it turns out there is nothing after all.
+  // Known no-history holdings show nothing; others show the skeleton until data arrives.
   if(initial&&wrap)wrap.style.display=_csNoHistory.has(coinId)?'none':'';
-  // And once a holding has come back with nothing, it does not come back
-  // with nothing more slowly every time you open it.
+  // Don't refetch a known empty.
   if(initial&&_csNoHistory.has(coinId))return;
   let data=null,pair=null;
-  // Every one of these can throw, a 404, a stalled socket, an id no
-  // upstream recognises, and none of them may abandon the render.
+  // None of these may abandon the render.
   try{
     // Real candles first, and pageable, so scrolling left keeps loading history.
     if(tf.bn){
@@ -8581,8 +7334,7 @@ async function loadCandles(coinId,tfKey,btn,assetId){
         }
       }catch(e){ pair=null; }
     }
-    // Deepest series first; each falls back to a shallower one rather than
-    // drawing "no data", since the longest windows are not on every plan.
+    // Deepest series first, falling back to shallower ones.
     for(const req of (data?[]:(tf.series||[]))){
       try{
         const sr=await fetchChartSeries(coinId,req.days,req.interval);
@@ -8591,8 +7343,7 @@ async function loadCandles(coinId,tfKey,btn,assetId){
         if(c.length>1){data=c;break;}
       }catch(e){/* the next window down */}
     }
-    // market_chart unavailable (an older deployment of the API, say): the
-    // original candle endpoint still works, just without the reach.
+    // Fallback: the original /ohlc endpoint.
     if(!data){
       for(const size of tf.src||[]){
         try{
@@ -8605,10 +7356,7 @@ async function loadCandles(coinId,tfKey,btn,assetId){
 
   const a2=el('csArea');if(!a2)return;
   if(!data||!data.length){
-    // A flat line here read as a price that never moved. On the first load
-    // it means nothing anywhere has history for this holding, so the whole
-    // block leaves. On a timeframe switch the other timeframes may still
-    // have data, so only this one says so and the buttons stay.
+    // First load with no data removes the block; a timeframe switch only says so.
     if(!initial){
       a2.outerHTML='<div class="cs-loading" id="csArea">No candles at this timeframe</div>';
       csSetMeta(wrap,'');
@@ -8628,9 +7376,8 @@ async function loadCandles(coinId,tfKey,btn,assetId){
     csSetMeta(wrap,tf.label+' candles · '+d.length+' bars · '+csSpan(spanDays)+' of history');
   };
   setMeta();
-  // Endless scrollback: when the pan reaches the oldest candle loaded, the page
-  // before it is fetched and prepended. Offsets are counted from the right-hand
-  // edge, so older data can be added without the view moving under the finger.
+  // Endless scrollback: prepend the previous page at the left edge. Offsets count from
+  // the right so the view does not jump.
   if(pair&&canvas._cs){
     const st=canvas._cs;
     st.pages=1;
@@ -8657,8 +7404,7 @@ function csSpan(days){
   if(days>=1)return 'a day';
   return plural(Math.round(days*24),'hour');
 }
-// The caption under the chart: what one candle covers, and how far back the
-// data goes, so neither has to be guessed from the button.
+// Caption: candle size and how far back the data goes.
 function csSetMeta(wrap,text){
   if(!wrap)return;
   let m=wrap.querySelector('.cs-meta');
@@ -8667,25 +7413,14 @@ function csSetMeta(wrap,text){
     wrap.insertBefore(m,r||null);}
   m.textContent=text||'';
 }
-// ── CANDLE CHART ──────────────────────────────────────────────────────────
-// Was a static picture of the last 60 candles: no scale you could read, no
-// way to look at any one of them, no way to see further back than whatever
-// the range button fetched. This is the same data drawn the way a trading
-// app draws it, drag to pan through history, pinch to zoom, touch and hold
-// to put a crosshair on a candle and read its open, high, low and close.
-//
-// Hand-rolled on a canvas rather than a charting library: it redraws on every
-// pointer move, and a Chart.js update per frame would not hold 60fps on a
-// phone. One canvas, one draw call per frame, no DOM churn.
+// CANDLE CHART
+// Pan, pinch-zoom, hold for a crosshair. Hand-drawn on canvas for 60fps redraws.
 const CS_MIN_BARS=12, CS_MAX_BARS=180;
 function mountCandleChart(canvas,ohlc,asset){
   if(!canvas||!ohlc||!ohlc.length)return;
-  // Your own cost basis, drawn on the chart. The candles are in USD and the
-  // asset's prices are in the base currency, so they meet in USD.
+  // Cost basis lines, in USD like the candles.
   const marks=csCostLines(asset);
-  // How much time one candle covers, read off the data rather than passed in,
-  // so the axis says "14:30" on a 30-minute chart and "Sep '24" on a monthly
-  // one instead of the same day-and-month label at every zoom.
+  // Candle duration from the data, for axis labels.
   const step=ohlc.length>1?(ohlc[ohlc.length-1][0]-ohlc[0][0])/(ohlc.length-1):864e5;
   const st={
     data:ohlc,
@@ -8772,16 +7507,10 @@ function mountCandleChart(canvas,ohlc,asset){
       ctx.fillText(lab,Math.min(Math.max(x,PAD_L),PAD_L+plotW),H-5);
     });
 
-    // Your average buy and average sell, so the candles are placed against
-    // what you actually paid and received rather than floating on their own.
-    // Two levels that are both off the top of the window would otherwise pin to
-    // the same pixel and hide each other, so each edge stacks its own.
+    // Average buy/sell levels; off-screen ones stack at the edge they are beyond.
     let pinnedTop=0,pinnedBot=0;
     marks.forEach(mk=>{
-      // A level far above or below what is on screen still matters, it is the
-      // price you paid. Rather than vanish, it sticks to the edge it is beyond
-      // and is marked with an arrow, so you can see it is off in that
-      // direction instead of wondering where your line went.
+      // Off-screen levels pin to the edge with an arrow.
       const off=mk.usd>hi?1:(mk.usd<lo?-1:0);
       const y=off>0?PAD_T+1+(pinnedTop++)*15
              :off<0?PAD_T+plotH-1-(pinnedBot++)*15
@@ -8806,21 +7535,14 @@ function mountCandleChart(canvas,ohlc,asset){
       ctx.font='9px '+(cssVar('--font')||'Poppins, sans-serif');
     });
 
-    // Scrolling back used to run into what felt like a wall: the fetch was
-    // silent, so the moment before the next thousand candles arrived was
-    // indistinguishable from the beginning of the coin's history. Say which
-    // it is, at the edge you are pushing against.
-    // The fetch starts forty candles before the edge, so it has to show while
-    // it is running rather than only once you are hard against the end, // otherwise the one moment it is needed is the one moment it is hidden.
+    // Show loading/start-of-history at the edge; the fetch starts 40 candles early.
     if(st.loadMore&&(st.loading||(st.exhausted&&st.offset+st.bars>=st.data.length-2))){
       const msg=st.loading?'Loading older':'Start of history';
       {
         ctx.save();
         ctx.font='600 9.5px '+(cssVar('--font')||'Poppins, sans-serif');
         ctx.textAlign='left';ctx.textBaseline='middle';
-        // A spinning arc, not a dot hopping up and down inside the pill: an
-        // arc is what a wait looks like everywhere else in the app, and it
-        // sits on the baseline instead of jumping around beside the words.
+        // Spinning arc in the pill.
         const R=4.2, PADX=9, GAP=6;
         const lead=st.loading?(R*2+GAP):0;
         const tw=ctx.measureText(msg).width;
@@ -8856,8 +7578,7 @@ function mountCandleChart(canvas,ohlc,asset){
       ctx.beginPath();ctx.moveTo(x+.5,PAD_T);ctx.lineTo(x+.5,PAD_T+plotH);ctx.stroke();
       ctx.beginPath();ctx.moveTo(PAD_L,Y(c[4])+.5);ctx.lineTo(PAD_L+plotW,Y(c[4])+.5);ctx.stroke();
       ctx.restore();
-      // A dot on the close, the way the dashboard chart marks the point you
-      // are reading, so it is obvious which candle the numbers belong to.
+      // Dot on the close of the read candle.
       const dotCol=c[4]>=c[1]?up:dn;
       ctx.beginPath();ctx.arc(x,Y(c[4]),3,0,Math.PI*2);
       ctx.fillStyle=cssVar('--card')||'#111';ctx.fill();
@@ -8866,7 +7587,7 @@ function mountCandleChart(canvas,ohlc,asset){
     }else csReadout(canvas,null,step);
   };
 
-  // ── gestures ──
+  // gestures
   let drag=null, pinch=null;
   const idxAt=clientX=>{
     const r=canvas.getBoundingClientRect();
@@ -8879,17 +7600,14 @@ function mountCandleChart(canvas,ohlc,asset){
     st.offset=Math.max(0,Math.min(st.data.length-CS_MIN_BARS,st.offset));
     maybeBackfill();
   };
-  // Near the left edge of what is loaded, quietly pull the previous page in.
-  // One request in flight at a time, and it stops asking once the exchange has
-  // no more to give, a pair that started trading in 2019 has a beginning.
+  // Prefetch the previous page near the left edge; one request at a time, stop when exhausted.
   const BACKFILL_AT=40;
   const maybeBackfill=()=>{
     if(!st.loadMore||st.loading||st.exhausted)return;
     if(st.data.length-st.offset-st.bars>BACKFILL_AT)return;
     st.loading=true;
     draw();
-    // Repaint while waiting so the pill's dot moves; a still frame reads as
-    // frozen rather than busy.
+    // Repaint while loading so the spinner moves.
     clearInterval(st._loadTick);
     st._loadTick=setInterval(()=>{ if(st.loading)draw(); else clearInterval(st._loadTick); },55);
     const done=()=>{ st.loading=false; clearInterval(st._loadTick); draw(); };
@@ -8898,12 +7616,7 @@ function mountCandleChart(canvas,ohlc,asset){
       done();
     }).catch(()=>{st.exhausted=true;done();});
   };
-  // On a touch screen the same finger has to do two jobs, so they are told
-  // apart the way trading apps do it: move straight away and you are panning
-  // through history; hold still for a moment and the crosshair takes over, and
-  // from then on the readout follows your finger for as long as it is down.
-  // Before this, the first touch picked a candle and every move after it was
-  // treated as a pan, so the numbers froze on wherever you first landed.
+  // Touch: move at once to pan; hold still to scrub with a crosshair.
   const HOLD_MS=260, PAN_SLOP=10;
   let mode=null;            // 'pan' | 'scrub' | null (undecided)
   let holdTimer=null;
@@ -8948,13 +7661,7 @@ function mountCandleChart(canvas,ohlc,asset){
     const x=t.clientX;
     drag.moved=Math.max(drag.moved,Math.abs(x-drag.x));
     if(mode===null&&drag.moved>PAN_SLOP){mode='pan';clearTimeout(holdTimer);}
-    // A mouse press starts on the crosshair, because hovering a desktop chart
-    // should read a candle straight away. But the early return below then kept
-    // it there for the whole gesture, so dragging with a mouse could only ever
-    // scrub: the pan branch was unreachable and there was no way to scroll
-    // back through history without a touch screen. Dragging past the slop
-    // hands over to panning, the way it does on a phone. A held finger that
-    // has chosen to scrub keeps scrubbing, which is what the hold is for.
+    // Mouse: starts scrubbing, switches to panning past the slop. A held finger keeps scrubbing.
     if(mode==='scrub'&&!drag.isTouch&&drag.moved>PAN_SLOP){mode='pan';st.cross=null;}
     if(mode==='scrub'){
       st.cross=idxAt(x);draw();return;
@@ -8979,13 +7686,7 @@ function mountCandleChart(canvas,ohlc,asset){
     }
     if(canvas.style)canvas.style.cursor='crosshair';
   };
-  // A mouse drag has to keep tracking after the pointer leaves the canvas, so
-  // it listens on the window, but only while the button is down. These used to
-  // be attached for the life of the chart and never removed, and every
-  // timeframe you pressed mounted a new one: seven more permanent window
-  // handlers per visit, each holding its own candle array alive. After a few
-  // assets that is twenty-odd closures running on every mouse move and
-  // megabytes of history that can never be collected.
+  // Window listeners only while a mouse button is down; removed afterwards.
   let winBound=false;
   const attachWindowDrag=()=>{
     if(winBound)return; winBound=true;
@@ -9006,9 +7707,7 @@ function mountCandleChart(canvas,ohlc,asset){
   canvas.addEventListener('mousemove',e=>{if(!drag){mode='scrub';st.cross=idxAt(e.clientX);draw();}});
   canvas.addEventListener('mouseleave',()=>{if(!drag){st.cross=null;draw();}});
   canvas.addEventListener('wheel',e=>{
-    // Sideways on a trackpad, or shift with a wheel, is what scrolling back
-    // through history means everywhere else, so it means that here too.
-    // A plain wheel still zooms, which is what a trading chart does.
+    // Sideways wheel or shift+wheel pans; a plain wheel zooms.
     const sideways=Math.abs(e.deltaX)>Math.abs(e.deltaY);
     if(sideways||e.shiftKey){
       const r=canvas.getBoundingClientRect();
@@ -9024,15 +7723,12 @@ function mountCandleChart(canvas,ohlc,asset){
       Math.min(CS_MAX_BARS,st.data.length),st.bars*f)));
     clampOffset();draw();
   },{passive:false});
-  // Belt and braces: if the canvas is torn out mid-drag (closing the sheet,
-  // switching timeframe), nothing is left listening on the window.
+  // Clean up if the canvas is removed mid-drag.
   canvas._csDestroy=()=>{detachWindowDrag();clearTimeout(holdTimer);clearTimeout(canvas._csClear);clearInterval(st._loadTick);};
   canvas._csDraw=draw;
   draw();
 }
-// Average buy and average sell for this holding, converted into the USD the
-// candles are drawn in. Sells are averaged from the ledger; the buy average is
-// the asset's own maintained cost basis.
+// Average buy (asset cost) and average sell (ledger) in USD.
 function csCostLines(a){
   if(!a)return [];
   const perUsd=v=>{const f=fxOf(baseCode());return f>0?v/f:null;};
@@ -9058,22 +7754,16 @@ function csPrice(usd){
   if(a>=1000)return s+(v/1000).toFixed(1)+'K';
   return s+v.toFixed(a<1?4:2);
 }
-// The OHLC panel above the chart. Empty string rather than a hidden node, so
-// the layout does not jump when it appears.
-// Axis and readout stamps that match the candle size: a time on an intraday
-// chart, a date on a daily one, a month and year once one candle is a month.
+// Labels match the candle size: time, date, or month and year.
 function csAxisLabel(ts,step,prevTs){
   const d=new Date(ts);
   if(step<864e5){
-    // An intraday window still crosses midnight, and "09:00 PM" three days
-    // running tells you nothing about which day you are looking at. The first
-    // label on a new day names the day instead.
+    // Name the day at the first label after midnight.
     if(prevTs!=null&&new Date(prevTs).toDateString()!==d.toDateString())
       return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
     return d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
   }
-  // "Aug 25" would read as a day of the month, so a monthly axis gets an
-  // apostrophe year: Aug '25.
+  // Aug '25 so it doesn't read as a day of the month.
   if(step>=25*864e5)return d.toLocaleDateString(undefined,{month:'short'})+" '"+String(d.getFullYear()).slice(-2);
   return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
@@ -9098,15 +7788,9 @@ function csReadout(canvas,c,step){
   box.classList.add('show');
 }
 function drawCandles(canvas,ohlc,asset){mountCandleChart(canvas,ohlc,asset);}
-// ════════ ADD/EDIT DEBT ════════
-// The principal is the sum of what was lent, entry by entry, once there is
-// more than one entry. Typing over that total would say something the list
-// underneath it contradicts, so the field is read-only there and the sheet
-// says where the number comes from. Use Record Lend on the debt itself to
-// add to it, or correct the entry that is wrong.
+// ADD/EDIT DEBT
+// With several lend entries the principal is their sum and read-only.
 function syncDebtLock(d){
-  // Every debt keeps its history now, so the total is always the sum of its
-  // entries and is always corrected there rather than typed over here.
   const entries=(d&&d.lendHistory||[]).filter(h=>h&&num(h.amount)>0);
   const lock=!!(d&&entries.length);
   const note=el('debtLedgerLock');
@@ -9122,15 +7806,11 @@ function syncDebtLock(d){
   const f=el('debtAmount');
   if(f){f.readOnly=lock;f.setAttribute('aria-readonly',lock?'true':'false');}
 }
-// The opening lend is a lend like any other, and until now it was the only one
-// the app could not tell you anything about: money simply appeared as a debt
-// and no account moved. The sheet that creates it asks the same question the
-// sheet that edits it does.
+// The opening lend can move money through an account too.
 let debtNewAcct=null;
 function syncDebtNewAcct(d){
   const row=el('debtNewAcctRow');if(!row)return;
-  // More than one entry and there is no single opening lend to attach an
-  // account to; each one is opened and corrected on its own.
+  // Several entries: no single opening lend to attach an account to.
   const many=!!(d&&(d.lendHistory||[]).length>1);
   const show=!!selectedDebtType&&!many;
   row.hidden=!show;
@@ -9148,9 +7828,7 @@ function syncDebtNewAcct(d){
 function openAddDebt(){editingDebtId=null;debtNewAcct=null;syncDebtLock(null);el('addDebtTitle').textContent='Add Debt';el('saveDebtBtn').textContent='Add Debt';el('deleteDebtBtn').style.display='none';selectedDebtType=null;el('dtypeOwed').className='dtype-btn';el('dtypeIOwe').className='dtype-btn';el('debtName').value='';el('debtNote').value='';el('debtDue').value='';el('debtAmount').value='';interestEnabled=false;intType='flat';intFreq='day';intFlatFreq='month';intCompound=false;el('compoundToggle').className='toggle';el('compoundToggle').setAttribute('aria-checked','false');el('interestToggle').className='toggle';el('interestToggle').setAttribute('aria-checked','false');el('interestFields').style.display='none';setIntType('flat');setIntFreq('day');setIntFlatFreq('month');chargeFrom='lend';setChargeFrom('lend');el('intFlatAmount').value='';setLentDate(0);setDueDateEnabled(false,'');updateCurrLabels();resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');const ab=el('accruedBox');if(ab)ab.style.display='none';syncDebtNewAcct(null);openModal('addDebtModal');}
 function openDebtEdit(id){const d=state.debts.find(x=>x.id===id);if(!d)return;editingDebtId=id;el('addDebtTitle').textContent='Edit Debt';el('saveDebtBtn').textContent='Save Changes';el('deleteDebtBtn').style.display='block';setDebtType(d.type);resetMoneyCcy(['debtAmount','intFlatAmount']);bindMoneyCcy('debtAmount','debtAmountCcyWrap');bindMoneyCcy('intFlatAmount','intFlatAmountCcyWrap');el('debtName').value=d.name;setMoneyField('debtAmount',d.amount);el('debtNote').value=d.note||'';setDueDateEnabled(!!(d.due),d.due||'');const lentDateVal=d.lentDate||(d.date?d.date.split('T')[0]:'');el('debtLentDate').value=lentDateVal;syncLentQuickBtns();const int=d.interest||{};interestEnabled=int.enabled||false;intType=int.type||'flat';el('interestToggle').className='toggle'+(interestEnabled?' on':'');el('interestToggle').setAttribute('aria-checked',interestEnabled?'true':'false');el('interestFields').style.display=interestEnabled?'block':'none';setIntType(intType);if(int.flatAmount)setMoneyField('intFlatAmount',int.flatAmount);if(int.rate)el('intRate').value=int.rate;if(intType==='flat'){intFlatFreq=int.freq||'month';setIntFlatFreq(intFlatFreq);}else{intFreq=int.freq||'month';setIntFreq(intFreq);}intCompound=int.compound||false;el('compoundToggle').className='toggle'+(intCompound?' on':'');el('compoundToggle').setAttribute('aria-checked',intCompound?'true':'false');chargeFrom=int.chargeFrom||'lend';setChargeFrom(chargeFrom);updateCurrLabels();syncDebtLock(d);const _l0=(d.lendHistory||[])[0];debtNewAcct=(_l0&&_l0.account)||CASH_NONE;syncDebtNewAcct(d);refreshAccruedBox(d);openModal('addDebtModal');}
 function scrollToAndPulse(elId,inputId){const target=el(elId)||el(inputId);if(!target)return;const modal=target.closest('.modal-body');if(modal)modal.scrollTo({top:target.offsetTop-20,behavior:'smooth'});target.classList.add('dtype-pulse');setTimeout(()=>target.classList.remove('dtype-pulse'),700);if(inputId&&el(inputId)&&el(inputId)!==target){el(inputId).focus();el(inputId).classList.add('input-error');setTimeout(()=>el(inputId).classList.remove('input-error'),1000);}}
-// Existing people, offered under the debt name field. Picking one sets the
-// direction too, because "Ramesh" who owes you and "Ramesh" you owe are two
-// different rows and choosing the wrong side is a silent, expensive mistake.
+// Picking a person also sets the direction.
 function debtSuggestions(){
   const seen=new Map();
   (state.debts||[]).forEach(d=>{
@@ -9192,22 +7870,14 @@ function saveDebt(){if(!selectedDebtType){['dtypeOwed','dtypeIOwe'].forEach(id=>
     const i=state.debts.findIndex(d=>d.id===editingDebtId);
     if(i!==-1){
       const prev=state.debts[i];
-      // Merge, never replace. This sheet only knows about the fields it
-      // shows, and dropping the rest took the lend history and every
-      // payment ever recorded with it: changing nothing but the spelling
-      // of a name deleted the repayments and moved the accrued interest,
-      // with no warning and nothing to undo it.
+      // Merge, never replace: this sheet does not know every field (history, payments).
       const lends=(prev.lendHistory||[]).slice();
       const merged=Object.assign({},prev,debt,{payments:prev.payments||[],lendHistory:lends});
       if(lends.length>1){
-        // Several entries: the principal is their total and the field is
-        // read-only, so nothing typed here can contradict the list.
+        // Several entries: principal is their total.
         merged.amount=lends.reduce((t,h)=>t+num(h.amount),0);
       }else if(lends.length===1){
-        // One opening entry: correcting the amount corrects that entry, so
-        // the two can never drift apart. The account it moved through is
-        // corrected here too, which means putting the old movement back
-        // before the new one is measured or made.
+        // One entry: the amount edits that entry; reverse its old cash movement first.
         const was=lends[0];
         const acct=(debtNewAcct&&debtNewAcct!==CASH_NONE)?resolveCashAccount(debtNewAcct):null;
         reverseDebtCash(prev,was,'lend');
@@ -9227,8 +7897,7 @@ function saveDebt(){if(!selectedDebtType){['dtypeOwed','dtypeIOwe'].forEach(id=>
   }else{
     // Merge if same name + same type (case-sensitive)
     const existing=state.debts.find(d=>d.name===name&&d.type===selectedDebtType);
-    // Where this money came from, or landed. Checked before anything is
-    // written, so a lend an account cannot cover leaves the sheet as it was.
+    // Checked before writing.
     const acct=(debtNewAcct&&debtNewAcct!==CASH_NONE)?resolveCashAccount(debtNewAcct):null;
     {const err=debtCashError(debt,acct,amtN,'lend');if(err){toast(err,'error');return;}}
     const entry={id:uid(),amount:amtN,note:noteVal||null,date:lentDate,
@@ -9250,9 +7919,7 @@ function saveDebt(){if(!selectedDebtType){['dtypeOwed','dtypeIOwe'].forEach(id=>
 async function deleteDebt(){
   if(!editingDebtId)return;
   const _d=state.debts.find(d=>d.id===editingDebtId);const _id=editingDebtId;
-  // Entries that moved real money have to give it back. Dropping the debt and
-  // leaving its legs behind left an account permanently short by a lend that
-  // no longer existed anywhere, with nothing left to explain the gap.
+  // Reverse every cash movement the debt's entries made.
   const legs=[].concat((_d&&_d.lendHistory||[]).map(e=>({e,kind:'lend'})),
                        (_d&&_d.payments||[]).map(e=>({e,kind:'pay'})))
               .filter(x=>x.e&&x.e.account&&x.e.linkId);
@@ -9266,7 +7933,7 @@ async function deleteDebt(){
   });
   closeModal('addDebtModal');renderAll();haptic('tap');
 }
-// ════════ GOALS ════════
+// GOALS
 const GOAL_QUICK={3:'goalQk3m',6:'goalQk6m',12:'goalQk1y',24:'goalQk2y'};
 function setGoalDate(months){const inp=el('goalDate');if(!inp)return;inp.value=monthsAheadISO(months);syncGoalQuickBtns();renderGoalProjection();haptic('tap');}
 function syncGoalQuickBtns(){const inp=el('goalDate');if(!inp)return;const v=inp.value;Object.keys(GOAL_QUICK).forEach(m=>{const b=el(GOAL_QUICK[m]);if(b)b.className='freq-btn'+(v&&v===monthsAheadISO(Number(m))?' active':'');});}
@@ -9298,35 +7965,24 @@ function toggleGoalLink(){
   haptic('tap');syncGoalLinkUI();
   haptic('tap');syncGoalLinkUI();
 }
-// Target and saved used to be stored exactly as typed while everything that
-// displays them treats the stored figure as base currency. Setting a goal
-// while the app was showing dollars therefore recorded the number as rupees:
-// a $5,000 goal came back as Rs.5,000. They convert like every other money
-// field now.
+// Target and saved are converted to base like every money field.
 async function saveGoal(){const name=el('goalName').value.trim();if(!name){toast('Enter a goal name','error');return;}
   const targetRaw=moneyBase('goalTarget')||0,savedRaw=moneyBase('goalSaved')||0;
   if(targetRaw<0||savedRaw<0){toast('Negative values are not allowed','error');return;}
   if(!editingGoalId&&state.goals.some(g=>g.name.toLowerCase()===name.toLowerCase())){if(!await askConfirm({title:'Goal name already used',message:'You already have a goal called “'+name+'”. Create a second one with the same name?',confirmText:'Create anyway',danger:false}))return;}
   const goal={id:editingGoalId||uid(),name,icon:selectedGoalIcon,colorTheme:selGoalColor,target:targetRaw,saved:savedRaw,date:el('goalDate').value||null,monthly:(function(){const m=moneyBase('goalMonthly');return (!isNaN(m)&&m>0)?m:null;})(),linkedAssetIds:goalLinkedAssetIds.slice(),linkedAssetId:goalLinkedAssetIds[0]||null};
   const wasDone=completedGoals.has(goal.id),nowDone=goal.target>0&&goal.saved>=goal.target;
-  // Merged onto what is already there rather than replacing it: this sheet
-  // knows about the fields it shows and nothing else, and a straight
-  // replacement quietly drops anything a future version, an import or a
-  // sync happens to have put on the goal.
+  // Merge onto the existing goal to keep fields this sheet doesn't know.
   if(editingGoalId){const i=state.goals.findIndex(g=>g.id===editingGoalId);if(i!==-1)state.goals[i]=Object.assign({},state.goals[i],goal);}else state.goals.push(goal);
   saveState();closeModal('addGoalModal');renderAll();haptic('success');toast(editingGoalId?'Goal updated!':'Goal added!','success');
   if(nowDone&&!wasDone){completedGoals.add(goal.id);fireConfetti();toast('🎉 Goal reached!','success');}else if(nowDone)completedGoals.add(goal.id);else completedGoals.delete(goal.id);}
 async function deleteGoal(){if(!editingGoalId)return;if(!await askConfirm({title:'Delete goal?',message:'This goal will be removed. Any linked assets stay exactly as they are.',confirmText:'Delete goal'}))return;const _g=state.goals.find(g=>g.id===editingGoalId);const _id=editingGoalId;withUndo((_g?stripParens(_g.name):'Goal')+' deleted',['goals'],()=>{state.goals=state.goals.filter(g=>g.id!==_id);saveState();});closeModal('addGoalModal');renderAll();haptic('tap');}
-// ════════ RECURRING ════════
+// RECURRING
 function freqDays(freq){return{daily:1,weekly:7,monthly:30,quarterly:91,yearly:365}[freq]||30;}
-// A rule with no frequency at all is possible, an imported or hand-edited
-// backup, and reading .charAt off it took the whole Plan page down with it.
+// Imported rules may have no frequency.
 const FREQ_LABELS={daily:'Daily',weekly:'Weekly',monthly:'Monthly',quarterly:'Quarterly',yearly:'Yearly'};
 function freqLabel(f){return FREQ_LABELS[f]||'Monthly';}
-// "Monthly" meant 30 days, so twelve runs came to 360 and a rule started on
-// the 1st of January was firing on the 26th of December. Months and years now
-// advance on the calendar; a rule due on the 31st lands on the last day of a
-// shorter month rather than skidding into the next one.
+// Months and years advance on the calendar, clamped to month end.
 function nextDueAfter(dateStr,freq){
   const src=String(dateStr||'').slice(0,10);
   const d=new Date(src+'T12:00:00');
@@ -9344,8 +8000,7 @@ function nextDueAfter(dateStr,freq){
   const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
 }
-// A recurring rule is either money going in (an investment) or money going
-// out (a bill). Everything that existed before this is an investment.
+// invest = money in, bill = money out. Legacy rules are investments.
 function recurKind(r){return (r&&r.kind==='bill')?'bill':'invest';}
 let recurKindValue='invest',recurSpendCat='bills',recurAccountChoice=null;
 function setRecurKind(k){
@@ -9425,7 +8080,7 @@ function saveRecur(){const name=el('recurName').value.trim(),amt=parseFloat(el('
     coinId:isC?recurCoinId:null,coinName:isC?recurCoinName:null,coinImage:isC?recurCoinImage:null,
     start,nextDue:start,active:true,runCount:0});
   saveState();closeModal('addRecurModal');renderPlan();haptic('success');toast(bill?'Recurring bill added!':'Recurring investment added!','success');}
-// ════════ RECURRING INVESTMENT EXECUTION ════════
+// RECURRING INVESTMENT EXECUTION
 async function runDueRecurs(silent){
   if(!state.recurs||!state.recurs.length)return;
   const today=new Date();today.setHours(0,0,0,0);
@@ -9435,8 +8090,7 @@ async function runDueRecurs(silent){
     if(!r.nextDue)r.nextDue=r.start||today.toISOString().split('T')[0];
     let guard=0;
     while(parseDay(r.nextDue)<=today&&guard<24){ // cap catch-up runs so a long-dormant rule doesn't explode
-      // A missed cycle is recorded on the day it was due, not today, so a
-      // month you did not open the app still shows its rent in that month.
+      // A missed cycle is dated on its due day.
       const dueIso=new Date(r.nextDue+'T12:00:00').toISOString();
       if(recurKind(r)==='bill')executeRecurBill(r,dueIso);
       else{await executeRecurOnce(r);touchedAssets=true;}
@@ -9454,7 +8108,7 @@ async function executeRecurOnce(r){
   if(r.category==='crypto'&&r.coinId){
     let priceUsd=livePrices[r.coinId]?.usd;
     if(priceUsd==null)priceUsd=await fetchCoinPrice(r.coinId);
-    if(priceUsd==null){// no price available, fall back to cash log so the contribution isn't lost
+    if(priceUsd==null){ // No price: log as cash so the contribution isn't lost
       logRecurAsCash(r);return;
     }
     const priceNPR=usdToNpr(priceUsd);const qty=amountNPR/priceNPR;
@@ -9469,10 +8123,7 @@ async function executeRecurOnce(r){
     logRecurAsCash(r);
   }
 }
-// A bill is an ordinary expense that happened to be typed once instead of
-// every month. It goes through the same shape saveSpend() produces, so it
-// counts against the budget, shows in the month's list, and moves the account
-// balance, exactly as a hand-entered one would.
+// A bill becomes a normal expense, shaped like saveSpend() output.
 function executeRecurBill(r,whenIso){
   const amount=r.amount||0;if(amount<=0)return;
   const acct=r.account?(state.assets||[]).find(a=>a.id===r.account&&a.category==='liquidity'):null;
@@ -9498,23 +8149,14 @@ function logRecurAsCash(r){
   state.transactions.push({id:uid(),assetId:targetAsset.id,name:r.name,category:'liquidity',icon:'banknote',coinImage:null,amount:amountNPR,qty:null,txType:'buy',recurId:r.id,date:new Date().toISOString()});
 }
 function runRecurNow(id){const r=state.recurs.find(x=>x.id===id);if(!r)return;executeRecurOnce(r).then(()=>{r.runCount=(r.runCount||0)+1;r.nextDue=nextDueAfter(r.nextDue||todayStr(),r.freq);saveState();trackPnLHistory();renderAll();haptic('success');toast('Recorded this cycle for '+r.name,'success');});}
-// The calendar day where the person is, not where UTC is. toISOString() gave
-// the UTC day, so east of UTC "today" was still yesterday until the offset had
-// passed (05:45 in Nepal) and west of UTC it turned into tomorrow every
-// evening. Every due date, default date and "is this overdue" comparison in
-// the app was reading off that.
+// Local calendar day, not UTC.
 function todayStr(){return dayKey(new Date());}
-// A date input holds a calendar day, not an instant. new Date('2026-09-01')
-// parses it as midnight UTC, which is the previous day for anyone west of UTC, // a spend dated the 1st landed in the previous month. Noon local has no edge
-// close enough to any timezone to matter.
+// Date inputs are local days; noon avoids timezone edges.
 function dayToISO(v){
   const d=parseDay(v);
   return isNaN(d)?new Date().toISOString():d.toISOString();
 }
-// The same idea for reading a stored day back: a bare 'YYYY-MM-DD' becomes
-// noon on that day where the person is, not midnight in UTC, so comparing a
-// due date against today gives the answer they would give. A full timestamp is
-// an instant already and is left alone.
+// 'YYYY-MM-DD' parses as local noon; full timestamps are left alone.
 function parseDay(v){
   const s=String(v==null?'':v);
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
@@ -9523,7 +8165,7 @@ function parseDay(v){
   if(m2&&/T00:00:00(\.000)?Z$/.test(s))return new Date(+m2[1],+m2[2]-1,+m2[3],12,0,0,0);
   return new Date(s);
 }
-// ════════ REFRESH ════════
+// REFRESH
 let _refreshInFlight=false;
 async function refreshAll(){if(_refreshInFlight)return;_refreshInFlight=true;const icon=el('refreshIcon');if(icon)icon.classList.add('spinning');haptic('tap');csCache={};
   try{
@@ -9536,7 +8178,7 @@ async function refreshAll(){if(_refreshInFlight)return;_refreshInFlight=true;con
   }finally{setTimeout(()=>{if(icon)icon.classList.remove('spinning');},600);_refreshInFlight=false;}
 }
 function refreshPrices(){return refreshAll();}
-// ════════ DATA EXPORT/IMPORT WIZARDS ════════
+// DATA EXPORT/IMPORT WIZARDS
 const EXPORT_CATS = [
   { key: 'assets', label: 'Assets', sub: 'Crypto, stocks, gold, liquidity & property', ico: 'wallet' },
   { key: 'spends', label: 'Spending', sub: 'Household expenses & income', ico: 'banknote' },
@@ -9692,13 +8334,9 @@ function assetExportData(assetId){
   const realizedCostBasis=sellAmt-realizedPnl;
   const realizedPp=realizedCostBasis>0?(realizedPnl/realizedCostBasis*100):null;
   const summary={
-    // An account holds money, not units of anything. Quantities, a rate per
-    // unit, an average buy price and an unrealised P&L are all questions it
-    // has no answer to, and printing '0 units' and 'Avg buy price Rs.0.00'
-    // beside a bank balance is worse than printing nothing.
+    // Accounts have no units, rates or unrealised P&L.
     noQty:assetNoQty(a),
-    // Both lose the quantity columns; only an account swaps profit for
-    // direction in its wording and its colours.
+    // Only accounts use direction wording and colours.
     isCash:assetIsCash(a),
     paidIn:buyAmt,
     takenOut:sellAmt,
@@ -9785,9 +8423,7 @@ function buildAssetMarkdown(data){
   md+=`**Category:** ${catLabel(a.category||'')}${a.unit?'  \n**Unit:** '+a.unit:''}\n\n`;
   md+='## Summary\n\n';
   md+='| Metric | Value |\n|---|---|\n';
-  // '0 units' and 'Avg buy price Rs.0.00' beside a bank balance or a house is
-  // worse than printing nothing: the table only carries rows the asset has an
-  // answer for.
+  // Only rows the asset has an answer for.
   if(summary.isCash){
     md+=`| Paid In | ${fmt(summary.paidIn*data.rate)} |\n`;
     md+=`| Taken Out | ${fmt(summary.takenOut*data.rate)} |\n`;
@@ -9885,7 +8521,7 @@ function setImgExportTheme(theme){
   imgExportState.theme=theme;
   renderAssetImagePreview();
 }
-function fmtPlain(n){ // number formatting without currency symbol quirks from fmt(), for canvas cells
+function fmtPlain(n){ // Plain number for canvas cells
   if(n==null||isNaN(n))return '-';
   return fmt(n);
 }
@@ -9896,26 +8532,18 @@ function drawAssetImageCanvas(){
   const st=imgExportState;const{a,rows,cur,summary}=st.data;const t=IMG_EXPORT_THEMES[st.theme];
   const F=CARD_FONT;
   const doDraw=()=>{
-    // Three columns do not need the width six columns need. The card is cut
-    // to what it is carrying rather than padded out to a fixed size, so the
-    // picture that comes out has no empty right-hand third in it.
+    // Card width fits the columns it carries.
     const isCommodity=!!a.commodityId;
     const W=summary.noQty?408:(isCommodity?540:508), pad=16;
-    // The icon is 34 tall; the header used to reserve 48 and leave the
-    // difference as a gap nobody asked for, on top of the gap below it.
     const headerH=36;
     const gap=11;
     const sectionTitleH=19;
     const coinIconColor=a.category==='crypto'?'#f7931a':t.accent;
 
-    // ── Summary: flat 2-col x 3-row grid, matching reference stat grid exactly ──
-    // An account has four figures, a holding six, so the card is as tall as
-    // it needs to be and no taller, an empty third row read as a bug.
+    // Summary: flat 2-col x 3-row grid, matching reference stat grid exactly
     const sumRows=summary.isCash?2:3, sRowH=37;
     const hasAvgSell=!summary.noQty&&summary.avgSellPrice!=null;
-    // The sub-line under the grid only exists when there is a line to put
-    // there. Reserving room for it regardless left a bare strip under the
-    // last row of an account's card.
+    // Sub-line space only when there is a sub-line.
     const subLines=summary.noQty?0:(hasAvgSell?2:1);
     const extraH=subLines?(subLines*14+8):0;
     const sumCardH=sumRows*sRowH+10+extraH;
@@ -9948,7 +8576,7 @@ function drawAssetImageCanvas(){
     }
 
     let y=pad;
-    // ── Header: icon + name/category left, Paisafolio badge + date right (reference layout) ──
+    // Header: icon + name/category left, Paisafolio badge + date right (reference layout)
     const iconSize=34;
     drawRoundRect(ctx,pad,y,iconSize,iconSize,9);
     ctx.fillStyle=coinIconColor;ctx.fill();
@@ -9971,7 +8599,7 @@ function drawAssetImageCanvas(){
     ctx.textAlign='left';
     y+=headerH+gap;
 
-    // ── Summary Card: 2 cols x 3 rows, thin dividers, flat bg (reference .stats) ──
+    // Summary Card: 2 cols x 3 rows, thin dividers, flat bg (reference .stats)
     card(pad,y,W-pad*2,sumCardH,8);
     const pnlPos=summary.pnl!=null&&summary.pnl>=0;
     const sumItems=summary.isCash?[
@@ -9980,9 +8608,7 @@ function drawAssetImageCanvas(){
       ['BALANCE NOW',fmtPlain(summary.balanceNow),t.text],
       ['INTEREST EARNED',summary.interest?fmtPlain(summary.interest):fmtPlain(0),summary.interest?t.accent:t.text]
     ]:summary.noQty?[
-      // Same six slots as a holding, so the P&L percentages below still land
-      // beside the two figures they belong to, with the unit figures a house
-      // has no answer for replaced by the ones it does.
+      // Same six slots as a holding.
       ['PAID IN',fmtPlain(summary.paidIn),t.text],
       ['VALUE NOW',fmtPlain(summary.balanceNow),t.text],
       ['SOLD FOR',summary.takenOut?fmtPlain(summary.takenOut):'-',t.text],
@@ -10006,7 +8632,7 @@ function drawAssetImageCanvas(){
       ctx.font='600 11px '+F;
       ctx.fillStyle=item[2];
       ctx.fillText(String(item[1]),sx,syy+15);
-      if(!summary.isCash&&i===4&&summary.pp!=null){ // P&L percent, small, next to the amount (reference stat-sub, opacity .75)
+      if(!summary.isCash&&i===4&&summary.pp!=null){
         const amtW=ctx.measureText(String(item[1])).width;
         ctx.font='500 9px '+F;
         ctx.globalAlpha=0.75;
@@ -10034,16 +8660,15 @@ function drawAssetImageCanvas(){
     }
     y+=sumCardH+gap;
 
-    // ── Transactions section title ──
+    // Transactions section title
     ctx.fillStyle=t.text3;ctx.font='500 12px '+F;ctx.textAlign='left';
     ctx.fillText('Transactions',pad,y+14);
     y+=sectionTitleH;
 
-    // ── Transaction Table (no outer card, matches reference: header row + dividers only) ──
+    // Transaction Table (no outer card, matches reference: header row + dividers only)
     const tableTop=y;
     const innerL=pad+6,innerR=W-pad-6,innerW=innerR-innerL;
-    // Four columns of dashes is not a table. An account gets the three it
-    // has answers for.
+    // Accounts get three columns.
     const colFrac=summary.noQty?[0,0.24,0.62,1]
       :isCommodity?[0,0.18,0.31,0.43,0.57,0.78,1]:[0,0.18,0.31,0.46,0.66,1];
     const colX=colFrac.slice(0,-1).map(f=>innerL+f*innerW);
@@ -10059,18 +8684,13 @@ function drawAssetImageCanvas(){
     y+=tableHeadH;
     rows.forEach((r,ri)=>{
       const thisRowH=rowH+(hasNotes&&r.notes?noteH:0);
-      // r.type is what the row is actually called: SELL on a holding,
-      // WITHDRAW on an account, DIVIDEND on income. Colour still keys off
-      // whether money came in or went out.
+      // Colour keys off whether money came in or went out.
       const isSell=r.type==='SELL'||r.type==='WITHDRAW'||r.type==='MONEY OUT';
       const pnlV=r.realized?parseFloat(r.realized):null;
       // 3-way pill like the reference: Buy (amber), Sell-loss (red), Sell-gain (green)
       let pillBg,pillFg;
       if(summary.isCash){
-        // On an account the colour is direction, not profit: green is money
-        // arriving, red is money leaving. Green on a WITHDRAW is the wrong
-        // signal however good the account is doing. Selling a house is a sale
-        // like any other, so it keeps the profit colours.
+        // Accounts colour by direction; property sales use profit colours.
         if(isSell){pillBg=t.redSoft;pillFg=t.redTxt||t.red;}
         else{pillBg=t.greenSoft;pillFg=t.greenTxt||t.green;}
       }
@@ -10090,8 +8710,7 @@ function drawAssetImageCanvas(){
         ctx.font='400 10px '+F;ctx.fillStyle=t.text;
         ctx.fillText(String(r.qty),colX[ci++],y+rowH/2+4);
         ctx.fillStyle=t.text3;ctx.font='400 10px '+F;
-        // Only lift the rate off the baseline when there is a second line
-        // to make room for; on every other row it just sat crooked.
+        // Lift the rate only when there is a second line.
         const hasSub=isSell&&r.costBasisPerUnit!=null;
         ctx.fillText(r.perUnit?fmtPlain(parseFloat(r.perUnit)):'-',colX[ci],y+rowH/2+(hasSub?-2:4));
         if(hasSub){
@@ -10101,17 +8720,12 @@ function drawAssetImageCanvas(){
         ci++;
       }
       ctx.fillStyle=t.text;ctx.font='400 10px '+F;
-      // Money out of an account is the one figure that reads wrong without a
-      // sign on it: 4,000 under AMOUNT beside WITHDRAW looks like a credit.
-      // Every other figure on the card is in the app's own compact form;
-      // one raw 2870000.00 in the middle of them read as a different unit.
+      // Signed and compact amounts.
       const amtNum=parseFloat(r.amount);
       const amtFmt=isFinite(amtNum)?fmtPlain(amtNum):String(r.amount||'');
       const amtTxt=summary.isCash?((isSell?'-':'+')+amtFmt):amtFmt;
       if(summary.noQty){
-        // Last column, so it lines up under its own right-aligned header
-        // and the figures line up with each other. The sign and the colour
-        // are direction, which only an account has.
+        // Direction colour, accounts only.
         if(summary.isCash)ctx.fillStyle=isSell?t.red:t.green;
         ctx.textAlign='right';
         ctx.fillText(amtTxt,innerR,y+rowH/2+4);ctx.textAlign='left';ci++;
@@ -10131,7 +8745,7 @@ function drawAssetImageCanvas(){
     });
     y=tableTop+tableHeadH+bodyH+gap;
 
-    // ── Footer ──
+    // Footer
     ctx.fillStyle=t.text3;ctx.font='400 9px '+F;ctx.textAlign='center';
     ctx.fillText('Generated with Paisafolio - '+new Date().toLocaleString(),W/2,y+12);
     ctx.textAlign='left';
@@ -10144,12 +8758,8 @@ function drawAssetImageCanvas(){
     ]).then(doDraw).catch(doDraw);
   }else{doDraw();}
 }
-// ════════ SHARING A DEBT ════════
-// Lifted from the standalone debts app this grew out of, which could send
-// someone a picture of exactly where they stood. The thing that made it work
-// was not the table, it was the band across the top: one line saying FULLY
-// PAID, OVERDUE or AMOUNT TO PAY with the figure in it, so the person you send
-// it to knows the answer before they read anything else.
+// SHARING A DEBT
+// Image export with a status band (FULLY PAID / OVERDUE / AMOUNT TO PAY) on top.
 let debtExportId=null;
 function debtExportData(debtId){
   const d=(state.debts||[]).find(x=>x.id===debtId);if(!d)return null;
@@ -10160,7 +8770,7 @@ function debtExportData(debtId){
     .filter(h=>h&&num(h.amount)>0)
     .map(h=>({kind:'lend',amount:num(h.amount),date:h.date,note:h.note||''}));
   const pays=(d.payments||[]).map(pp=>({kind:'pay',amount:num(pp.amount),date:pp.date,note:pp.note||''}));
-  // One timeline, oldest first, carrying the balance after every movement, // which is the column people actually check.
+  // Oldest first, with the running balance after each movement.
   const rows=[...lends,...pays]
     .sort((x,y)=>parseDay(x.date)-parseDay(y.date));
   let run=0;
@@ -10170,9 +8780,7 @@ function debtExportData(debtId){
   const accrued=calcAccrued(d)||0;
   const outstanding=Math.max(0,lentTotal+accrued-paidTotal);
   const overdue=!!(d.due&&outstanding>0&&parseDay(d.due)<new Date().setHours(0,0,0,0));
-  // Interest is worked out as of today rather than accruing row by row, so
-  // without a line for it the balance column stopped one figure short of
-  // the outstanding total and the two looked like they disagreed.
+  // Interest as of today gets its own row so the balance matches the total.
   if(accrued>0.005)rows.push({kind:'interest',amount:accrued,date:todayStr(),
     note:accruedBasis(d)||'',balance:outstanding});
   return {d,rows,cur,rate,isOwed,
@@ -10207,8 +8815,6 @@ function renderDebtImagePreview(){
   drawDebtImageCanvas();
 }
 function setDebtImgTheme(theme){imgExportState.theme=theme;renderDebtImagePreview();}
-// Straight to the clipboard, because most of the time this is going into a
-// chat rather than a folder.
 function copyImgExport(){
   const canvas=el('assetImgCanvas');if(!canvas)return;
   if(!navigator.clipboard||!window.ClipboardItem){toast('This browser cannot copy images, use Download','error');return;}
@@ -10219,9 +8825,7 @@ function copyImgExport(){
       .catch(()=>toast('Could not copy, use Download','error'));
   });
 }
-// Everyone at once, which the old app had as its second export and which is
-// the one you actually send yourself rather than another person: who owes
-// what, who you owe, and the one number at the bottom.
+// Everyone at once, with the net total.
 function openAllDebtsExport(){
   const list=(state.debts||[]).map(d=>debtExportData(d.id)).filter(Boolean)
     .filter(x=>x.summary.lentTotal>0);
@@ -10260,8 +8864,6 @@ function drawAllDebtsCanvas(){
     const bandH=58,rowH=30,groupH=20,footerH=22;
     const groups=[['OWED TO ME',owed],['I OWE',owe]];
     if(cleared.length)groups.push(['SETTLED',cleared]);
-    // A little air above each heading after the first, so a group's last row
-    // and the next group's title do not read as one line.
     const groupGap=9;
     let listH=0,shown=0;
     groups.forEach(([,g])=>{ if(!g.length)return; listH+=(shown++?groupGap:0)+groupH+g.length*rowH; });
@@ -10491,8 +9093,7 @@ function downloadImgExport(){
     haptic('success');toast('Exported as Image','success');closeModal('assetExportModal');
   });
 }
-// The Settings row calls importData(), and nothing by that name existed, // clicking Import Data threw and the wizard could not be reached from the UI
-// at all. This is its counterpart to exportData().
+// Settings' Import Data row.
 function importData(){ openImportWizard(); }
 function openImportWizard(){
   _importPendingData = null;
@@ -10511,14 +9112,11 @@ function renderImportWizardStep1() {
     </div>`;
 }
 let _importPendingData = null;
-// ════════ IMPORT VALIDATION ════════
-// A backup file is untrusted input. Its values end up inside HTML attributes
-// and money maths, so every field is type-checked and coerced here rather
-// than trusted because it came from a file the person chose.
+// IMPORT VALIDATION
+// Backups are untrusted: every field is type-checked and coerced.
 const IMPORT_LIMITS = { assets:5000, spends:50000, debts:5000, goals:2000, recurs:2000, transactions:50000 };
 
-// Ids are interpolated into onclick="fn('${id}')". Keep them to a charset
-// that cannot escape a JS string or an HTML attribute, whatever the source.
+// Ids end up in onclick="fn('${id}')"; restrict the charset.
 function safeId(v){
   const s = String(v == null ? '' : v).trim();
   return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null;
@@ -10531,8 +9129,7 @@ function safeNum(v){
   const n = typeof v === 'number' ? v : parseFloat(v);
   return Number.isFinite(n) ? n : null;
 }
-// Dates are compared and fed to new Date() all over the app; reject anything
-// that isn't a real parseable date so NaN never enters a calculation.
+// Only real, parseable dates.
 function safeDate(v){
   if (!v) return null;
   const s = String(v).slice(0, 40);
@@ -10588,8 +9185,7 @@ function sanitizeImportedItem(kind, raw){
     if (out.assetId != null) out.assetId = safeId(out.assetId);
   }
   if (kind === 'spends'){
-    // A spend is either money out or money in; anything else slips past every
-    // total on the page.
+    // Only expense or income.
     out.kind = (out.kind === 'income') ? 'income' : 'expense';
     if (!out.category) out.category = 'other';
     out.amount = safeNum(out.amount) ?? 0;
@@ -10630,17 +9226,14 @@ function mergeImportedData(data){
     state[kind] = mergeList(kind, state[kind] || [], data[kind], stats);
   });
 
-  // pnlHistory is a dated series, not an id-keyed list: merge by date,
-  // preferring the local value (this device actually observed it).
+  // Merge by date, local wins.
   if (Array.isArray(data.pnlHistory)){
     const byDate = new Map();
     data.pnlHistory.forEach(p=>{
       const d = safeDate(p && p.date), n = safeNum(p && p.netWorth);
       if (d === null || n === null) return;
       const pt = { date:d, netWorth:n };
-      // A day also carries what each holding was worth. Rebuilding the point
-      // from two fields threw that away, so restoring a backup kept the
-      // net-worth line and emptied every Daily P&L reading behind it.
+      // Keep per-holding values.
       const av = p && p.assets;
       if (av && typeof av === 'object' && !Array.isArray(av)){
         const clean = {};
@@ -10653,8 +9246,7 @@ function mergeImportedData(data){
     state.pnlHistory = [...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-365);
   }
 
-  // Settings: take imported preferences but never let a backup silently
-  // re-lock the app or flip device-level display choices.
+  // Never import the lock or device display choices.
   if (data.settings && typeof data.settings === 'object'){
     const deviceOnly = {
       theme: state.settings.theme,
@@ -10671,8 +9263,7 @@ function mergeImportedData(data){
 
 function doImport(e){
   const file = e.target.files[0]; if (!file) return;
-  // 25 MB is far beyond any real portfolio; past that we're just going to
-  // freeze the tab parsing it.
+  // Anything this big would freeze the tab.
   if (file.size > 25 * 1024 * 1024){
     toast('That file is too large to be a Paisafolio backup', 'error');
     e.target.value = ''; return;
@@ -10685,8 +9276,7 @@ function doImport(e){
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         toast('That file isn\u2019t a Paisafolio backup', 'error'); return;
       }
-      // Every list we care about must genuinely be an array. A file with
-      // "assets": {...} would otherwise sail through and break rendering.
+      // Lists must really be arrays.
       const lists = ['assets','spends','debts','goals','recurs','transactions'];
       for (const k of lists){
         if (k in data && !Array.isArray(data[k])){
@@ -10766,10 +9356,7 @@ async function runImportWizard() {
     if (el('impProgFill')) el('impProgFill').style.width = Math.round(((i+1)/steps.length)*100)+'%';
   }
 
-  // ── MERGE, don't replace ────────────────────────────────────────────
-  // This used to be `state = { ...state, ...data }`, which overwrote each
-  // array wholesale and destroyed anything not present in the file. The
-  // preview text has always promised a merge; now the code performs one.
+  // Merge, don't replace.
   const mergeStats = mergeImportedData(data);
   state.settings = Object.assign({currency:'NPR',hideBalance:false,theme:'dark',haptics:true,hapticStrength:'medium',reduceMotion:false,onboarded:true}, state.settings||{});
   saveState();
@@ -10789,36 +9376,20 @@ async function runImportWizard() {
   haptic('success'); toast('Data imported!', 'success');
   _importPendingData = null;
 }
-async function clearAllData(){if(!await askConfirm({title:'Delete everything?',message:'Every asset, expense, debt, goal, recurring item, habit and transaction on this device will be permanently deleted. Export a backup first if you might want any of it back.',confirmText:'Delete everything'}))return;// baseCurrency is what every stored number is denominated in, not data:
-  // silently resetting it to NPR would re-label a fresh start in the wrong
-  // currency. spends must be present as an array, not absent.
+async function clearAllData(){if(!await askConfirm({title:'Delete everything?',message:'Every asset, expense, debt, goal, recurring item, habit and transaction on this device will be permanently deleted. Export a backup first if you might want any of it back.',confirmText:'Delete everything'}))return;
+  // Keep device prefs and base currency; spends must be an array.
   const keep={theme:state.settings.theme,haptics:state.settings.haptics,hapticStrength:state.settings.hapticStrength,reduceMotion:state.settings.reduceMotion,baseCurrency:baseCode(),onboarded:true};state={assets:[],debts:[],goals:[],recurs:[],transactions:[],spends:[],settings:Object.assign({currency:'NPR',hideBalance:false},keep),lastUpdated:null,pnlHistory:[]};completedGoals=new Set();saveState();renderAll();renderSettings();haptic('tap');
   if(supabaseUser&&typeof pushToCloud==='function'){
-    // This is a deliberate, already-confirmed full wipe (the dialog above),
-    // not the ambiguous "state silently went empty" case the sync wipe
-    // guard exists to catch. The normal saveState()->schedulePush() path
-    // always goes through that guard and would silently refuse to push
-    // this exact action if the account had 3+ items, leaving local
-    // showing empty while the cloud copy quietly survives untouched. Push
-    // immediately, bypassing the guard, so "Clear All Data" actually
-    // clears the cloud too.
+    // Confirmed full wipe: push now, bypassing the wipe guard, so the cloud clears too.
     pushToCloud(true).catch(e=>{console.warn('[clearAllData] cloud push failed:',e);toast('Cleared on this device, but couldn\u2019t clear the cloud copy, try Sync Now.','error');});
   }
   toast('All data cleared');}
-// ════════ PWA ════════
-// A new service worker takes over the NEXT navigation. This document keeps
-// running the app.js it already parsed, so someone with the app open, which,
-// installed, is most of the time, can sit on a build that was replaced hours
-// ago and see none of it. Registering and walking away was the whole of the
-// old behaviour, which is exactly how "I fixed it" and "it is still broken"
-// end up both being true.
+// PWA
+// A new service worker only takes over the next navigation; offer a reload.
 let _updateOffered=false,_swHadController=false;
 function offerAppUpdate(){
   if(_updateOffered)return;
-  // A first install activates and claims this page too, which looks identical
-  // to an update from inside the callbacks. What tells them apart is whether a
-  // worker was already in charge when this page loaded, read once before any
-  // of that happens.
+  // Only offer when a worker was already in control (not a first install).
   if(!_swHadController)return;
   _updateOffered=true;
   const stack=el('undoToastStack');
@@ -10871,17 +9442,8 @@ function registerSW(){
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;const it=el('installItem');if(it)it.style.display='flex';});
 window.addEventListener('appinstalled',()=>{deferredPrompt=null;const it=el('installItem');if(it)it.style.display='none';toast('App installed!','success');});
 async function installApp(){if(!deferredPrompt){toast('Use your browser menu → "Add to Home Screen"');return;}deferredPrompt.prompt();const r=await deferredPrompt.userChoice;deferredPrompt=null;if(r&&r.outcome==='accepted')toast('Installing…','success');}
-// ════════ ONBOARDING ════════
-// ════════ GUIDED TOUR ════════
-// The old intro was a stack of cards that described the app while covering it.
-// You read five paragraphs and still had to go find everything afterwards.
-// This points at the real thing instead: the page dims, one element stays lit,
-// and the note sits beside it. You finish having seen where things are.
-//
-// The spotlight is one box-shadow with a huge spread on a transparent box,
-// which dims everything outside a rounded rectangle in a single paint. The
-// alternative, four panels around a hole or a clip-path, means keeping several
-// boxes in sync on every scroll and resize.
+// ONBOARDING
+// GUIDED TOUR: spotlights real elements. The hole is one box-shadow with a huge spread.
 const TOUR = [
   { sel: '.nw-card', page: 'dash', title: 'Your net worth',
     text: 'Everything you own minus everything you owe. Tap the number itself to blur it when someone is looking over your shoulder.' },
@@ -10914,11 +9476,7 @@ function startTour(){
   const _bub=el('aiBubble');
   if(_bub){clearTimeout(_aiTuckTimer);untuckBubble();}
   pushModalHistory();
-  // The lit element moves when the page scrolls or the phone rotates, and a
-  // spotlight pointing at empty space is worse than no spotlight.
-  // Throttled to a frame: a scroll fires far more often than the screen
-  // repaints, and the hole must land on the same frame as the element it
-  // is ringing or it visibly lags behind by a few pixels.
+  // Follow the target on scroll and resize, once per frame.
   _tourWatch = () => {
     if (!_tourOn || _tourRaf) return;
     _tourRaf = requestAnimationFrame(() => { _tourRaf = 0; positionTour(true); });
@@ -10948,14 +9506,11 @@ function endTour(){
 function tourNext(){ haptic('tap'); if (tourStep < TOUR.length - 1) { tourStep++; paintTourStep(); } else { endTour(); toast('That is the tour. Settings can replay it any time.', 'success'); } }
 function tourPrev(){ haptic('tap'); if (tourStep > 0) { tourStep--; paintTourStep(); } }
 
-// Resolve a step's target, allowing a comma list so a step can name a
-// preferred element and a fallback for when it does not exist yet.
+// Comma list: preferred target, then fallbacks.
 function tourTarget(step){
   for (const sel of String(step.sel).split(',')) {
     const n = document.querySelector(sel.trim());
-    // offsetParent is null for anything position:fixed, which silently
-    // skipped the bubble step while the bubble was plainly on screen.
-    // Measure the box instead, and check it is not display:none.
+    // offsetParent is null for fixed elements; measure the box instead.
     if (!n) continue;
     const r = n.getBoundingClientRect();
     if (r.width > 0 && r.height > 0 && getComputedStyle(n).display !== 'none') return n;
@@ -10965,8 +9520,7 @@ function tourTarget(step){
 function paintTourStep(){
   const s = TOUR[tourStep];
   if (!s) return endTour();
-  // Switching page mid-tour is the point: you see the real screen, not a
-  // drawing of it. Give the page a moment to render before measuring.
+  // Switch page, then wait for it to render.
   if (s.page && currentPage !== s.page) {
     goPage(s.page);
     return setTimeout(() => { if (_tourOn) revealTourStep(); }, 260);
@@ -10976,18 +9530,14 @@ function paintTourStep(){
 function revealTourStep(){
   const s = TOUR[tourStep];
   const target = tourTarget(s);
-  // A step whose element is not there (the bubble turned off, an empty page)
-  // is skipped rather than spotlighting nothing.
+  // Skip steps whose target is missing.
   if (!target) {
     if (tourStep < TOUR.length - 1) { tourStep++; return paintTourStep(); }
     return endTour();
   }
   document.querySelectorAll('.tour-lit').forEach(n => n.classList.remove('tour-lit', 'tour-lit-static'));
   target.classList.add('tour-lit');
-  // z-index only applies to a positioned element, so a static one needs
-  // position:relative. Anything already positioned must keep what it has:
-  // forcing relative on the fixed assistant bubble dropped it out of its
-  // corner and into normal flow, and the spotlight followed it there.
+  // z-index needs positioning; only add it to static elements.
   if (getComputedStyle(target).position === 'static') target.classList.add('tour-lit-static');
 
   el('tourTitle').textContent = s.title;
@@ -10997,8 +9547,7 @@ function revealTourStep(){
   el('tourPrev').style.visibility = tourStep === 0 ? 'hidden' : '';
   el('tourNext').textContent = tourStep === TOUR.length - 1 ? 'Done' : 'Next';
 
-  // Bring it into view first: measuring before scrolling puts the hole where
-  // the element used to be.
+  // Scroll into view before measuring.
   const r0 = target.getBoundingClientRect();
   const needsScroll = r0.top < 80 || r0.bottom > window.innerHeight - 120;
   if (needsScroll) {
@@ -11007,9 +9556,7 @@ function revealTourStep(){
   }
   positionTour();
 }
-// `instant` skips the ease. A step change should glide from the old box to
-// the new one; following a finger scroll must not, or the ring trails behind
-// the element by a third of a second.
+// `instant` skips the ease while following a scroll.
 function positionTour(instant){
   const s = TOUR[tourStep];
   const target = s && tourTarget(s);
@@ -11018,10 +9565,7 @@ function positionTour(instant){
 
   const r = target.getBoundingClientRect();
   const pad = 8;
-  // Deliberately unclamped. Pinning the box to the edge of the screen used to
-  // leave a lit ring stuck at the top over nothing at all once you scrolled
-  // the element away. The hole belongs where the element is, on screen or
-  // not; it slides off with it and comes back with it.
+  // Unclamped: the hole follows the element off screen.
   const top = r.top - pad, left = r.left - pad;
   const w = r.width + pad * 2, h = r.height + pad * 2;
   hole.classList.toggle('instant', !!instant);
@@ -11038,13 +9582,10 @@ function positionTour(instant){
   const away = shown < Math.min(h, 36) * 0.55;
   if (ov) ov.classList.toggle('tour-away', away);
   const back = el('tourShow');
-  // Scrolled past it? Say which way it went and offer to go back, rather
-  // than describing something the screen no longer shows.
+  // Point the way back to a target scrolled out of view.
   if (back) back.textContent = (top + h / 2 < window.innerHeight / 2) ? 'Show me \u2191' : 'Show me \u2193';
 
-  // The card goes on whichever side has room, so it never covers the thing it
-  // is describing. Neither side fitting means a small target with the screen
-  // full above and below it, where centring is the least bad option.
+  // Card on the side with room; centred if neither fits.
   const cardH = card.offsetHeight || 160;
   const gap = 14, edge = 10;
   const mid = Math.max(edge, (window.innerHeight - cardH) / 2);
@@ -11066,22 +9607,21 @@ function tourShowMe(){
 // Both entry points, the first run and the Settings row, now open this.
 function startOnboarding(){ startTour(); }
 function rerunTour(){ goPage('dash'); setTimeout(startTour, 320); }
-// ════════ CONFETTI ════════
+// CONFETTI
 function fireConfetti(){if(state.settings.reduceMotion)return;const cv=el('confetti');cv.style.display='block';const ctx=cv.getContext('2d'),W=cv.width=innerWidth,H=cv.height=innerHeight;const cols=['#f5a623','#16d6a4','#5aa6ff','#b39bff','#ff5b75','#ff7b3a'];let p=[];for(let i=0;i<120;i++)p.push({x:W/2+(Math.random()-.5)*120,y:H*.32,vx:(Math.random()-.5)*9,vy:Math.random()*-9-3,g:.28,s:Math.random()*7+4,c:cols[i%cols.length],r:Math.random()*6,vr:(Math.random()-.5)*.4,a:1});
   let t0=performance.now();(function f(t){ctx.clearRect(0,0,W,H);let alive=false;p.forEach(o=>{o.vy+=o.g;o.x+=o.vx;o.y+=o.vy;o.r+=o.vr;o.a=Math.max(0,1-(t-t0)/2200);if(o.a>0&&o.y<H+20){alive=true;ctx.save();ctx.globalAlpha=o.a;ctx.translate(o.x,o.y);ctx.rotate(o.r);ctx.fillStyle=o.c;ctx.fillRect(-o.s/2,-o.s/2,o.s,o.s*.6);ctx.restore();}});if(alive)requestAnimationFrame(f);else cv.style.display='none';})(t0);}
-// ════════ GESTURES ════════
+// GESTURES
 function noSwipe(t){return t.closest&&t.closest('.tx-summary,.cat-bar,#habitChart,.habit-scroll,.hb-trend,.pnl-filter-row,.asset-type-row,.movers-scroll,.insights,.custom-select-dropdown,.ccy-sel-dropdown,.coin-suggestions,.cs-wrap,input,canvas,.modal-overlay,.alloc-card,.stat-grid,.breakdownList,#breakdownList,.recent-card,.alloc-body,.assets-table-wrap,.assets-summary-scroll,table,th,td');}
 function hasScrollableParent(el){let n=el;while(n&&n!==document.body){const s=window.getComputedStyle(n);const ox=s.overflowX;if((ox==='auto'||ox==='scroll')&&n.scrollWidth>n.clientWidth+1)return true;n=n.parentElement;}return false;}
 function setupGestures(){const pagesEl=document.querySelector('.pages');let sx=0,sy=0,sw=false;
   pagesEl.addEventListener('touchstart',e=>{if(e.touches.length!==1){sw=false;return;}const t=e.touches[0];sx=t.clientX;sy=t.clientY;sw=!noSwipe(e.target)&&!hasScrollableParent(e.target);},{passive:true});
   pagesEl.addEventListener('touchmove',e=>{if(!sw)return;const t=e.touches[0],dx=t.clientX-sx,dy=t.clientY-sy;if(Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)&&hasScrollableParent(e.target)){sw=false;}},{passive:true});
   pagesEl.addEventListener('touchend',e=>{
-    // changedTouches can be empty on a synthetic or cancelled event, and
-    // reading clientX off nothing throws before the !sw guard below runs.
+    // changedTouches can be empty.
     const ch=e.changedTouches&&e.changedTouches[0];if(!ch)return;
     const dx=ch.clientX-sx,dy=ch.clientY-sy;
     if(!sw)return;if(Math.abs(dx)>72&&Math.abs(dx)>Math.abs(dy)*2.2){const i=PAGES.indexOf(currentPage);if(dx<0&&i<PAGES.length-1)goPage(PAGES[i+1],'left');else if(dx>0&&i>0)goPage(PAGES[i-1],'right');}},{passive:true});}
-// ════════ LONG-PRESS / RIGHT-CLICK CONTEXT MENUS ════════
+// LONG-PRESS / RIGHT-CLICK CONTEXT MENUS
 function attachContextMenu(containerEl,itemSelector,onTrigger){
   if(!containerEl||containerEl._ctxBound)return;containerEl._ctxBound=true;
   let pressTimer=null,pressTarget=null,moved=false;
@@ -11150,12 +9690,8 @@ function setupModalDrag(){document.querySelectorAll('.modal-sheet').forEach(shee
     hdr.addEventListener('touchend',end,{passive:true});
   }
 });}
-// ════════ HAPTICS ════════
-// ════════ CONFIRM DIALOG ════════
-// Drop-in async replacement for window.confirm(). Returns a Promise<boolean>.
-// Native confirm() blocks the main thread, can't be styled, and on an
-// installed PWA renders with the origin in the title, which looks like a
-// phishing prompt when the question is "delete all your financial data?".
+// HAPTICS
+// CONFIRM DIALOG: async replacement for window.confirm(); resolves to a boolean.
 let _confirmResolve=null,_confirmPrevFocus=null;
 
 function askConfirm(opts){
@@ -11228,20 +9764,14 @@ function closeConfirm(result){
   if(r)r(!!result);
 }
 
-// Two phones given the same 8ms pulse do not feel the same thing at all:
-// some motors barely start moving in that time, so on those the app felt
-// like it had no haptics rather than gentle ones. The pattern is the same
-// shape at every level; only how long each buzz runs changes, with a floor
-// under it because anything shorter is below what a coarse motor registers.
+// Levels scale buzz length, with an 8ms floor for coarse motors.
 const HAPTIC_LEVELS={light:0.7,medium:1.5,strong:3.2};
 const HAPTIC_BASE={tap:[9],success:[0,18,40,18],error:[0,40,30,40]};
 function hapticLevel(){return HAPTIC_LEVELS[state.settings.hapticStrength]?state.settings.hapticStrength:'medium';}
 function hapticPattern(type){
   const m=HAPTIC_LEVELS[hapticLevel()];
   const base=HAPTIC_BASE[type]||HAPTIC_BASE.tap;
-  // A pattern reads [buzz,pause,buzz,…] and these all start with a 0 pause,
-  // so the buzzes are the odd slots. Pauses stay as they are, stretching
-  // them would change the rhythm rather than the strength.
+  // Buzzes are the odd slots; pauses keep the rhythm.
   return base.map((v,i)=>(base.length===1||i%2===1)?Math.max(8,Math.round(v*m)):v);
 }
 function haptic(type){
@@ -11267,13 +9797,9 @@ function renderHapticSeg(){
   seg.innerHTML=[['light','Light'],['medium','Medium'],['strong','Strong']]
     .map(([v,l])=>`<button class="seg-3-btn${cur===v?' on':''}" aria-pressed="${cur===v}" onclick="event.stopPropagation();setHapticStrength('${v}')">${l}</button>`).join('');
 }
-// ════════ HELPERS ════════
+// HELPERS
 function el(id){return document.getElementById(id);}
-// A toggle is a <span role="switch"> inside the <button> that is the actual
-// row. The span cannot take focus, so a screen reader announces the row as a
-// plain button and the on/off state, which lives on the span, never gets
-// read. Rather than restate it at each of the eighteen places that flip a
-// toggle, the row copies whatever the switch says.
+// Mirror each switch's state onto its row button for screen readers.
 function syncSwitchRows(root){
   (root||document).querySelectorAll('.toggle[role="switch"]').forEach(t=>{
     const row=t.closest('button,[role="button"]');
@@ -11284,8 +9810,7 @@ function syncSwitchRows(root){
     t.removeAttribute('role');
   });
 }
-// The class is what every toggle actually updates, so watch for that and
-// mirror it, which also covers toggles rendered later.
+// Watch the class every toggle updates, including later ones.
 function watchSwitchRows(){
   syncSwitchRows();
   if(!window.MutationObserver)return;
@@ -11304,21 +9829,14 @@ function watchSwitchRows(){
   }).observe(document.body,{subtree:true,childList:true,attributes:true,
     attributeFilter:['class','aria-checked']});
 }
-// "1 people", "1 days", "1 habits". Small, but it is the difference between
-// a screen that was written and one that was generated.
 function plural(n,one,many){return n+' '+(Math.abs(n)===1?one:(many||one+'s'));}
 function initTableScrollFade(wrapId,fadeId){const wrap=el(wrapId),fade=el(fadeId);if(!wrap||!fade)return;const update=()=>{const hasOverflow=wrap.scrollWidth>wrap.clientWidth+1;const atEnd=wrap.scrollLeft+wrap.clientWidth>=wrap.scrollWidth-1;fade.classList.toggle('show',hasOverflow&&!atEnd);};update();wrap.addEventListener('scroll',update,{passive:true});if(window.ResizeObserver){new ResizeObserver(update).observe(wrap);}else{window.addEventListener('resize',update);}}
 function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"'`=\/]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;','=':'&#61;','/':'&#47;'}[c]));}
-// Escapes a value that will sit inside a JS string literal inside an HTML
-// attribute, e.g. onclick="openAsset('${jsAttr(id)}')". esc() alone is not
-// enough there: the browser HTML-decodes the attribute *before* the JS parser
-// sees it, so an escaped quote turns back into a real quote and breaks out.
+// Escape for a JS string inside an HTML attribute; esc() alone is decoded back by the browser first.
 function jsAttr(s){return String(s==null?'':s).replace(/[\\'"<>&`\r\n\u2028\u2029]/g,c=>({'\\':'\\\\',"'":'\\u0027','"':'\\u0022','<':'\\u003C','>':'\\u003E','&':'\\u0026','`':'\\u0060','\r':'','\n':'','\u2028':'','\u2029':''}[c]));}
 function hexA(hex,a){hex=hex.trim();if(hex.startsWith('rgb')){return hex.replace(/rgb\(([^)]+)\)/,(m,p)=>`rgba(${p},${a})`);}let h=hex.replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return`rgba(${r},${g},${b},${a})`;}
 function catLabel(c){return{crypto:'Crypto',stock:'Stock',commodity:'Commodity',liquidity:'Liquidity',property:'Property',other:'Other'}[c]||c;}
-// A name cut mid-word with nothing to show for it reads as a rendering bug
-// ("Japan Tri"). An ellipsis says the name goes on.
 function clip(t,n){t=String(t||'').trim();return t.length>n?t.slice(0,n-1).trim()+'\u2026':t;}
 function stripParens(s){return(s||'').replace(/\s*\([^)]*\)\s*$/,'').trim();}
 function svgIcon(name,size=16){return(ICONS[name]||ICONS.box).replace('<svg ',`<svg width="${size}" height="${size}" `);}
@@ -11326,9 +9844,9 @@ function formatDate(d){if(!d)return'';try{return new Date(d).toLocaleDateString(
 function toast(msg,type=''){const t=el('toast');if(t){t.classList.remove('with-undo');clearTimeout(t._hideTimer);}const ic=type==='success'?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>':type==='error'?'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.25"/><line x1="12" y1="7.25" x2="12" y2="13"/><circle cx="12" cy="16.9" r="1.15" fill="currentColor" stroke="none"/></svg>':'';t.innerHTML=ic+'<span>'+esc(msg)+'</span>';t.className='toast '+(type||'');t.classList.add('show');announce(msg);clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
 function announce(msg){const s=el('srAnnounce');if(s)s.textContent=msg;}
 
-// ════════ UNDO (stacked, supports multiple pending undos at once) ════════
+// UNDO (stacked, supports multiple pending undos at once)
 const UNDO_WINDOW_MS=8000;
-let _undoStack=[]; // [{ id, diff:{key:[...items removed/changed by THIS action]}, keys, timer }]
+let _undoStack=[]; // [{ id, diff:{key:[items this action changed]}, keys, timer }]
 let _undoSeq=0;
 
 // Take a deep copy of just the lists an action touches, before it runs.
@@ -11341,15 +9859,8 @@ function snapshotForUndo(keys){
   return snap;
 }
 
-// Run a destructive action with an undo affordance.
-//   label , what to say in the toast, e.g. 'Bitcoin deleted'
-//   keys  , which state lists the action may modify
-//   action, the mutation itself
-// Each call gets its own independent entry on the undo stack and its own
-// toast. The undo data is a DIFF of exactly what THIS action removed or
-// changed (before vs immediately-after), not a snapshot of the whole list -
-// so if a second delete happens while the first is still undoable, undoing
-// the first can't accidentally resurrect something the second one removed.
+// Destructive action with undo. keys = state lists it may change. Each call stores a
+// diff of what it changed, so undoing one cannot resurrect another's deletes.
 function withUndo(label,keys,action){
   const before=snapshotForUndo(keys);
   action();
@@ -11380,8 +9891,7 @@ function removeUndoEntry(id){
 function performUndo(id){
   const entry=_undoStack.find(e=>e.id===id);
   if(!entry)return;
-  // Entries can supply their own restore (used by things that don't live in
-  // the diff-tracked state lists, e.g. habits inside settings).
+  // Custom restore for data outside the diffed lists (e.g. habits).
   if(typeof entry.restore==='function'){
     entry.restore();
     removeUndoEntry(id);
@@ -11414,8 +9924,7 @@ function performUndo(id){
   announce('Change undone');
 }
 
-// Adds one toast to the stack for the given undo id. Falls back to a plain
-// toast if the stack container isn't present for any reason.
+// One toast per undo id; plain toast if the stack is missing.
 function toastWithUndo(id,msg){
   const stack=el('undoToastStack');
   if(!stack){toast(msg);return;}
@@ -11469,7 +9978,7 @@ function syncAssetDebtUIFromSettings(){
   const dOwed=el('dTabOwed'),dIowe=el('dTabIOwe');if(dOwed&&dIowe){dOwed.className='d-tab'+(activeDebtTab==='owed'?' active grn':'');dIowe.className='d-tab'+(activeDebtTab==='iowe'?' active rd':'');}
   const gsl=el('goalSortLbl');if(gsl)gsl.textContent=GOAL_SORT_LBL[goalSort]||'Progress';
 }
-// ════════ KEYBOARD ════════
+// KEYBOARD
 function setupKeyboard(){
   document.addEventListener('keydown',e=>{
     // While the tour is up it owns the keyboard: Escape leaves, arrows step.
@@ -11486,8 +9995,7 @@ function setupKeyboard(){
     const top=modalStack[modalStack.length-1];
     if(e.key==='Escape'){if(el('shortcutsHelp')&&el('shortcutsHelp').classList.contains('open')){toggleShortcutsHelp();return;}if(el('authModal')&&el('authModal').classList.contains('open')&&!authRequired){closeAuthModal();return;}if(el('onbOverlay')&&el('onbOverlay').classList.contains('open')&&typeof finishOnboard==='function'){finishOnboard();return;}if(top){closeModal(top);return;}document.querySelectorAll('.custom-select-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.custom-select-dropdown.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.ccy-sel-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.ccy-sel-dropdown.open').forEach(d=>d.classList.remove('open'));return;}
     if((e.key==='Enter'||e.key===' ')&&document.activeElement){const a=document.activeElement;if(a.getAttribute&&(a.getAttribute('role')==='button'||a.getAttribute('role')==='switch')&&a.tagName!=='BUTTON'&&a.tagName!=='INPUT'&&a.tagName!=='A'){e.preventDefault();a.click();}}
-    // The calendar pages with a swipe on a phone; on a keyboard that is the
-    // arrow keys, so the same sheet can be browsed either way.
+    // Arrow keys page the habit calendar.
     if(top==='habitCalModal'&&(e.key==='ArrowLeft'||e.key==='ArrowRight')&&e.target.tagName!=='INPUT'){
       e.preventDefault();hcalSwap(e.key==='ArrowLeft'?-1:1);return;
     }
@@ -11500,11 +10008,7 @@ function setupKeyboard(){
     else if(e.key.toLowerCase()==='n'){e.preventDefault();const fn={dash:openAddAsset,assets:openAddAsset,debts:openAddDebt,plan:openAddGoal,analytics:openAddAsset,settings:null}[currentPage];if(fn)fn();}
     else if(['1','2','3','4','5','6'].includes(e.key))goPage(PAGES[+e.key-1]);
   });
-  // focus trap
-  // Sheets hide half their fields depending on what you picked (a bill has no
-  // asset type, a cash account no quantity). A hidden or disabled control
-  // cannot take focus, so wrapping onto one silently did nothing and Tab
-  // escaped the sheet to the page behind it. Only visible controls count.
+  // Focus trap over visible, enabled controls only.
   const focusablesIn=m=>[...m.querySelectorAll('input,button,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
     .filter(n=>!n.disabled&&n.offsetParent!==null&&!n.closest('[hidden]'));
   document.addEventListener('keydown',e=>{
@@ -11513,9 +10017,7 @@ function setupKeyboard(){
     const m=el(top);if(!m)return;
     const f=focusablesIn(m);if(!f.length)return;
     const first=f[0],last=f[f.length-1];
-    // Focus parked on the sheet itself (how a modal opens) has no place in the
-    // ring, so the first Tab should land on the first control rather than
-    // falling through to the page.
+    // Focus on the sheet itself: first Tab goes to the first control.
     if(!m.contains(document.activeElement)||document.activeElement===m||
        !f.includes(document.activeElement)){
       e.preventDefault();(e.shiftKey?last:first).focus();return;
@@ -11525,12 +10027,8 @@ function setupKeyboard(){
   });
 }
 function toggleShortcutsHelp(){const ov=el('shortcutsHelp');if(!ov)return;const open=ov.classList.toggle('open');ov.setAttribute('aria-hidden',open?'false':'true');syncBodyScrollLock();if(open){pushModalHistory();haptic('tap');}else{popModalHistoryIfNeeded();}}
-// ════════ INSIGHTS ════════
-// Things that are late or due, on the page you land on. Everything here was
-// already in the app, an overdue debt had a banner on the Debts page, a due
-// bill a button on Spending, but you had to go looking on the right day. The
-// card only exists when it has something to say; one that is always there
-// stops being read.
+// INSIGHTS
+// Overdue and due items on the dashboard; the card shows only when there are some.
 function needsAttentionItems(){
   const today=todayStr();
   const out=[];
@@ -11586,8 +10084,6 @@ function needsAttentionItems(){
 }
 let needsExpanded=false;
 function toggleNeedsMore(){needsExpanded=!needsExpanded;renderNeedsAttention();haptic('tap');}
-// "2% /month" beside a name wrapped and made the whole card taller. Two
-// characters say the same thing.
 function freqShort(f){
   return {day:'d',daily:'d',week:'wk',weekly:'wk',month:'mo',monthly:'mo',
     year:'yr',yearly:'yr'}[String(f||'').toLowerCase()]||f||'mo';
@@ -11596,9 +10092,7 @@ function renderNeedsAttention(){
   const card=el('needsCard'), list=el('needsList'), title=el('needsTitle');
   if(!card||!list)return;
   const items=needsAttentionItems();
-  // The insights strip below closes its top gap only when this card is really
-  // there to provide one. A CSS adjacency could not tell, since display:none
-  // leaves an element a sibling.
+  // The insights strip needs to know whether this card is really shown.
   const pg=el('page-dash');
   if(!items.length){card.style.display='none';list.innerHTML='';needsExpanded=false;
     if(pg)pg.classList.remove('dash-has-needs');return;}
@@ -11607,9 +10101,7 @@ function renderNeedsAttention(){
   if(title)title.textContent=items.length===1?'Needs you':plural(items.length,'thing')+' need you';
   // "and 2 more" was a dead label on a card whose whole job is to be acted on.
   const show=needsExpanded?items:items.slice(0,3);
-  // A div with a button role, not a <button>: the Log action is a real button
-  // and nesting one inside another is invalid, so the browser hoists it out of
-  // the row and the layout falls apart.
+  // role=button div: it contains a real button.
   list.innerHTML=show.map(it=>
     `<div class="needs-row" role="button" tabindex="0" onclick="${it.go}" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();this.click();}">`
     +`<span class="needs-ico" style="background:${esc(it.color)}22;color:${esc(readableInk(it.color))}">${svgIcon(it.ico,14)}</span>`
@@ -11628,18 +10120,14 @@ function renderInsights(ta,to,ti,nw,totalPnL,pct,best,worst){const box=el('insig
   const yd=nwYesterday();if(yd!==null){const d=nw-yd,p=d>=0;C('chartline',p?grn:red,'Today',(p?'+':'')+fmt(d));}
   if(state.assets.length){C('trending',totalPnL>=0?grn:red,'Total P&L',
     (totalPnL>=0?'+':'')+fmt(totalPnL)+'<span class="chip-sub">'+(totalPnL>=0?'+':'')+pct.toFixed(1)+'%</span>');}
-  // Spending lives on its own tab, but the dashboard is where people land,
-  // so the month's number belongs here too, with the budget in one word.
+  // This month's spending and budget status on the dashboard.
   {const sm=monthSummary(currentSpendMonth()),bs=budgetStatus(currentSpendMonth());
    if(sm.count)C('banknote',bs&&bs.statusId==='over'?red:acc,'Spent this month',
      fmt(sm.spent)+(bs?' \u00b7 '+bs.statusLabel:''));}
-  // Coloured by the sign, not by the label: the best holding in a portfolio
-  // that is down is still down, and the worst in one that is up is still up.
-  // Green on a loss said the opposite of the number beside it.
+  // Colour by sign, not by label.
   if(best){C('rocket',best.pct>=0?grn:red,'Top performer',
     clip(stripParens(best.name),12)+' <span class="chip-sub">'+(best.pct>=0?'+':'')+best.pct.toFixed(1)+'%</span>');}
-  // Only worth its own chip when it is a different holding from the best;
-  // one asset is not simultaneously the top and the bottom of anything.
+  // Only when different from the best.
   if(worst&&(!best||worst.name!==best.name))C('trending',worst.pct>=0?grn:red,'Worst performer',
     clip(stripParens(worst.name),12)+' <span class="chip-sub">'+(worst.pct>=0?'+':'')+worst.pct.toFixed(1)+'%</span>');
   // biggest holding
@@ -11658,10 +10146,9 @@ function renderInsights(ta,to,ti,nw,totalPnL,pct,best,worst){const box=el('insig
   let soonDebt=null;state.debts.forEach(d=>{if(!d.due)return;const dd=parseDay(d.due);const days=Math.round((dd-today0)/86400000);if(days<=7&&(!soonDebt||days<soonDebt.days))soonDebt={name:d.name,days,owed:d.type==='owed'};});
   if(soonDebt){const lbl=soonDebt.days<0?'Overdue':(soonDebt.days===0?'Due today':'Due in '+soonDebt.days+'d');C('alert',soonDebt.days<0?red:acc,(soonDebt.owed?'Collect: ':'Pay: ')+clip(soonDebt.name,11),lbl);}
   if(!chips.length){box.style.display='none';return;}box.style.display='flex';box.innerHTML=chips.map((c,i)=>c.replace('class="chip"',`class="chip" style="animation-delay:${_animateEnter?i*45:0}ms"`)).join('');}
-// ════════ RIPPLE ════════
+// RIPPLE
 function setupRipple(){document.addEventListener('pointerdown',e=>{const t=e.target.closest('.add-btn,.submit-btn,.nav-item,.empty-cta,.cat-pill,.pnl-pill,.act-pill,.preset-btn,.hdr-btn');if(!t||state.settings.reduceMotion)return;const r=t.getBoundingClientRect(),d=Math.max(r.width,r.height),x=e.clientX-r.left-d/2,y=e.clientY-r.top-d/2;t.classList.add('rippling');const s=document.createElement('span');s.className='ripple';s.style.width=s.style.height=d+'px';s.style.left=x+'px';s.style.top=y+'px';t.appendChild(s);setTimeout(()=>s.remove(),560);},{passive:true});}
-// ════ FAB removed ════
-// ════════ COMMAND PALETTE ════════
+// FAB removed
 function openPalette(){const c=el('cmdk');c.dataset.openedAt=String(Date.now());c.classList.add('open');c.setAttribute('aria-hidden','false');paletteSel=0;el('cmdkInput').value='';renderPalette();syncBodyScrollLock();pushModalHistory();setTimeout(()=>el('cmdkInput').focus(),80);haptic('tap');}
 function closePalette(){const c=el('cmdk');c.classList.remove('open');c.setAttribute('aria-hidden','true');syncBodyScrollLock();popModalHistoryIfNeeded();}
 function paletteData(){const q=el('cmdkInput').value.trim().toLowerCase(),items=[];
@@ -11676,18 +10163,14 @@ function paletteData(){const q=el('cmdkInput').value.trim().toLowerCase(),items=
 function renderPalette(){const items=paletteData(),res=el('cmdkResults');if(paletteSel>=items.length)paletteSel=Math.max(0,items.length-1);if(!items.length){res.innerHTML='<div class="cmdk-empty">No matches found</div>';return;}let html='',lastGrp='';items.forEach((it,i)=>{if(it.grp&&it.grp!==lastGrp){html+=`<div class="cmdk-sec">${it.grp}</div>`;lastGrp=it.grp;}html+=`<div class="cmdk-item ${i===paletteSel?'sel':''}" data-i="${i}" onclick="paletteActivate(${i})"><div class="cmdk-item-ico">${svgIcon(it.ico||'box',15)}</div><div class="cmdk-item-name">${esc(it.n)}</div>${it.meta?`<div class="cmdk-item-meta">${it.meta}</div>`:''}</div>`;});res.innerHTML=html;const sel=res.querySelector('.cmdk-item.sel');if(sel)sel.scrollIntoView({block:'nearest'});}
 function paletteMove(d){const items=paletteData();if(!items.length)return;paletteSel=(paletteSel+d+items.length)%items.length;renderPalette();}
 function paletteActivate(i){const items=paletteData();const it=items[i!=null?i:paletteSel];if(!it)return;closePalette();haptic('tap');setTimeout(it.fn,60);}
-// ════════ GOAL CONTRIBUTE ════════
-// The preset is an amount of money, not a number to paste in: +5K means five
-// thousand in the base currency however the field is currently set.
+// GOAL CONTRIBUTE
 function presetContribute(amt){const f=el('goalSaved');if(!f)return;
   const cur=moneyBase('goalSaved');
   setMoneyField('goalSaved',(isNaN(cur)?0:cur)+num(amt));
   renderGoalProjection();haptic('tap');f.focus();}
-// ════════ ASSET TRANSACTIONS (BUY/SELL) ════════
+// ASSET TRANSACTIONS (BUY/SELL)
 let detailAssetId=null;
-// What the form currently adds up to, in base currency, whichever way the
-// price is being entered. The stablecoin hint needs it to say how many
-// units the trade will move.
+// Form total in base currency, for the stablecoin hint.
 function txPendingAmountNPR(){
   const q=parseFloat(el('txQty')&&el('txQty').value)||0;
   const praw=parseFloat(el('txPrice')&&el('txPrice').value)||0;
@@ -11718,8 +10201,7 @@ function updateTxSellPreview(){
 }
 function updateTxPriceLbl(mode){
   const lbl=el('txPriceLbl');
-  // A house is one house. There is no per-unit price to contrast a total
-  // with, so the label is just what the figure is.
+  // No quantity: plain label.
   if(txNoQty){if(lbl)lbl.textContent=mode==='buy'?'BUY PRICE':'SELL PRICE';return;}
   if(lbl)lbl.textContent=isTxPricePerUnitMode?(mode==='buy'?'BUY PRICE PER UNIT':'SELL PRICE PER UNIT'):(mode==='buy'?'TOTAL BUY PRICE':'TOTAL SELL PRICE');
   const segUnit=el('txPriceModeSegUnit'),segTotal=el('txPriceModeSegTotal');
@@ -11737,9 +10219,7 @@ function setTxPriceEntryMode(perUnit){
   updateTxPriceLbl(txMode);
   updateTxSellPreview();
 }
-// Which action is open, shown on the action itself. Three buttons that all
-// looked identical while one of their forms was open read as a form with no
-// owner.
+// Mark the open action's tab.
 function syncTxTabs(){
   document.querySelectorAll('.mini-actions .act-pill').forEach(b=>{
     const oc=b.getAttribute('onclick')||'';
@@ -11756,25 +10236,15 @@ function toggleTxForm(mode){const a=state.assets.find(x=>x.id===detailAssetId);i
   buildTxCashSelect(mode);
   const _sp=el('txSellPreview');if(_sp)_sp.style.display='none';
   el('txQty').focus();}}}
-// ════════ WHERE THE MONEY GOES ════════
-// A sale used to delete its own proceeds: sell 10K of gold and that 10K simply
-// vanished from the app. Money has to land somewhere. A sell now credits a cash
-// account, and a buy can be funded from one. That pair is also exactly what a
-// transfer is (sell one holding, buy another with the proceeds), which is why
-// there is no separate transfer screen to learn.
+// WHERE THE MONEY GOES
+// Sells credit a cash account; buys can be funded from one.
 const CASH_NONE='__none__';   // money entered from, or left to, outside the app
 const CASH_NEW='__new__';     // create a Cash in Hand account on the spot
 function cashAccounts(){
   return (state.assets||[]).filter(a=>a&&a.category==='liquidity')
     .sort((a,b)=>(b.value||0)-(a.value||0));
 }
-// Nobody pays for a coin out of a bank account. They pay out of the stable
-// they are already holding on the exchange, and a sale lands back in it, // which in this app is a crypto holding with a quantity, not an account with
-// a balance. Offering it here means the pair of legs a trade writes matches
-// what actually happened, instead of inventing a cash movement that did not.
-//
-// By coin id where the id is known, and by ticker as well, since a holding
-// added by hand may carry no id at all.
+// Crypto trades settle in stablecoins held on the exchange. Matched by id or ticker.
 const STABLE_IDS=new Set(['tether','usd-coin','dai','binance-usd','true-usd',
   'first-digital-usd','paypal-usd','usdd','frax','gemini-dollar','ethena-usde']);
 const STABLE_SYMS=new Set(['USDT','USDC','DAI','BUSD','TUSD','FDUSD','PYUSD','USDD','FRAX','GUSD','USDE']);
@@ -11784,8 +10254,7 @@ function isStablecoin(a){
   const sym=String(a.ticker||a.name||'').trim().toUpperCase();
   return STABLE_SYMS.has(sym);
 }
-// Only for a crypto trade, and never the holding being traded, paying for
-// USDT out of USDT is not a thing.
+// Crypto trades only, never the coin being traded.
 function stableAccounts(forAsset){
   if(!forAsset||forAsset.category!=='crypto')return [];
   return (state.assets||[]).filter(a=>a&&a.id!==forAsset.id&&isStablecoin(a)&&(a.qty||0)>0)
@@ -11805,11 +10274,9 @@ function defaultCashChoice(mode,forAsset){
   const ids=new Set([...accts,...stables].map(a=>a.id));
   const saved=mode==='sell'?state.settings.lastSellDest:state.settings.lastBuySrc;
   if(saved&&(ids.has(saved)||saved===CASH_NONE))return saved;
-  // On a coin, the stable you actually hold is the likeliest answer for
-  // both directions, so it leads when there is one.
+  // A held stablecoin leads for crypto.
   if(stables.length)return stables[0].id;
-  // Proceeds default to landing somewhere, because losing them is the bug.
-  // Buys default to outside money, which is how most purchases actually happen.
+  // Sells land somewhere by default; buys default to outside money.
   if(mode==='sell')return accts.length?accts[0].id:CASH_NEW;
   return CASH_NONE;
 }
@@ -11824,14 +10291,9 @@ function resolveCashAccount(choice){
   return (state.assets||[]).find(x=>x.id===choice&&
     (x.category==='liquidity'||isStablecoin(x)))||null;
 }
-// One leg of a cash movement caused by a trade. Flagged `transfer` so the
-// ledger's bought/sold totals stay about trades and do not double-count money
-// moving between your own pockets.
+// A trade's cash leg, flagged `transfer` so trade totals don't double-count.
 function pushCashLeg(acct,amountNPR,dir,date,linkId,note){
-  // A stablecoin holds units at a price, not a balance, so its leg is a
-  // quantity written to the ledger the same way any other crypto movement
-  // is, the replay derives the holding from it, and a balance nudged
-  // behind the ledger's back would be undone by the next recalculation.
+  // Stablecoin legs are quantities in the ledger; the replay derives the holding.
   if(isStablecoin(acct)){
     const per=getAssetCurrentPrice(acct)||0;
     const units=per>0?+(amountNPR/per).toFixed(8):0;
@@ -11848,16 +10310,12 @@ function pushCashLeg(acct,amountNPR,dir,date,linkId,note){
     perUnit:amountNPR,amount:amountNPR,transfer:true,linkId,notes:note,date});
   return 0;
 }
-// The balance side of a leg. A liquidity account carries its money in
-// `value`; a stablecoin carries it in the quantity pushCashLeg just wrote,
-// so touching it here as well would count the movement twice.
+// Liquidity balances live in `value`; stablecoins in the quantity pushCashLeg wrote.
 function applyCashLegBalance(acct,amountNPR,dir){
   if(!acct||isStablecoin(acct))return;
   acct.value=(acct.value||0)+(dir==='in'?1:-1)*amountNPR;
 }
-// A stablecoin leg is money divided by a price. With no price there is no
-// number of units to write, and the leg would vanish while the trade it
-// belongs to went through. Say so instead of losing it quietly.
+// A stablecoin leg needs a price to become units.
 function cashLegBlocked(acct){
   if(!acct||!isStablecoin(acct))return null;
   if((getAssetCurrentPrice(acct)||0)>0)return null;
@@ -11898,12 +10356,7 @@ function updateTxCashHint(mode){
     }else h.textContent=''; // the option already shows that account's balance
   }
 }
-// A buy and a sell describe units at a price. Income does not: a dividend is
-// an amount that arrived. Reusing the same form means reshaping it rather
-// than showing quantity fields that make no sense for it.
-// What a holding can actually pay you. A stock pays a dividend or a bonus
-// share; a flat pays rent; a savings account pays interest. Offering all of
-// them everywhere made the list read as a guess.
+// Income reshapes the form. Allowed kinds per category.
 const INCOME_KINDS_BY_CAT={
   stock:    [{value:'dividend',label:'Dividend'},{value:'bonus_share',label:'Bonus Share'},
              {value:'rights',label:'Rights Share'},{value:'other',label:'Other'}],
@@ -11919,9 +10372,7 @@ function incomeKindsFor(cat){return INCOME_KINDS_BY_CAT[cat]||INCOME_KINDS_BY_CA
 let txIncomeKind='dividend';
 function applyTxModeShape(mode,a){
   const isInc=mode==='income';
-  // Income has no quantity because it is a payment, and a house has none
-  // because it comes in ones. Either way the half of the row asking for one,
-  // and the PRICE / UNIT toggle beside it, have nothing to say.
+  // Income and one-off holdings have no quantity.
   const noQ=isInc||assetNoQty(a);
   const qw=el('qtyWrapper2')||null;
   const qrow=el('txQty')?el('txQty').parentElement:null;
@@ -11934,8 +10385,7 @@ function applyTxModeShape(mode,a){
   if(row)row.style.gridTemplateColumns=noQ?'1fr':'1fr 1fr';
   if(isInc){
     const kinds=incomeKindsFor(a.category);
-    // Remembered per category, because the last thing you recorded on a
-    // stock says nothing about what a flat pays.
+    // Last income kind per category.
     const remembered=(state.settings.lastIncomeKind||{})[a.category];
     txIncomeKind=kinds.some(k=>k.value===remembered)?remembered:kinds[0].value;
     buildCustomSelect('txIncomeWrap',kinds,txIncomeKind,v=>{
@@ -11965,35 +10415,27 @@ async function saveTx(){const a=state.assets.find(x=>x.id===detailAssetId);if(!a
     toast(fmt(amtI)+' '+txIncomeKind+(destI?' into '+destI.name:' recorded'),'success');
     txMode=null;txUnit=null;txCashChoice=null;trackPnLHistory();saveState();renderAll();openAssetDetail(a.id);return;
   }
-  // A house is one house: the form never asked for a quantity, so there is
-  // none to read, the figure typed is the whole price, and the maths below
-  // runs against a quantity of one.
+  // No quantity: the figure is the whole price, quantity 1.
   const _noQtyA=assetNoQty(a);
   const qEntered=_noQtyA?1:(parseFloat(el('txQty').value)||0),priceDispRaw=parseFloat(el('txPrice').value)||0,rate=getCurrRate(txPriceEntryCcy||currentCurrency.code);const priceDisp=(_noQtyA||!isTxPricePerUnitMode)?priceDispRaw:priceDispRaw*qEntered;const priceN=priceDisp/rate;if(!_noQtyA&&qEntered<=0){toast('Enter a quantity','error');return;}if(priceN<=0){toast('Enter a price','error');return;}
   const enteredUnit=_noQtyA?null:((a.category==='commodity'&&txUnit)?txUnit:(a.unit||null));
   const q=_noQtyA?1:((a.category==='commodity'&&a.unit&&enteredUnit)?convertUnit(qEntered,enteredUnit,a.unit):qEntered);
   const unitNote=(a.category==='commodity'&&enteredUnit&&a.unit&&enteredUnit!==a.unit)?(qEntered+' '+enteredUnit):null;
   if(txMode==='buy'){const totalBuyNPR=priceDisp/rate;
-  // Funding a buy from a cash account moves money inside the portfolio; the
-  // account has to actually cover it or the balance would go negative.
+  // The funding account must cover the buy.
   let payAcct=null;
   if(txCashChoice&&txCashChoice!==CASH_NONE){
     payAcct=resolveCashAccount(txCashChoice);
-    // A stablecoin does not carry a balance in `value`; what it can cover
-    // is the worth of the units held, so ask the holding, not the field.
+    // A stablecoin covers the worth of its units.
     if(payAcct){
       const have=isStablecoin(payAcct)?getAssetCurrentValue(payAcct):(payAcct.value||0);
       if(have+1e-9<totalBuyNPR){
         toast((payAcct.ticker||payAcct.name)+' only has '+fmt(have),'error');return;}
     }
   }
-  // Averaging a second payment into a per-unit cost turned one house into
-  // two. On a one-off holding the extra money is simply more money in it,
-  // which the ledger replay works out from the transactions themselves.
   const buyPerUnit=totalBuyNPR/q;
   if(_noQtyA){
-    // No per-unit average to fold into, so the money simply adds to what the
-    // holding has cost. Averaging it turned one house into two.
+    // One-off holdings add to cost instead of averaging.
     a.buyPrice=(a.buyPrice||0)*assetUnits(a)+totalBuyNPR;
     if(a.qty!=null)a.qty=1;
   }else{const oldQ=a.qty||0,oldCostTotal=oldQ*(a.buyPrice||0);const newQ=oldQ+q;a.buyPrice=(oldCostTotal+totalBuyNPR)/newQ;a.qty=newQ;}
@@ -12002,13 +10444,10 @@ async function saveTx(){const a=state.assets.find(x=>x.id===detailAssetId);if(!a
   if(payAcct){applyCashLegBalance(payAcct,totalBuyNPR,'out');pushCashLeg(payAcct,totalBuyNPR,'out',_txDate,_linkB,'Paid for '+a.name);}
   haptic('success');toast('Buy recorded'+(payAcct?', paid from '+payAcct.name:'')+(unitNote?' ('+unitNote+')':''),'success');}
   else{
-  // Nothing to compare a quantity against on a one-off holding: the only
-  // question is whether it is still yours to sell.
+  // One-off holdings: only check it is not already sold.
   if(_noQtyA){if(a.qty!=null&&a.qty<=0){toast(a.name+' is already sold','error');return;}}
   else if(q>(a.qty||0)){toast('You only hold '+qtyWithUnit(a),'error');return;}
-  // Proceeds land in a cash account unless the user says the money left.
-  // Resolved and checked before anything is written, because a refusal
-  // after the holding had already been reduced would lose the units.
+  // Resolve and check before writing, so a refusal loses nothing.
   const destAcct=(txCashChoice&&txCashChoice!==CASH_NONE)?resolveCashAccount(txCashChoice):null;
   {const blk=cashLegBlocked(destAcct);if(blk){toast(blk,'error');return;}}
   // priceDisp = total sell amount; priceN = total in NPR
@@ -12024,20 +10463,10 @@ async function saveTx(){const a=state.assets.find(x=>x.id===detailAssetId);if(!a
   if(a.qty<=0){toast('Position closed, history kept','success');}}
   txMode=null;txUnit=null;txCashChoice=null;trackPnLHistory();saveState();renderAll();openAssetDetail(a.id);}
 
-// ════════ BACKUPS ════════
-// Export writes a file you then have to keep somewhere. That is the right
-// tool for moving data to another device and the wrong one for the thing
-// people actually lose data to: a mistake made five minutes ago that nobody
-// noticed until now. So the app keeps its own copies, on a schedule, and can
-// put one back.
-//
-// They live in IndexedDB, not localStorage. A portfolio snapshot is tens to
-// hundreds of kilobytes and localStorage is a ~5MB budget already carrying
-// the live state and the price cache; ten backups in there would evict the
-// app's own data, which is precisely the disaster this exists to prevent.
+// BACKUPS
+// Automatic local backups in IndexedDB (localStorage is too small).
 const BK_DB='paisafolio-backups', BK_STORE='backups', BK_DB_VERSION=1;
-// Keep at most this many automatic ones. Manual backups are never swept:
-// somebody chose to take those.
+// Automatic backups kept; manual ones are never swept.
 const BK_KEEP=12;
 const BK_FREQ_MS={daily:864e5, weekly:7*864e5, monthly:30*864e5};
 
@@ -12070,14 +10499,10 @@ function bkTx(mode,fn){
   }));
 }
 
-// What a backup is: the whole ledger, plus the settings, minus the things that
-// are about this device rather than about the data. Restoring a PIN or a
-// theme from another phone is not what anyone means by "restore my data".
+// Device-only settings, left out of backups.
 const BK_DEVICE_ONLY=['pin','pinEnabled','biometric','lockTimeout','fontScale','font',
   'reduceMotion','haptics','hapticStrength','theme','aiBubblePos','lastPage'];
-// The parts a backup is made of, in the order they are collected. The
-// progress list is built from this, so what is on screen is the work being
-// done rather than a bar timed to look busy.
+// Backup parts in collection order; the progress list is built from this.
 const BK_PARTS=[
   {key:'assets',label:'Assets',ico:'wallet'},
   {key:'transactions',label:'Transactions',ico:'clock'},
@@ -12088,8 +10513,7 @@ const BK_PARTS=[
   {key:'pnlHistory',label:'Net worth history',ico:'chartline'},
   {key:'settings',label:'Settings',ico:'shield'},
 ];
-// A frame, so the browser can actually paint what just changed. Without it
-// every step lands in one frame and the whole thing is invisible.
+// Let the browser paint between steps.
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>r()));}
 function backupPart(key){
   if(key==='settings'){
@@ -12108,8 +10532,7 @@ function backupSnapshot(){
   d.appVersion='Paisafolio '+BUILD_ID;
   return d;
 }
-// The same snapshot, collected one part at a time so a caller can show what
-// is happening as it happens.
+// Same snapshot, one part at a time.
 async function backupSnapshotStepped(onStep){
   const d={};
   for(let i=0;i<BK_PARTS.length;i++){
@@ -12128,8 +10551,7 @@ function backupCounts(d){
 }
 function backupTotal(c){return Object.values(c).reduce((a,b)=>a+b,0);}
 
-// Everything a restore would put back has to be the right shape before it is
-// written anywhere. A backup that cannot be restored is not a backup.
+// Validate shape before writing anything.
 function backupUsable(d){
   if(!d||typeof d!=='object'||Array.isArray(d))return false;
   const lists=['assets','debts','goals','recurs','transactions','spends'];
@@ -12141,8 +10563,7 @@ function backupUsable(d){
 async function takeBackup(kind,note,onStep){
   const data=onStep?await backupSnapshotStepped(onStep):backupSnapshot();
   if(!backupUsable(data)){
-    // An empty app has nothing worth keeping a copy of, and a row saying
-    // "0 items" in the history is just noise.
+    // Nothing worth backing up.
     return null;
   }
   if(onStep){onStep(BK_PARTS.length,{label:'Saving to this device',ico:'box'});await nextFrame();}
@@ -12154,8 +10575,7 @@ async function takeBackup(kind,note,onStep){
   await sweepBackups();
   return rec;
 }
-// Newest first, without the payloads: the history list shows sizes and counts,
-// and pulling a dozen full snapshots into memory to render six rows is waste.
+// Newest first, without payloads.
 async function listBackups(){
   const all=await bkTx('readonly',st=>st.getAll());
   return (all||[]).map(r=>({id:r.id,ts:r.ts,kind:r.kind,note:r.note,bytes:r.bytes,counts:r.counts}))
@@ -12173,9 +10593,7 @@ async function sweepBackups(){
   return doomed.length;
 }
 
-// Restore replaces, it does not merge: that is the difference between this
-// and Import, and the reason it asks first. The state as it stands is kept
-// first, so restoring the wrong one is itself undoable.
+// Restore replaces (unlike Import); the current state is backed up first.
 async function restoreBackup(id,onStep){
   const step=async(i,pt)=>{if(onStep){onStep(i,pt);await nextFrame();}};
   await step(0,{label:'Reading the backup',ico:'box'});
@@ -12184,22 +10602,19 @@ async function restoreBackup(id,onStep){
   await step(1,{label:'Copying what you have now',ico:'shield'});
   await takeBackup('manual','Before restoring '+new Date(rec.ts).toLocaleString());
   const d=rec.data;
-  // Put the parts back in the same order they were collected, so the two
-  // progress lists read the same way round.
   for(let i=0;i<BK_PARTS.length;i++){
     const pt=BK_PARTS[i];
     await step(i+2,pt);
     if(pt.key==='settings')continue;                 // merged below, not replaced
     state[pt.key]=Array.isArray(d[pt.key])?d[pt.key]:[];
   }
-  // Settings are merged, not replaced, so the device-only ones this backup
-  // deliberately left out are not wiped by their own absence.
+  // Merge settings so omitted device-only ones survive.
   if(d.settings&&typeof d.settings==='object')state.settings={...state.settings,...d.settings};
   state.lastUpdated=new Date().toISOString();
   return rec;
 }
 
-// ── the schedule ──
+// the schedule
 function backupsOn(){return state.settings.autoBackup!==false;}   // on unless turned off
 function backupFreq(){const f=state.settings.backupFreq;return BK_FREQ_MS[f]?f:'daily';}
 function backupDue(){
@@ -12209,17 +10624,16 @@ function backupDue(){
   return (Date.now()-last)>=BK_FREQ_MS[backupFreq()];
 }
 let _bkChecking=false;
-// Called on start and after saves. Cheap when nothing is due, which is almost
-// always, and never runs two at once.
+// Cheap when nothing is due; never concurrent.
 async function maybeAutoBackup(){
   if(_bkChecking||!backupDue())return;
   _bkChecking=true;
   try{ const r=await takeBackup('auto'); if(r)saveState(); }
-  catch(e){ /* no IndexedDB, private mode, disk full: not worth interrupting anyone */ }
+  catch(e){ /* No IndexedDB, private mode or disk full: stay quiet */  }
   finally{ _bkChecking=false; }
 }
 
-// ── the sheet ──
+// the sheet
 function bkSize(n){
   if(!n)return '0 B';
   if(n<1024)return n+' B';
@@ -12246,8 +10660,7 @@ function setBackupFreq(f){
   if(!BK_FREQ_MS[f])return;
   state.settings.backupFreq=f;saveState();haptic('tap');renderBackups();syncBackupsSub();
 }
-// The progress list is the real list of parts, ticked off as each one is
-// actually collected or written. Nothing here is on a timer.
+// Real steps, not a timer.
 function bkProgressStart(title,steps){
   const host=el('bkProgress'); if(!host)return null;
   host.hidden=false;
@@ -12295,15 +10708,13 @@ async function backupNow(){
     await bkProgressDone();
     saveState();haptic('success');
     toast('Backed up '+plural(backupTotal(r.counts),'item'),'success');
-    // Left up for a moment so the finished list is readable, rather than
-    // vanishing the instant the last tick lands.
+    // Leave the finished list up briefly.
     setTimeout(bkProgressEnd,1100);
     renderBackups();syncBackupsSub();
   }catch(e){ bkProgressEnd(); toast(bkFailReason(e),'error'); }
   finally{ _bkBusy=false; }
 }
-// The two ways this genuinely fails are worth telling apart: a browser that
-// will not give us storage at all, and one that has run out of it.
+// No storage at all vs out of space.
 function bkFailReason(e){
   const m=(e&&(e.name||e.message))||'';
   if(/no-idb|SecurityError|idb-open/i.test(m))return 'This browser will not let the app store backups here';
@@ -12354,8 +10765,7 @@ async function confirmRestoreBackup(id){
   }catch(e){ bkProgressEnd(); toast('That backup could not be restored','error'); }
   finally{ _bkBusy=false; }
 }
-// A backup is more use off the device than on it, so any one of them can
-// leave as the same JSON file Import already reads.
+// Download as the same JSON Import reads.
 async function downloadBackup(id){
   const rec=await getBackup(id);
   if(!rec){toast('That backup is gone','error');return;}
@@ -12423,21 +10833,10 @@ function syncBackupsSub(){
     : 'On, no backup yet';
 }
 
-// ════════ SPENDING & BUDGETS ════════
-// The app knew what you owned and what you owed, but never where the money
-// went. Assets answer "how much do I have"; this answers "why is it going
-// down". A spend is deliberately its own record rather than another asset
-// transaction: it is categorised, budgeted and reported on monthly, none of
-// which the investment ledger does or should do.
-//
-// Every spend can name a cash account, and when it does it moves that
-// balance for real, using the same linked-leg machinery a sale uses. That is
-// what keeps "I spent 3,000 on food" and "my bank balance dropped 3,000" the
-// same fact instead of two numbers that drift apart.
-
-// A category is what you bought; a group is how you judge it. Keeping both
-// means the breakdown can be specific ("Food & Dining") while the budget
-// stays coarse enough to actually stick to ("Needs").
+// SPENDING & BUDGETS
+// Spends are their own records, not asset transactions. A spend naming a cash account
+// moves its balance through a linked leg. Category = what was bought; group = how it
+// is budgeted.
 const SPEND_GROUPS=[
   {id:'needs',   label:'Needs',    color:'#ef6461'},
   {id:'wants',   label:'Wants',    color:'#f4a259'},
@@ -12445,10 +10844,7 @@ const SPEND_GROUPS=[
   {id:'personal',label:'Personal', color:'#7c8cf8'},
   {id:'other',   label:'Other',    color:'#8b8b8b'},
 ];
-// Each category carries its own colour. Colouring by group instead would put
-// the same red dot next to Rent, Food and Transport, which is exactly the
-// distinction the category list exists to make. Groups keep their own colours
-// for the budget card, where the granularity really is the group.
+// Each category has its own colour; groups have theirs for the budget card.
 const SPEND_CATS_BUILTIN=[
   {id:'food',      label:'Food & Dining', group:'needs',    icon:'leaf',       color:'#ef6461'},
   {id:'groceries', label:'Groceries',     group:'needs',    icon:'box',        color:'#f4978e'},
@@ -12471,48 +10867,20 @@ const INCOME_CATS_BUILTIN=[
   {id:'gifted',    label:'Gift Received', icon:'gift',     color:'#a685e2'},
   {id:'other_in',  label:'Other Income',  icon:'wallet',   color:'#8d99ae'},
 ];
-// The live lists: built-ins plus whatever Folio has named since, rebuilt by
-// rebuildCats() below. The fallback names 'other' explicitly rather than
-// taking the last element, which is no longer a safe assumption once
-// categories can be appended.
+// Built-ins plus custom categories, rebuilt by rebuildCats(). The fallback is 'other' by id.
 let SPEND_CATS=SPEND_CATS_BUILTIN.slice();
 let INCOME_CATS=INCOME_CATS_BUILTIN.slice();
 function spendCat(id){return SPEND_CATS.find(c=>c.id===id)||SPEND_CATS_BUILTIN.find(c=>c.id==='other');}
-function incomeCat(id){return INCOME_CATS.find(c=>c.id===id)||INCOME_CATS_BUILTIN.find(c=>c.id==='other_in');}// ── Categories the assistant is allowed to invent ──────────────────────
-// The built-in list is a starting vocabulary, not a ceiling. When a note
-// genuinely does not fit any of them, Folio names a new one and it joins the
-// list for good.
-//
-// THE GUARD, which is the whole reason this is not just "let the AI name it":
-// left unconstrained you get Food, food & drink, Eating out and Restaurants as
-// four separate categories for the same thing, and then the budget, the where
-// it went bar and every chart fragment into near-duplicates that never add up
-// to anything. So a proposed name is matched against what already exists
-// before it is allowed to become new, and the vocabulary converges instead of
-// exploding.
+function incomeCat(id){return INCOME_CATS.find(c=>c.id===id)||INCOME_CATS_BUILTIN.find(c=>c.id==='other_in');} // BANNER:── Categories the assistant is allowed to invent ──────────────────────
+// Custom categories. A proposed name is matched against existing ones first, so
+// near-duplicates fold instead of fragmenting budgets and charts.
 function customCats(){
   const c=state.settings.customCats;
   return Array.isArray(c)?c:(state.settings.customCats=[]);
 }
-// Names are compared as sets of stemmed words, not as whole strings. The
-// first attempt just stripped punctuation and a trailing "s", and testing
-// walked three obvious duplicates straight past it: "food & drink" missed
-// "Food & Dining" because neither whole string contains the other, and
-// "Grocery" missed "Groceries" because the two stems disagreed on their last
-// letter.
-//
-// This is a mechanical matcher, not a semantic one, and the difference is
-// worth stating. It catches plurals, punctuation, word order and a shared
-// head noun. It will NOT know that "Eating Out" means the same as "Food &
-// Dining"; that judgement belongs to the model, which is told to prefer an
-// existing category and to be reluctant about naming a new one. Where it is
-// unsure it folds rather than creates, because one category too many quietly
-// splits a budget in half while one too few is a single tap to correct.
-// Words that name the list rather than an entry in it. "Income" is what every
-// income category IS, so counting it as a shared word folded Rental Income,
-// Interest Income and Side Income all into "Other Income" — the matcher saw
-// one word of real length in common and stopped there. The same for
-// "expense", "payment" and "money" on the spending side.
+// Names compare as sets of stemmed words (plurals, punctuation, order). Semantic
+// matches are left to the model, which is told to prefer existing categories.
+// Stopwords include words that name the list itself (income, expense, payment, money).
 const CAT_STOPWORDS=new Set(['and','the','of','for','a','an','my','other','misc','general',
   'income','expense','expenses','payment','payments','money','spend','spending','cost','costs']);
 function catStem(w){
@@ -12535,9 +10903,7 @@ function findCatByLabel(label,kind){
   const list=kind==='income'?INCOME_CATS:SPEND_CATS;
   const exact=list.find(c=>catKey(c.label)===k);   // same words, any order
   if(exact)return exact;
-  // A shared word of real length. On short names one is enough, which is what
-  // joins "food drink" to "food dining" and "game topup" to "game topups".
-  // Longer names need two, or everything with "bill" in it collapses together.
+  // One shared long word is enough for short names; longer names need two.
   return list.find(c=>{
     const ct=catTokens(c.label);
     if(!ct.length)return false;
@@ -12546,8 +10912,7 @@ function findCatByLabel(label,kind){
     return Math.min(toks.length,ct.length)<=2||shared.length>=2;
   })||null;
 }
-// A palette and a keyword table, so an invented category still looks like it
-// belongs rather than arriving grey and unlabelled.
+// Palette and keyword icons for new categories.
 const NEWCAT_PALETTE=['#ef6461','#f4978e','#e8871e','#f6bd60','#b5838d','#e5989b','#6d9dc5',
   '#7c8cf8','#a685e2','#4cc9a4','#5b8e7d','#d4a373','#8d99ae','#c77dff','#57cc99'];
 const NEWCAT_ICON_HINTS=[
@@ -12581,21 +10946,16 @@ function tidyCatLabel(label){
   return String(label||'').trim().replace(/\s+/g,' ').slice(0,28)
     .replace(/\b\w/g,(m)=>m.toUpperCase());
 }
-// Returns an existing category when the name already means something the app
-// knows, and only otherwise creates one.
+// Existing category if the name matches one, else a new one.
 function adoptCategory(label,kind,group,icon){
   const tidy=tidyCatLabel(label);
   if(!tidy||tidy.length<2)return null;
-  // Nothing but filler words: "Other Expenses", "General Payment". That is
-  // the catch-all wearing a different hat, and it already exists.
+  // Only filler words: that is the catch-all.
   if(!catTokens(tidy).length)return null;
   const hit=findCatByLabel(tidy,kind);
   if(hit)return hit;
   if(customCats().length>=24)return null;   // a vocabulary, not a junk drawer
-  // The model names the icon when it names the category, since it knows what
-  // the category is FOR and the keyword table only knows what it is called.
-  // Checked against the icons that exist, so a made-up name falls back to the
-  // table rather than drawing nothing.
+  // Model-suggested icon, checked against the icons we have.
   const wanted=String(icon||'').trim().toLowerCase();
   const ico=(wanted&&ICON_KEYS.indexOf(wanted)>=0)?wanted:pickCatIcon(tidy);
   const cat={id:slugCat(tidy),label:tidy,kind:kind==='income'?'income':'expense',
@@ -12605,8 +10965,7 @@ function adoptCategory(label,kind,group,icon){
   rebuildCats();
   return cat;
 }
-// Built-ins never move. Customs slot in before the catch-all, which has to
-// stay last because it is what an unknown id falls back to.
+// Built-ins fixed; customs go before the catch-all, which stays last.
 function rebuildCats(){
   const cs=customCats();
   const otherOut=SPEND_CATS_BUILTIN.find(c=>c.id==='other');
@@ -12615,9 +10974,7 @@ function rebuildCats(){
     .concat(cs.filter(c=>c.kind!=='income')).concat([otherOut]);
   INCOME_CATS=INCOME_CATS_BUILTIN.filter(c=>c.id!=='other_in')
     .concat(cs.filter(c=>c.kind==='income')).concat([otherIn]);
-  // A built-in is code, not data, so renaming or restyling one is stored as
-  // an override and replayed over the list here: every path that rebuilds
-  // gets it, and an app update cannot quietly undo it.
+  // Built-in edits are stored as overrides and replayed here.
   const ov=state.settings&&state.settings.catOverrides;
   if(ov&&typeof ov==='object'){
     const patch=list=>list.map(c=>{
@@ -12629,12 +10986,8 @@ function rebuildCats(){
     SPEND_CATS=patch(SPEND_CATS);INCOME_CATS=patch(INCOME_CATS);
   }
 }
-// ════════ MANAGING CATEGORIES ════════
-// Folio names categories, so the person has to be able to disagree with it:
-// rename one, give it a better icon or colour, move it between needs and
-// wants, or remove it entirely. A built-in can be renamed and restyled but
-// not deleted, since the app falls back to "Other" by id and the entries
-// already filed under it have to keep landing somewhere.
+// MANAGING CATEGORIES
+// Built-ins can be renamed and restyled but not deleted ("Other" is the fallback by id).
 let catMgrKind='expense';
 let editingCatId=null,catEditIcon='box',catEditColor=NEWCAT_PALETTE[0];
 function catsOfKind(kind){return kind==='income'?INCOME_CATS:SPEND_CATS;}
@@ -12722,8 +11075,7 @@ function saveCatEdit(){
       if(kind!=='income')custom.group=catEditGroup;
       rebuildCats();
     }else{
-      // A built-in is code, not data, so an edit to one is stored as an
-      // override and applied over the top on every load.
+      // Built-in edits are stored as overrides.
       const ov=state.settings.catOverrides||(state.settings.catOverrides={});
       ov[editingCatId]={label,icon:catEditIcon,color:catEditColor,
         group:kind!=='income'?catEditGroup:undefined};
@@ -12765,9 +11117,7 @@ async function deleteCatEdit(){
   closeModal('catEditModal');renderCatManager();
   toast(moved?'Deleted, '+plural(moved,'entry','entries')+' moved to Other':'Category deleted','success');
 }
-// An invented category that nothing was ever filed under is clutter. Drop it
-// on load, but only once it has had a day to be used, so the one you created
-// a minute ago does not vanish from under you.
+// Drop unused custom categories after a day.
 function pruneCustomCats(){
   const used=new Set((state.spends||[]).map(s=>s.category));
   (state.settings.budgetDefaults?Object.keys(state.settings.budgetDefaults):[]).forEach(k=>used.add(k));
@@ -12778,10 +11128,7 @@ function pruneCustomCats(){
 }
 function catOf(s){return s&&s.kind==='income'?incomeCat(s.category):spendCat(s.category);}
 
-// Typing a category on every coffee is how a spending tracker dies. These
-// match against the note, and the user's own rules are checked first so a
-// correction sticks. Defaults lean local: Pathao and eSewa matter more here
-// than Starbucks.
+// Keyword rules on the note; the user's own rules are checked first.
 const DEFAULT_SPEND_RULES=[
   {match:'khaja',cat:'food'},{match:'restaurant',cat:'food'},{match:'cafe',cat:'food'},
   {match:'coffee',cat:'food'},{match:'momo',cat:'food'},{match:'hotel',cat:'food'},
@@ -12811,17 +11158,8 @@ const DEFAULT_INCOME_RULES=[
   {match:'upwork',cat:'freelance'},{match:'sale',cat:'business'},{match:'profit',cat:'business'},
 ];
 function userSpendRules(){return Array.isArray(state.settings.spendRules)?state.settings.spendRules:[];}
-// Longest match wins, so a rule for "water bill" beats a rule for "bill".
-// Two kinds of rule answer here and they do not carry the same weight.
-//
-// One the person taught, by correcting an entry themselves, is their own
-// decision about their own money and stands.
-//
-// One of the built-in keywords is a guess. A good one, worth showing at once
-// so the field is never empty while a reply is on its way, but it matches a
-// WORD and the meaning lives in the sentence: "bhatbhateni" is groceries in
-// "khaja at bhatbhateni" and is not in "gift card for bhatbhateni". So a
-// built-in keyword no longer ends the question, it only answers it provisionally.
+// Longest match wins. Taught rules are final; built-in keywords are provisional and
+// the model's read replaces them.
 function guessCategoryRule(note,kind){
   const t=String(note||'').toLowerCase().trim();
   if(!t)return null;
@@ -12849,8 +11187,7 @@ function guessCategory(note,kind){
 function learnCategory(note,cat,kind){
   const t=String(note||'').toLowerCase().trim();
   if(!t||!cat)return;
-  // The first word is the shop name often enough to be a useful key, and
-  // short enough not to over-fit ("uber trip from jfk" -> "uber").
+  // First word as the key (usually the shop).
   const key=t.split(/[\s,\-–—]+/)[0];
   if(!key||key.length<3)return;
   if(guessCategory(key,kind)===cat)return;   // already lands there, nothing to learn
@@ -12859,7 +11196,7 @@ function learnCategory(note,cat,kind){
   state.settings.spendRules=rules.slice(-120);   // bounded, oldest fall off
 }
 
-// ── Month keys ────────────────────────────────────────────────────────
+// Month keys
 function monthKey(d){const x=d instanceof Date?d:new Date(d);return isNaN(x)?null:x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0');}
 function monthLabel(k){
   const [y,m]=String(k||'').split('-').map(Number);
@@ -12877,8 +11214,7 @@ function isCurrentMonth(k){return k===monthKey(new Date());}
 function spendsIn(k){
   return (state.spends||[]).filter(s=>s&&monthKey(s.date)===k);
 }
-// One pass over the month: totals, per-category, per-group and per-day, so a
-// render does not walk the list five times.
+// One pass: totals by category, group and day.
 function monthSummary(k){
   const rows=spendsIn(k);
   const out={income:0,spent:0,byCat:{},byGroup:{},byDay:{},count:rows.length,incomeByCat:{}};
@@ -12896,9 +11232,7 @@ function monthSummary(k){
   return out;
 }
 
-// ── Budgets ───────────────────────────────────────────────────────────
-// Per-group, with a default that every month inherits and a per-month
-// override for the months that are genuinely different (Dashain, a wedding).
+// Budgets
 function budgetDefaults(){return (state.settings.budgetDefaults&&typeof state.settings.budgetDefaults==='object')?state.settings.budgetDefaults:{};}
 function budgetFor(k){
   const over=(state.settings.budgets&&state.settings.budgets[k])||null;
@@ -12913,9 +11247,7 @@ function budgetFor(k){
 }
 function budgetTotal(k){return SPEND_GROUPS.reduce((s,g)=>s+num(budgetFor(k)[g.id]),0);}
 function hasBudget(k){return budgetTotal(k)>0;}
-// Where you should be by now if you spent evenly, against where you are.
-// Straight-line pacing is crude but it is the only pace a person can hold in
-// their head, and a budget you cannot reason about is one you ignore.
+// Straight-line pace: expected spend by today vs actual.
 function budgetStatus(k){
   const b=budgetFor(k),sum=monthSummary(k);
   const total=SPEND_GROUPS.reduce((s,g)=>s+num(b[g.id]),0);
@@ -12936,7 +11268,7 @@ function budgetStatus(k){
           vsPace:pace-spent,byGroup:sum.byGroup,budget:b};
 }
 
-// ── Saving a spend ────────────────────────────────────────────────────
+// Saving a spend
 let spendMonth=null;              // month being viewed, null until first render
 let editingSpendId=null;
 let spendKind='expense';
@@ -12972,9 +11304,7 @@ function openAddSpend(kind){
   syncSpendNoteCopy();
   openModal('spendModal');
 }
-// A search result can be in any month, and the sheet edits it in place; the
-// page behind it should be showing the month it belongs to, or saving lands
-// the row in a list you are not looking at.
+// Switch to the result's month so saving lands where you are looking.
 function openSpendFromSearch(id){
   const s=(state.spends||[]).find(x=>x.id===id);if(!s)return;
   spendMonth=monthKey(s.date);
@@ -12986,9 +11316,7 @@ function openEditSpend(id){
   editingSpendId=id;
   spendKind=s.kind==='income'?'income':'expense';
   spendCatChoice=s.category;
-  // Editing used to freeze the category: the note could say anything and it
-  // would not move. Folio reads here the same as anywhere, so correcting a
-  // note corrects where the money is counted.
+  // Re-read the category when editing, too.
   _catSettled=true;spendCatPicked=false;
   spendAccountChoice=s.account||CASH_NONE;
   el('spendModalTitle').textContent=spendKind==='income'?'Edit Income':'Edit Expense';
@@ -13004,8 +11332,7 @@ function openEditSpend(id){
   buildSpendAccountSelect();
   syncSpendNoteCopy();
   openModal('spendModal');
-  // Read what is already there, so opening a row Folio has since learned
-  // more about puts it where it now belongs.
+  // Re-read an existing note.
   if((el('spendNote').value||'').trim())onSpendNoteInput();
 }
 const SPEND_PLACEHOLDER={
@@ -13032,22 +11359,10 @@ function buildSpendKindSeg(){
   el('spendKindExpense').classList.toggle('on',spendKind==='expense');
   el('spendKindIncome').classList.toggle('on',spendKind==='income');
 }
-// Online, the category is Folio's, adding or editing. There is no Change
-// button, because Change was also a switch that turned the reading off: tap
-// it once and nothing was categorised for the rest of the session, which is
-// the opposite of what a person who wanted a different category was asking
-// for. The field reports what Folio picked and keeps reporting it as Folio
-// changes its mind.
-//
-// Offline, Folio cannot be asked at all. What is left is the keyword table,
-// which knows common words and nothing else, so a note it cannot read would
-// leave a category nobody chose and no way to change it. Offline the field
-// is a real choice again.
+// Online the category is always the model's (no manual override); offline it is a
+// normal choice because only the keyword table is available.
 function catFieldLocked(){ return navigator.onLine!==false; }
-// Set only by picking one by hand while offline. It keeps that choice safe
-// from the keyword table and from Folio when the connection returns, for
-// this entry, and it is cleared by every fresh sheet. It is not, as the old
-// flag was, a switch that stops the reading everywhere.
+// Set by an offline manual pick; protects that choice for this entry only.
 let spendCatPicked=false;
 function buildSpendCatSelect(){
   const cats=spendKind==='income'?INCOME_CATS:SPEND_CATS;
@@ -13065,67 +11380,41 @@ function buildSpendCatSelect(){
     <span class="cat-readonly-lbl">${esc(c.label)}</span>
   </div>`;
 }
-// Losing or regaining the connection changes which of the two the field is,
-// and it can happen with the sheet open.
+// Connectivity can change with the sheet open.
 function syncSpendCatField(){
   const m=el('spendModal');
   if(!m||!m.classList.contains('open'))return;
   buildSpendCatSelect();
-  // Back online with nothing picked by hand: Folio gets to read the note it
-  // could not reach a moment ago.
+  // Back online with no manual pick: read the note now.
   if(catFieldLocked()&&!spendCatPicked&&(el('spendNote').value||'').trim())onSpendNoteInput();
 }
-// Typing the note picks the category for you, until you pick one yourself.
-//
-// Two passes. The keyword table answers instantly and offline and gets the
-// common cases; it is a list of substrings, so it cannot read "chiya sanga
-// sathi", "bijuli ko bill", "ghar bhada", a shop it has never seen, or a
-// typo. When it comes up empty the note goes to the model, which can. The
-// local answer is never
-// overruled by the remote one, a rule the user taught this app beats a
-// guess, and the whole remote step is skipped when there is no network.
+// Note to category: the keyword table answers instantly and offline; otherwise the
+// model reads the note. A taught rule is never overruled; offline skips the model.
 let _catAiTimer=null,_catAiSeq=0;
 const _catAiCache=new Map();
-// The only thing worth saying out loud is that Folio has not answered yet.
-// "picked for you" and "new category" announced what the field already shows,
-// beside a field nobody can change.
+// Only show that the model has not answered yet.
 function setCatAiTag(mode){
   const t=el('spendCatAi');if(!t)return;
   if(mode!=='thinking'){t.hidden=true;return;}
   t.hidden=false;t.className='cat-ai-tag thinking';t.textContent='reading…';
 }
-// Whether the category on screen is Folio's answer for the note as it now
-// stands. False means a read is owed, and saving in that state hands the
-// read to the saved row rather than throwing it away.
+// False means a read is still owed; saving hands it to the saved row.
 let _catSettled=false;
-// Typing is not a request. Three things went wrong before:
-//
-//  1. The tag flipped to "reading" on the first keystroke, so it sat there
-//     through the whole debounce and every pause read as the app hanging. It
-//     now appears only once a request is genuinely in flight.
-//  2. The sequence number was bumped when a request was SENT, not when the
-//     note changed, so erasing the note left the in-flight answer free to
-//     land on text that was no longer there. Every input bumps it now.
-//  3. A stale reply returned without clearing the tag, which is how "reading"
-//     got stuck for good after a burst of typing and erasing.
-//
-// Anything already known locally still answers instantly and costs nothing.
+// Debounced. The tag shows only while a request is in flight; every input bumps the
+// sequence so stale replies are ignored and clear the tag.
 const CAT_AI_WAIT=900;   // how long a person has to stop typing
 function onSpendNoteInput(){
   clearTimeout(_catAiTimer);
   // Any change to the note invalidates every answer still on its way.
   const seq=++_catAiSeq;
-  // Picked by hand while offline: that is an answer, and a better one than
-  // anything here can work out.
+  // An offline manual pick wins.
   if(spendCatPicked){setCatAiTag(null);return;}
   const note=(el('spendNote').value||'').trim();
   const g=guessCategoryRule(note,spendKind);
   if(g){
-    // Fill it in straight away either way: an empty field while a reply is in
-    // flight is worse than a good guess that may be corrected in a second.
+    // Show the keyword guess at once.
     if(g.cat!==spendCatChoice){spendCatChoice=g.cat;buildSpendCatSelect();}
-    // Their own correction is the answer. A built-in keyword is not, so the
-    // read carries on and its answer replaces this one.
+    // A taught rule is final; a keyword guess is not.
     if(g.taught){setCatAiTag(null);_catSettled=true;return;}
   }
   if(note.length<3||!navigator.onLine){setCatAiTag(null);_catSettled=!!g||!note;return;}
@@ -13136,8 +11425,7 @@ function onSpendNoteInput(){
     if(id){_catSettled=true;if(id!==spendCatChoice){spendCatChoice=id;buildSpendCatSelect();}}
     return;
   }
-  // Wait for a real pause, then say so. A word half typed is not a question
-  // worth asking, and asking anyway is what made this feel slow.
+  // Wait for a pause before asking.
   setCatAiTag(null);_catSettled=false;
   _catAiTimer=setTimeout(()=>{
     if(seq!==_catAiSeq)return;
@@ -13145,9 +11433,7 @@ function onSpendNoteInput(){
     askCatAi(note,spendKind,key,seq);
   },CAT_AI_WAIT);
 }
-// One reply, one category id, whoever asked. adoptCategory() decides whether
-// a proposed name is genuinely new or just another word for something the
-// list already has, so a creative model cannot fragment the vocabulary.
+// Reply to category id; adoptCategory() folds near-duplicates.
 function catFromReply(reply,kind){
   if(!reply)return null;
   if(typeof reply==='string'){
@@ -13160,9 +11446,7 @@ function catFromReply(reply,kind){
   }
   return null;
 }
-// `spendId` means the sheet has already closed on this read: the answer goes
-// to the row that was saved instead of to a form nobody is looking at.
-// Saving before Folio has finished is not a reason to lose the answer.
+// With `spendId`, the answer goes to the saved row.
 async function askCatAi(note,kind,key,seq,spendId){
   const cats=(kind==='income'?INCOME_CATS:SPEND_CATS).map(c=>({id:c.id,label:c.label}));
   try{
@@ -13176,8 +11460,7 @@ async function askCatAi(note,kind,key,seq,spendId){
     }
     const id=catFromReply(reply,kind);
     if(spendId){
-      // The row may have been edited again since; only the note we asked
-      // about gets this answer.
+      // Only if the note is unchanged.
       const row=(state.spends||[]).find(x=>x.id===spendId);
       if(id&&row&&(row.note||'').trim()===note&&row.kind===kind&&row.category!==id){
         row.category=id;learnCategory(note,id,kind);saveState();
@@ -13186,15 +11469,13 @@ async function askCatAi(note,kind,key,seq,spendId){
       }
       return;
     }
-    // A slower earlier request must not overwrite a newer note, and must not
-    // leave the tag mid-thought either.
+    // Ignore stale replies.
     if(seq!==_catAiSeq)return;
     setCatAiTag(null);
     if(id){
       _catSettled=true;
       if(id!==spendCatChoice){spendCatChoice=id;buildSpendCatSelect();}
-      // Learn it locally, so the same shop is instant and offline next time
-      // and never costs a second request.
+      // Learn it locally for next time.
       learnCategory(note,id,kind);saveState();
     }
   }catch(e){ if(!spendId&&seq===_catAiSeq)setCatAiTag(null); }
@@ -13226,9 +11507,7 @@ function saveSpend(){
   const acct=spendAccountChoice!==CASH_NONE?(state.assets||[]).find(a=>a.id===spendAccountChoice&&a.category==='liquidity'):null;
   const prev=editingSpendId?(state.spends||[]).find(x=>x.id===editingSpendId):null;
 
-  // Editing changes the money that already moved, so put the old movement
-  // back before applying the new one. Doing it in that order means an edit
-  // that only changes the note leaves the balance exactly where it was.
+  // Reverse the old cash movement before applying the new one.
   if(prev)reverseSpendCash(prev);
 
   if(spendKind==='expense'&&acct){
@@ -13251,13 +11530,9 @@ function saveSpend(){
   };
   if(prev)Object.assign(prev,rec);else state.spends.push(rec);
   applySpendCash(rec);
-  // A category picked by hand is the one signal worth learning from, so the
-  // same note lands there by itself next time, offline and instantly.
+  // Learn from manual picks.
   if(note&&spendCatPicked)learnCategory(note,spendCatChoice,spendKind);
-  // Saving before Folio has answered used to throw the question away: the
-  // next thing to touch the sheet bumped the sequence number and the reply
-  // landed nowhere. The read carries on against the saved row instead, so
-  // there is never a reason to sit and wait for it.
+  // Saving early doesn't lose the read; it continues against the saved row.
   if(!spendCatPicked)finishCategorising(rec.id,note,spendKind);
   else {clearTimeout(_catAiTimer);_catAiSeq++;setCatAiTag(null);}
   spendCatPicked=false;
@@ -13265,9 +11540,7 @@ function saveSpend(){
   saveState();closeModal('spendModal');renderAll();haptic('success');
   toast(rec.kind==='income'?'Income added':'Expense added','success');
 }
-// Hand an unfinished read to the row it belongs to. Nothing to do when the
-// category is already settled, when there is nothing to read, or when there
-// is no way to ask.
+// Hand an unfinished read to the saved row.
 function finishCategorising(id,note,kind){
   clearTimeout(_catAiTimer);_catAiSeq++;setCatAiTag(null);
   if(_catSettled||!note||note.length<3||!navigator.onLine)return;
@@ -13283,8 +11556,7 @@ function finishCategorising(id,note,kind){
   }
   askCatAi(note,kind,key,0,id);
 }
-// The cash side of a spend: one leg on the account, tagged as a transfer so
-// it never reads as a trade in the investment ledger.
+// A spend's cash leg, tagged transfer.
 function applySpendCash(s){
   if(!s||!s.account)return;
   const a=(state.assets||[]).find(x=>x.id===s.account);if(!a)return;
@@ -13321,7 +11593,7 @@ async function deleteSpend(){
   closeModal('spendModal');renderAll();haptic('tap');
 }
 
-// ── The Spending page ─────────────────────────────────────────────────
+// The Spending page
 let spendDayChart=null,spendPaceChart=null;
 function renderSpend(){
   const k=currentSpendMonth();
@@ -13340,8 +11612,7 @@ function renderSpend(){
   if(!prev.count&&!sum.count){cmp.textContent='Nothing recorded yet';cmp.className='spend-compare';}
   else if(!prev.count){cmp.textContent='No comparison for last month';cmp.className='spend-compare';}
   else{
-    // Spending less is the good direction here, which is the opposite of
-    // every other number in this app, so the colour has to be flipped.
+    // Less spending is good here: colours flipped.
     cmp.textContent=(d>=0?'Up ':'Down ')+fmt(Math.abs(d))+(dPct!==null?' ('+Math.abs(dPct).toFixed(1)+'%)':'')+' from last month';
     cmp.className='spend-compare '+(d>0?'worse':'better');
   }
@@ -13357,21 +11628,14 @@ function renderSpend(){
   rateEl.title=sum.income>0?'of income kept':'';
 
   renderSpendDayChart(k,sum);
-  // Whether there is a budget at all is decided here and now, never behind a
-  // deferred draw. The chart it was waiting on lives INSIDE the card, so once
-  // the card had been hidden for having no budget its canvas had no width,
-  // the deferred callback was never eligible to run, and the callback was the
-  // only thing that could un-hide the card. Setting a budget saved it and
-  // changed nothing on screen until the app was reloaded.
+  // Decide card visibility now, not in the deferred draw (a hidden card never draws).
   renderBudgetCard(k,sum);
   drawVisibleDeferred();
   renderWhereItWent(k,sum);
   renderRecurBills();
   renderSpendList(k);
 }
-// The bills you have set up, on the page where you think about spending, // what is coming, what it costs a month, and a way to record one early. The
-// rules themselves live with the rest of the recurring items on Plan; this is
-// the view, not a second copy.
+// Bills view; the rules live on Plan.
 function renderRecurBills(){
   const card=el('recurBillCard'), list=el('recurBillList');
   if(!card||!list)return;
@@ -13397,16 +11661,13 @@ function renderRecurBills(){
   list.innerHTML=rows+`<div class="bill-foot">About ${esc(fmt(perMonth))} a month across ${esc(plural(bills.filter(r=>r.active!==false).length,'active bill'))}</div>`;
 }
 
-// Daily bars: the shape of a month tells you more than its total. One tall
-// bar on the 8th is rent; a fat second half is a habit.
+// Daily bars for the month.
 function renderSpendDayChart(k,sum){
   const wrap=el('spendDayChartWrap');if(!wrap)return;
   const dim=daysInMonth(k);
   const data=[];for(let i=1;i<=dim;i++)data.push(+(sum.byDay[i]||0).toFixed(2));
   const any=data.some(v=>v>0);
-  // A month with nothing in it still has a shape: a flat row of days waiting
-  // to be filled. Hiding the chart and printing a sentence where it should be
-  // made the card look broken on the 1st of every month.
+  // An empty month still shows its empty bars.
   const empty=el('spendDayEmpty');
   if(empty){empty.style.display=any?'none':'';empty.className=any?'chart-empty':'chart-note';
     empty.textContent='Nothing logged yet this month';}
@@ -13427,9 +11688,6 @@ function renderSpendDayChart(k,sum){
               y:{display:false,beginAtZero:true}}}});
 }
 
-// Budget: a number you are under or over, a status you can read in a second,
-// and the pace line that explains why. Anything more and it stops being
-// glanceable, which is the only thing a budget card is for.
 function renderBudgetCard(k,sum){
   const st=budgetStatus(k);
   const card=el('budgetCard'),empty=el('budgetEmpty');
@@ -13464,8 +11722,7 @@ function renderBudgetCard(k,sum){
       `<div class="bgrp-bar"><span style="width:${pct.toFixed(1)}%;background:${isOver?'var(--red)':g.color}"></span></div></div>`;
   }).join('')||'<div class="spend-none">No budget groups set.</div>';
 
-  // The card is below the month summary and "where it went", so on a phone it
-  // is usually off screen when the page opens. Only the drawing waits.
+  // Usually below the fold; only the drawing waits.
   deferChart(el('budgetPaceChart'),()=>renderPaceChart(k,st),!spendPaceChart);
 }
 function renderPaceChart(k,st){
@@ -13492,16 +11749,12 @@ function renderPaceChart(k,st){
       plugins:{legend:{display:false},tooltip:{displayColors:false,callbacks:{
         title:c=>'Day '+c[0].label,
         label:c=>(c.datasetIndex===0?'Even pace ':'Spent ')+sym+(c.parsed.y*rate).toFixed(0)}}},
-      // The series starts at zero, which is the bottom edge of the plot, so
-      // half the stroke was drawn outside it and sheared off. A few pixels of
-      // padding gives the line somewhere to sit.
+      // Room for the stroke at zero.
       layout:{padding:{top:3,bottom:3}},
       scales:{x:{display:false},y:{display:false,beginAtZero:true,grace:'3%'}}}});
 }
 
-// Where it went: the stacked bar gives the proportions at a glance, the rows
-// give the numbers. Categories, not groups, because "Food 12K" is actionable
-// and "Needs 40K" is not.
+// Stacked bar plus rows, by category.
 function renderWhereItWent(k,sum){
   const host=el('whereList');if(!host)return;
   const entries=Object.entries(sum.byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
@@ -13559,13 +11812,11 @@ function renderSpendList(k){
   host.innerHTML=html;
 }
 
-// ── Budget editor ─────────────────────────────────────────────────────
+// Budget editor
 let budgetEditMonth=null,budgetEditScope='default';
 function openBudgetModal(){
   budgetEditMonth=currentSpendMonth();
-  // If this month already has its own numbers, open on that; otherwise edit
-  // the defaults, which is what someone setting a budget for the first time
-  // actually wants.
+  // Open on this month's own budget if it has one, else the defaults.
   budgetEditScope=(state.settings.budgets&&state.settings.budgets[budgetEditMonth])?'month':'default';
   resetMoneyCcy(SPEND_GROUPS.map(g=>'bg-'+g.id));
   renderBudgetEditor();
@@ -13589,8 +11840,7 @@ function renderBudgetEditor(){
       `<input class="form-input" id="bg-${g.id}" type="number" inputmode="decimal" step="any" placeholder="0" value="${v>0?(v*r).toFixed(0):''}" oninput="updateBudgetTotal()"/>`+
       `<div class="ccy-sel-wrap" id="bgccy-${g.id}"></div></div></div>`;
   }).join('');
-  // Built after the markup exists, and rebuilt on every scope switch
-  // because innerHTML above throws the previous wrappers away.
+  // Rebind after each render; innerHTML replaced the wrappers.
   SPEND_GROUPS.forEach(g=>bindMoneyCcy('bg-'+g.id,'bgccy-'+g.id,updateBudgetTotal));
   // Which categories land in which group, so the labels are not a guess.
   el('budgetLegend').innerHTML=SPEND_GROUPS.map(g=>{
@@ -13629,8 +11879,7 @@ function saveBudget(){
   saveState();closeModal('budgetModal');renderSpend();haptic('success');
   toast(any?'Budget saved':'Budget cleared','success');
 }
-// A first budget from nothing is a blank form nobody fills in. Seed it from
-// what they actually spent last month, which is at least true.
+// Seed a first budget from last month's spending.
 function seedBudgetFromLastMonth(){
   const last=monthSummary(shiftMonth(currentSpendMonth(),-1));
   if(!last.count){toast('No spending last month to copy','error');return;}
@@ -13644,10 +11893,8 @@ function seedBudgetFromLastMonth(){
 
 
 
-// ════════ GOAL PROJECTION ════════
-// A target and a date on their own only say what you wish would happen. The
-// question worth answering is whether the amount you actually put aside each
-// month gets you there, and if not, by how much you miss.
+// GOAL PROJECTION
+// Whether the monthly contribution reaches the target by the date, and by how much it misses.
 function goalProjection(target,saved,monthly,dateStr){
   const t=num(target),s=num(saved),m=num(monthly);
   if(t<=0)return null;
@@ -13723,8 +11970,7 @@ let goalProjChart=null;
 function destroyGoalProjChart(){if(goalProjChart){try{goalProjChart.destroy();}catch(e){}goalProjChart=null;}}
 function renderGoalProjChart(p){
   const cv=el('goalProjChart');if(!cv||!window.Chart)return;
-  // Show whichever horizon is longer, so a plan that overshoots its date is
-  // not cut off exactly where the interesting part starts.
+  // Show the longer horizon.
   const span=Math.max(1,Math.min(120,Math.max(p.monthsLeft||0,p.monthsToTarget||0)+1));
   const labels=[],saved=[],targetLine=[];
   for(let i=0;i<=span;i++){
@@ -13750,10 +11996,8 @@ function renderGoalProjChart(p){
             y:{display:false,beginAtZero:true}}}});
 }
 
-// ════════ INVESTMENT INCOME ════════
-// Dividends and interest are the part of a return that never shows up in a
-// price chart. Held separately from realised gains because they are a
-// different thing: money the holding paid you while you kept it.
+// INVESTMENT INCOME
+// Dividends and interest, separate from realised gains.
 function incomeTxs(){
   return (state.transactions||[]).filter(t=>t&&t.txType==='income');
 }
@@ -13771,9 +12015,7 @@ function buildIncomeReport(){
     byKind[kind]=(byKind[kind]||0)+amt;
   });
   const months=Object.keys(byMonth).sort();
-  // Average over the months that actually elapsed, not the months that
-  // happen to have a payment in them, otherwise a quarterly dividend reads
-  // as a monthly one.
+  // Average over elapsed months, not months with a payment.
   const first=new Date(months[0]+'-01'),now=new Date();
   const span=Math.max(1,(now.getFullYear()-first.getFullYear())*12+(now.getMonth()-first.getMonth())+1);
   const sources=Object.entries(bySource).sort((a,b)=>b[1]-a[1]);
@@ -13799,8 +12041,7 @@ function renderIncomeReport(){
 
   const cv=el('incomeChart');
   if(!cv||!window.Chart)return;
-  // Last 12 months of the calendar, not just months with payments, so gaps
-  // read as gaps instead of being closed up.
+  // The last 12 calendar months, gaps included.
   const labels=[],vals=[],cum=[];
   const end=new Date();let running=0;
   const start=new Date(end.getFullYear(),end.getMonth()-11,1);
@@ -13828,19 +12069,14 @@ function renderIncomeReport(){
             y2:{display:false,beginAtZero:true,position:'right'}}}});
 }
 
-// ════════ COMPOSITION TREEMAP ════════
-// Every holding at once, sized by what it is worth and tinted by how it is
-// doing. A donut answers "what share is crypto"; this answers "what actually
-// matters in here", which a list of nineteen rows never does.
-// Squarified layout, laid out in DOM rather than canvas so the labels stay
-// crisp, the tiles stay tappable and it themes with everything else.
+// COMPOSITION TREEMAP
+// Every holding sized by value, tinted by performance. Squarified, in DOM so labels stay
+// crisp and tiles tappable.
 function squarify(items,x,y,w,h,out){
   if(!items.length)return out;
   if(items.length===1){out.push({...items[0],x,y,w,h});return out;}
   const total=items.reduce((s,i)=>s+i.value,0);
-  // Split the list where the running total first passes half, then give each
-  // half the matching share of the shorter side. Recursing keeps tiles closer
-  // to square than a single row-by-row pass.
+  // Split where the running total passes half; recurse.
   let acc=0,split=0;
   for(let i=0;i<items.length;i++){
     acc+=items[i].value;
@@ -13860,28 +12096,20 @@ function squarify(items,x,y,w,h,out){
   }
   return out;
 }
-// Gain shades green, loss shades red, unpriced stays neutral. Intensity tracks
-// the size of the move so a 40% winner is not the same colour as a 0.4% one.
+// Green for gains, red for losses, intensity by size.
 function treemapTint(pct){
   if(pct===null||pct===undefined)return 'var(--card2)';
-  // A move too small to round to a tenth of a percent is not a gain or a
-  // loss. Tinting it red painted every stablecoin as a loser.
+  // Below 0.05% is neutral.
   if(Math.abs(pct)<0.05)return 'var(--card2)';
   const mag=Math.min(1,Math.abs(pct)/25);
   const a=(0.13+mag*0.42).toFixed(3);
   return pct>=0?`rgba(91,142,125,${a})`:`rgba(200,80,80,${a})`;
 }
-// Anything under this share of the portfolio is a sliver too small to label,
-// so by default those roll into one tile. The note used to say "15 holdings"
-// over a map showing seven of them and a lump, which is a count nobody can
-// check against what is on screen. Now the note says how many are drawn and
-// how many are grouped, and the group opens.
+// Holdings under this share roll into one openable tile.
 const TM_MIN_SHARE=0.012;
 let tmShowAll=false;
 function tmToggleAll(){tmShowAll=!tmShowAll;renderTreemap();haptic('tap');}
-// Two ways of asking the same question. The map shows what matters by making
-// it big, which is exactly why it cannot name a holding worth a fifth of a
-// percent: that tile is eleven pixels across. The list names every one.
+// Map (by size) or list (names every holding).
 let tmView=(typeof localStorage!=='undefined'&&localStorage.getItem('pf_tm_view')==='list')?'list':'map';
 function setTmView(v){
   tmView=v==='list'?'list':'map';
@@ -13933,11 +12161,7 @@ function renderTreemap(){
       value:small.reduce((s,i)=>s+i.value,0),pct:null});
     laid.sort((a,b)=>b.value-a.value);
   }
-  // A fixed box shared by nineteen tiles gives each one a ninth of the area
-  // seven would get, and a tile that small cannot carry its own name — which
-  // is the whole point of showing it. The box grows with the count instead,
-  // so every tile keeps roughly the area it needs to be readable, up to a
-  // height that still fits on a screen.
+  // The box grows with the tile count so tiles stay readable.
   host.classList.remove('tm-tall');
   host.style.aspectRatio='auto';
   host.style.height=Math.round(Math.min(640,Math.max(230,150+laid.length*26)))+'px';
@@ -13948,16 +12172,10 @@ function renderTreemap(){
     // A -0.04% move printed as − 0.0%, a minus sign in front of zero.
     const flat=t.pct!=null&&Math.abs(t.pct)<0.05;
     const pctTxt=t.pct==null?'':(flat?'0.0%':(t.pct>=0?'+':'')+t.pct.toFixed(1)+'%');
-    // What a tile can say depends on what it measures in real pixels, not in
-    // percent: the same 6% of a short box and a tall one are different tiles.
+    // Label decisions in real pixels.
     const pxW=t.w/100*boxW,pxH=t.h/100*boxH;
-    // A name in the small size needs about this much. Below it nothing fits,
-    // and a tile that small says what it is through its tooltip and its tap.
     const showLabel=pxW>=34&&pxH>=14;
-    // Every tile says what it is worth, that is what its size means. The
-    // return is a second line where there is room for one, never a
-    // replacement, so one tile does not read in percent while its
-    // neighbours read in rupees.
+    // Value always; return as a second line when there is room.
     const showVal=pxW>=58&&pxH>=34;
     const showPct=pctTxt&&pxW>=58&&pxH>=54;
     const small=showLabel&&!showVal;
@@ -13987,11 +12205,8 @@ function renderTreemap(){
 }
 
 
-// ════════ ASSISTANT BUBBLE ════════
-// A launcher you can put where your thumb is. It drags anywhere, snaps to
-// whichever side it is nearest on release, and after a few idle seconds tucks
-// most of itself off that edge so it stops competing with the page. Touching
-// it brings it back.
+// ASSISTANT BUBBLE
+// Draggable, snaps to the nearest side, tucks away after a few idle seconds.
 const AI_BUBBLE_TUCK_MS = 2600;
 function aiPrefs(){
   const p = state.settings.ai || {};
@@ -14008,20 +12223,14 @@ function setAiPref(k, v){
   saveState();
 }
 let _aiTuckTimer = null;
-// Position is held here in pixels and applied as one transform. It used to be
-// left/right/top, which is why the snap looked like teleportation: the CSS
-// only ever transitioned transform, so the position change was instant, and
-// releasing on the right swapped the element from left-anchored to
-// right-anchored, which no browser can animate between anyway. One property,
-// composited, so the settle can actually be a movement.
+// Position in pixels as one transform, so the snap animates.
 let _bubX = 0, _bubY = 0, _bubTucked = false, _bubReady = false;
 
 function bubbleSize(){
   const b = el('aiBubble');
   return { w: (b && b.offsetWidth) || 50, h: (b && b.offsetHeight) || 50 };
 }
-// Where the bubble rests for a given side and vertical fraction, clear of the
-// header at the top and the nav bar at the bottom.
+// Rest position, clear of the header and nav.
 function bubbleAnchor(side, yFrac){
   const { w, h } = bubbleSize();
   const vh = window.innerHeight, vw = window.innerWidth;
@@ -14030,8 +12239,7 @@ function bubbleAnchor(side, yFrac){
     y: Math.max(70, Math.min(vh - h - 96, yFrac * vh)),
   };
 }
-// How far past its edge a tucked bubble sits. Enough to get out of the way,
-// not so much that the remaining sliver is too small to hit.
+// How far a tucked bubble sits past the edge.
 function tuckOffset(){
   return bubbleSize().w * 0.46 * (aiPrefs().side === 'left' ? -1 : 1);
 }
@@ -14040,9 +12248,7 @@ function paintBubble(){
   const x = _bubX + (_bubTucked ? tuckOffset() : 0);
   b.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + _bubY.toFixed(1) + 'px,0)';
 }
-// The settle. Distance sets the duration, so a flick across the screen takes
-// longer to arrive than a nudge, which is most of what makes it read as a
-// thrown object rather than a jump cut.
+// Duration scales with distance.
 function settleBubble(toX, toY){
   const b = el('aiBubble'); if (!b) return;
   const dist = Math.hypot(toX - _bubX, toY - _bubY);
@@ -14079,8 +12285,7 @@ function scheduleAiTuck(){
     if (b.classList.contains('dragging')) return;
     if (document.body.classList.contains('tour-open')) return;
     _bubTucked = true;
-    // Sliding away is a different gesture from being thrown, so it gets an
-    // ease with no overshoot rather than the spring.
+    // Tucking uses an ease, not the spring.
     b.classList.remove('settling');
     b.classList.add('tucking');
     paintBubble();
@@ -14125,11 +12330,7 @@ function setupAiBubble(){
     try { b.releasePointerCapture(id); } catch (err) {}
     id = null;
     b.classList.remove('dragging');
-    // Opening from pointerup is what broke this on a phone. The browser then
-    // fires its synthetic click from the same tap, and by that moment the
-    // sheet is open with its overlay under the finger, so the click lands on
-    // the overlay and closes it again. Pointer events drag; a real click
-    // opens, and there is exactly one click per tap.
+    // Open on click, not pointerup: the synthetic click would land on the new overlay and close it.
     if (!moved) { scheduleAiTuck(); return; }
     // Magnet: whichever side the middle of the bubble ended up nearest.
     const { w } = bubbleSize();
@@ -14161,22 +12362,9 @@ function setupAiBubble(){
   }, { passive: true });
 }
 
-// ════════ AI ASSISTANT ════════
-// Answers questions about the numbers already in this app. The key lives in a
-// server environment variable and the request goes through /api/ai, because
-// anything in this file is readable by anyone who opens DevTools on the
-// deployed site: a key shipped to the browser is a published key.
-//
-// The assistant is called Folio to the person using it. Under it is a
-// third-party model reached through this app's own serverless function, which
-// is why the API key never touches the bundle. The name is branding, not a
-// cover story: the sheet says plainly that a summary leaves the device, and
-// api/ai.js tells the model to admit a third-party model runs it if asked
-// outright, only without naming the vendor.
-//
-// What leaves the device is a summary of the user's own finances. That is
-// stated in the sheet rather than buried here, since it is the one thing
-// about this feature a person should get to decide.
+// AI ASSISTANT ("Folio")
+// Questions about the app's own numbers, via /api/ai so no key ships to the browser.
+// The sheet states that a summary of the user's finances leaves the device.
 let aiThread=[];            // [{role:'user'|'model', text}]
 let aiBusy=false;
 const AI_SUGGESTIONS=[
@@ -14192,8 +12380,7 @@ const AI_SUGGESTIONS=[
   'When did I last back up?',
 ];
 
-// A compact picture of everything the app knows. Compact matters twice over:
-// it is what the model reads, and it is what leaves the device.
+// Compact summary of the app's data: it is what the model reads and what leaves the device.
 function aiSnapshot(){
   const rate=getCurrRate(currentCurrency.code);
   const M=v=>+(num(v)*rate).toFixed(2);
@@ -14274,14 +12461,12 @@ function aiSnapshot(){
     goal:habitGoal(h,hDays),
     currentStreak:habitStreak(h.id),
   }));
-  // The investment ledger. Recent activity in full, plus income totalled by
-  // kind, because "how much dividend did I get" is a question people ask.
+  // Recent ledger in full plus income totals by kind.
   const ledger=(state.transactions||[]).slice().sort((a,b)=>
     new Date(b.date||0)-new Date(a.date||0));
   const recentTx=ledger.slice(0,30).map(t=>{
     const o={date:String(t.date||'').split('T')[0],what:stripParens(txDisplayName(t)),
-      // The words the app itself uses, so Folio does not describe a
-      // bank deposit as a purchase back to the person who made it.
+      // The app's own wording (a deposit is not a purchase).
       type:(txTypeLabel(t)||'BUY').toLowerCase(),amount:M(t.amount)};
     if(t.enteredQty!=null||t.qty!=null)o.qty=t.enteredQty!=null?t.enteredQty:t.qty;
     if(t.enteredUnit)o.unit=t.enteredUnit;
@@ -14302,15 +12487,8 @@ function aiSnapshot(){
   const lastMk=shiftMonth(mk,-1),last=monthSummary(lastMk);
   if(last.count)spending.lastMonth={month:lastMk,income:M(last.income),spent:M(last.spent)};
 
-  // ── Everything else the app knows ──────────────────────────────────
-  // Paivo is expected to answer anything about this app, so anything a
-  // screen can show has to be in here. What is deliberately NOT here:
-  // the PIN, the session token, and the raw price cache, none of which
-  // answer a question and all of which are better off not leaving the phone.
-
-  // Individual spending entries, not just the category totals, so "what did
-  // I spend at Bhatbhateni" and "what was that big one last Tuesday" are
-  // answerable rather than being met with a monthly average.
+  // Everything the screens show. Never the PIN, session token or raw price cache.
+  // Individual spends, not just totals.
   const spendRows=(state.spends||[]).slice()
     .sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
   const recentSpends=spendRows.slice(0,60).map(s=>{
@@ -14330,8 +12508,7 @@ function aiSnapshot(){
     spendHistory.push({month:k,income:M(m.income),spent:M(m.spent),
       kept:M(m.income-m.spent),entries:m.count});
   }
-  // The budget per category, not just its total, because "which line am I
-  // blowing" is the question people actually have about a budget.
+  // Per-category budget.
   if(st){
     const bud=budgetFor(mk),byG={};
     SPEND_GROUPS.forEach(g=>{
@@ -14372,9 +12549,7 @@ function aiSnapshot(){
       });
     }
   }catch(e){}
-  // Where the prices came from and how old they are, so Paivo can say "that
-  // figure is a day old" instead of quoting it as though the market just
-  // printed it.
+  // Price sources and ages.
   const priceInfo={
     coinsAndMetals:lastPriceTs?relTime(lastPriceTs):'never fetched',
     online:navigator.onLine!==false,
@@ -14384,8 +12559,7 @@ function aiSnapshot(){
     priceInfo.nepseStale=!!nepseStale;
     priceInfo.nepseSymbolsQuoted=Object.keys(nepsePrices||{}).length;
   }
-  // The app's own state, for "am I backed up", "is this syncing", "what
-  // currency am I in". People ask these and the answer is knowable.
+  // Backup, sync and currency state.
   const appState={
     displayCurrency:currentCurrency.code,
     baseCurrency:baseCode(),
@@ -14403,8 +12577,7 @@ function aiSnapshot(){
   };
 
   const split=(typeof buildPnLSplit==='function')?buildPnLSplit():null;
-  // Monthly net-worth points only: a daily series would be most of the payload
-  // and answer nothing a monthly one does not.
+  // Monthly net-worth points only.
   const hist=[];const seen=new Set();
   (getFilteredHistory()||[]).forEach(p=>{
     const k=String(p.date).slice(0,7);
@@ -14440,12 +12613,7 @@ function aiSnapshot(){
   };
 }
 
-// The snapshot grew to cover the whole app, and a big enough book could still
-// outrun the request budget. The server's own cap slices the JSON string,
-// which hands the model a broken object; trimming here keeps it valid JSON
-// and drops the least useful detail first. `trimmed` tells Folio what it is
-// no longer seeing, so it says "the last 15 entries" rather than answering as
-// though that were all of them.
+// Trim here to stay valid JSON under the server's cap; `trimmed` says what was dropped.
 const AI_SNAPSHOT_BUDGET=120000;
 function fitSnapshot(snap){
   const steps=[
@@ -14477,24 +12645,11 @@ function fitSnapshot(snap){
 function openAI(){
   renderAIThread();
   openModal('aiModal');
-  // Deliberately not focusing the input. Auto-focus throws the keyboard up
-  // over half the screen before you have read a word, and the first thing
-  // most people want is the suggested questions, which the keyboard covers.
+  // No auto-focus: the keyboard would cover the suggestions.
   bindAiViewport();
 }
-// The keyboard is the browser's job, not this file's.
-//
-// Two attempts at doing it here both got it wrong. The first subtracted
-// visualViewport.height from window.innerHeight to get a keyboard inset, but
-// with viewport-fit=cover innerHeight also spans the area under the system
-// navigation bar, so the sheet was lifted too far. The second pinned the
-// overlay to the visual viewport, which still left a band of backdrop.
-//
-// interactive-widget=resizes-content on the viewport meta tag (see index.html)
-// makes the keyboard shrink the layout viewport itself. The overlay is
-// position:fixed;inset:0, so it becomes exactly the space above the keyboard
-// with nothing measured and nothing to get wrong. This function stays as a
-// no-op so the call sites do not have to care.
+// No-op: interactive-widget=resizes-content (index.html) lets the keyboard resize the
+// layout viewport, and the fixed overlay follows.
 function bindAiViewport(){}
 function releaseAiViewport(){}
 function aiAsk(q){
@@ -14551,11 +12706,7 @@ function autoGrowAI(){
 function onAIKey(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAI();}
 }
-// The answer arrives whole, so this is a reveal rather than real token
-// streaming, and it is honest about that: it exists because a wall of text
-// appearing at once is harder to start reading than one that unrolls. The
-// speed is a setting because the right pace is taste, and Instant skips it
-// entirely for anyone who finds it patronising.
+// Reveal speed for a whole answer (not real streaming); Instant skips it.
 const AI_SPEEDS={instant:0,fast:9,normal:20,slow:38};   // ms between chunks
 function aiRevealDelay(){
   const s=aiPrefs().speed;
@@ -14568,8 +12719,7 @@ function revealAnswer(msg){
   _aiRevealStop=false;
   return new Promise(resolve=>{
     const total=msg.text.length;
-    // Whole words at a time. Character by character on a long answer is a
-    // hundred repaints for one sentence and reads like a stutter.
+    // Whole words per step.
     const step=()=>{
       if(_aiRevealStop){msg.shown=total;renderAIThread();resolve();return;}
       let next=msg.text.indexOf(' ',msg.shown+1);
@@ -14610,13 +12760,9 @@ function renderAIThread(thinking){
   host.scrollTop=host.scrollHeight;
 }
 
-// Just enough markdown for an answer: bold, code, bullets, numbered lists and
-// simple tables. Everything is escaped first, so nothing the model returns can
-// become markup, then only these known shapes are turned back into tags.
+// Minimal markdown: escape everything, then restore known shapes (bold, code, lists, tables).
 function mdLite(src){
-  // Code spans come out before escaping. esc() turns a backtick into &#96;,
-  // so matching them after the escape would never fire. The placeholder uses
-  // a control character, which esc() leaves alone and no model emits.
+  // Pull code spans before escaping; the placeholder is a control character.
   const code=[];
   const marked=String(src||'').replace(/`([^`\n]+)`/g,(m,c)=>{code.push(c);return '\u0001'+(code.length-1)+'\u0001';});
   const lines=esc(marked).split('\n');
@@ -14656,11 +12802,10 @@ function mdLite(src){
   return out;
 }
 
-// ════════ ANALYTICS ════════
+// ANALYTICS
 function compactNum(v){const a=Math.abs(v);if(a>=1e7)return (v/1e7).toFixed(2)+'Cr';if(a>=1e5)return (v/1e5).toFixed(2)+'L';if(a>=1e3)return (v/1e3).toFixed(1)+'K';return v.toFixed(0);}
 function renderAnalytics(){const rate=getCurrRate(currentCurrency.code),sym=currentCurrency.sym,T=themeColors();const assets=state.assets;
-  // The same figures the dashboard shows, from the same function, so the two
-  // pages cannot drift apart on what your profit is.
+  // Same function as the dashboard.
   const _PL=portfolioPnL();
   const invested=_PL.invested,current=_PL.current,realized=_PL.realized;
   const pnl=_PL.pnl,pp=_PL.pct;
@@ -14676,21 +12821,14 @@ function renderAnalytics(){const rate=getCurrRate(currentCurrency.code),sym=curr
   });
   const tw=el('catTableWrap');
   if(tw){if(!catKeys.length){tw.innerHTML='<div class="empty-state" style="padding:16px"><p style="font-size:11px">Add assets to see analytics</p></div>';}else{const rows=catKeys.map(k=>{const inv=cats[k].inv,cur=cats[k].cur,p=cur-inv,ppc=inv>0?p/inv*100:0,alloc=current>0?cur/current*100:0;return `<tr><td><span class="atype-chip" style="color:${readableInk(catColors[k]||'#888')};background:${(catColors[k]||'#888')}22">${catLabel(k)}</span></td><td>${fmt(inv)}</td><td style="font-weight:800">${fmt(cur)}</td><td class="${p>=0?'pos':'neg'}">${p>=0?'+':''}${fmt(p)}</td><td class="${ppc>=0?'pos':'neg'}">${ppc>=0?'+':''}${ppc.toFixed(1)}%</td><td>${alloc.toFixed(1)}%</td></tr>`;}).join('');tw.innerHTML=`<table class="atable atable-fixed"><colgroup><col class="col-cat"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"></colgroup><thead><tr><th>Category</th><th>Invested</th><th>Current</th><th><span class="th-full">Profit &amp; Loss</span><span class="th-short">P&amp;L</span></th><th>Return</th><th><span class="th-full">Allocation</span><span class="th-short">Alloc</span></th></tr></thead><tbody>${rows}</tbody></table>`;requestAnimationFrame(()=>initTableScrollFade('catTableWrap','catTableFade'));}}
-  // A stablecoin is pegged, so its return is zero by design and its bar is a
-  // gap in the row rather than a short bar. It is not a position that went
-  // nowhere, it is a position that cannot go anywhere, and a chart of what
-  // gained and lost has nothing to say about it. Left out, and said so
-  // below rather than silently dropped.
+  // Stablecoins are pegged; left out and noted.
   const stables=assets.filter(a=>isStablecoin(a)&&getAssetPnLPct(a)!==null);
   const perf=assets.filter(a=>!isStablecoin(a))
     .map(a=>({n:a.name,pp:getAssetPnLPct(a)})).filter(x=>x.pp!==null)
     .sort((a,b)=>b.pp-a.pp).slice(0,12);
-  // Outside the deferred draw below, which only runs when the card scrolls
-  // into view: whether the card belongs on the page at all is not something
-  // to decide the first time someone happens to look at it.
+  // Card visibility is decided outside the deferred draw.
   {const card=el('assetBarCard'),note=el('assetBarNote');
-   // Nothing left to plot once the stablecoins are out: the card would be an
-   // empty grid with axis labels.
+   // Nothing to plot without stablecoins.
    if(card)card.style.display=perf.length?'':'none';
    if(note){
      note.hidden=!(stables.length&&perf.length);
@@ -14701,7 +12839,7 @@ function renderAnalytics(){const rate=getCurrRate(currentCurrency.code),sym=curr
   const ctxA=el('assetBarChart');
   deferChart(ctxA,()=>{
   if(anAssetChart){try{anAssetChart.destroy();}catch(e){}anAssetChart=null;}
-  if(ctxA&&window.Chart&&perf.length){anAssetChart=new Chart(ctxA,{type:'bar',data:{labels:perf.map(x=>x.n.length>10?x.n.slice(0,10)+'…':x.n),datasets:[{data:perf.map(x=>+x.pp.toFixed(2)),backgroundColor:perf.map(x=>x.pp>=0?T.green:T.red),borderRadius:5,barPercentage:.75,/* a real holding that has not moved gets a sliver, not a blank column */minBarLength:3}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:state.settings.reduceMotion?0:550},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>(c.parsed.y>=0?'+':'')+c.parsed.y+'%'}}},scales:{x:{ticks:{color:T.text2,font:{size:9},maxRotation:50,minRotation:30},grid:{display:false}},y:{ticks:{color:T.text3,font:{size:9},callback:v=>v+'%'},grid:{color:T.border}}}}});}
+  if(ctxA&&window.Chart&&perf.length){anAssetChart=new Chart(ctxA,{type:'bar',data:{labels:perf.map(x=>x.n.length>10?x.n.slice(0,10)+'…':x.n),datasets:[{data:perf.map(x=>+x.pp.toFixed(2)),backgroundColor:perf.map(x=>x.pp>=0?T.green:T.red),borderRadius:5,barPercentage:.75, /* An unmoved holding gets a sliver, not a blank column */ minBarLength:3}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:state.settings.reduceMotion?0:550},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>(c.parsed.y>=0?'+':'')+c.parsed.y+'%'}}},scales:{x:{ticks:{color:T.text2,font:{size:9},maxRotation:50,minRotation:30},grid:{display:false}},y:{ticks:{color:T.text3,font:{size:9},callback:v=>v+'%'},grid:{color:T.border}}}}});}
   });
   renderTreemap();
   deferChart(el('incomeChart'),()=>renderIncomeReport());
@@ -14723,7 +12861,7 @@ function renderAnalytics(){const rate=getCurrRate(currentCurrency.code),sym=curr
   drawVisibleDeferred();
 }
 
-// ── Realised vs unrealised ────────────────────────────────────────────
+// Realised vs unrealised
 function renderPnLSplit(){
   const body = el('pnlSplitBody'); if (!body) return;
   const s = buildPnLSplit();
@@ -14758,7 +12896,7 @@ function renderPnLSplit(){
     <div class="chart-note">Realised is money a completed sale actually returned. Unrealised is what your current holdings are worth on paper.</div>`;
 }
 
-// ── Receivables ageing ────────────────────────────────────────────────
+// Receivables ageing
 let ageingType = 'owed';
 function setAgeingType(t){
   ageingType = t;
@@ -14804,7 +12942,7 @@ function renderAgeing(){
     ${a.noDueCount ? `<div class="chart-note">${a.noDueCount === 1 ? 'One entry has' : a.noDueCount + ' entries have'} no due date, so ${a.noDueCount === 1 ? 'it is' : 'they are'} never counted as overdue.</div>` : ''}`;
 }
 
-// ── Allocation vs target, and a buy-only rebalance plan ───────────────
+// Allocation vs target, and a buy-only rebalance plan
 function openAllocTargets(){ resetMoneyCcy(['allocCashInput']);
   bindMoneyCcy('allocCashInput','allocCashCcyWrap',renderRebalance);
   renderAllocTargetRows(); openModal('allocTargetsModal'); }
@@ -14832,8 +12970,7 @@ function syncAllocTotal(){
   const totEl = el('allocTargetTotal'); if (!totEl) return;
   const total = allocTargetTotal();
   totEl.textContent = total.toFixed(0) + '%';
-  // Targets are normalised when the plan is built, so a total other than 100
-  // still works, but say so rather than letting it look like an error.
+  // Targets are normalised; a total other than 100 is only a note.
   totEl.style.color = total === 0 ? 'var(--text3)'
     : Math.abs(total - 100) < 0.5 ? 'var(--green)' : 'var(--accent)';
   totEl.title = Math.abs(total - 100) < 0.5 ? 'Adds up to 100%'
@@ -14895,9 +13032,7 @@ function renderRebalance(){
     ${buys}`;
 }
 
-// ── Portfolio mix over time ───────────────────────────────────────────
-// A stacked area, so the reader sees both the total and how the split moved.
-// Cost basis, stated in the caption, there are no historical market prices.
+// Portfolio mix over time
 let anCompChart=null;
 function renderCompositionChart(T,sym,rate){
   const c=el('compositionChart'); if(!c) return;
@@ -14927,9 +13062,7 @@ function renderCompositionChart(T,sym,rate){
               y:{stacked:true,ticks:{color:T.text3,font:{size:9},callback:v=>sym+compactNum(v)},grid:{color:T.border}}}}});
 }
 
-// ── Lending over time ─────────────────────────────────────────────────
-// Money lent out and money borrowed are opposite signs of the same story, so
-// they are drawn against a shared zero: receivables above, what you owe below.
+// Lending over time
 let anDebtTimeChart=null;
 function renderDebtTimeChart(T,sym,rate){
   const c=el('debtTimeChart'); if(!c) return;
@@ -14958,7 +13091,7 @@ function renderDebtTimeChart(T,sym,rate){
       scales:{x:{ticks:{color:T.text3,font:{size:8},maxTicksLimit:6,maxRotation:0},grid:{display:false}},
               y:{ticks:{color:T.text3,font:{size:9},callback:v=>(v<0?'\u2212':'')+sym+compactNum(Math.abs(v))},grid:{color:T.border}}}}});
 }
-// ════════ NET WORTH FORECAST ════════
+// NET WORTH FORECAST
 let forecastMonths=6;
 function setForecastRange(m,btn){forecastMonths=m;document.querySelectorAll('#page-analytics .seg button[data-fc]').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');haptic('tap');renderForecast();}
 function linregNetWorth(){
@@ -15029,12 +13162,12 @@ function renderForecast(){
   ].map(([l,v,s])=>`<div class="forecast-stat"><div class="l">${l}</div><div class="v">${v}</div><div class="s text3" style="font-size:9px;margin-top:2px">${s}</div></div>`).join('');
   if(note)note.textContent=`Linear trend from ${reg.n} data points · for guidance only, not financial advice.`;
 }
-// ════════ CSV EXPORT ════════
+// CSV EXPORT
 function downloadCSV(name,rows){const csv=rows.map(r=>r.map(csvEscape).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();haptic('success');toast('CSV exported','success');}
 function exportHoldingsCSV(){const rate=getCurrRate(currentCurrency.code),sym=currentCurrency.code;if(!state.assets.length){toast('No assets to export','error');return;}const rows=[['Name','Category','Holdings','Unit','Avg Buy ('+sym+')','Current Price ('+sym+')','Invested ('+sym+')','Value ('+sym+')','P&L ('+sym+')','Return %']];
   state.assets.forEach(a=>{const inv=a.category==='liquidity'?(a.value||0):((a.buyPrice||0)*assetUnits(a));const cv=getAssetCurrentValue(a),pnl=getAssetPnL(a),pp=getAssetPnLPct(a),cur=getAssetCurrentPrice(a);rows.push([stripParens(a.name),catLabel(a.category),a.qty||'',a.unit||'',a.buyPrice?(a.buyPrice*rate).toFixed(2):'',cur!=null?(cur*rate).toFixed(2):'',(inv*rate).toFixed(2),(cv*rate).toFixed(2),pnl!=null?(pnl*rate).toFixed(2):'',pp!=null?pp.toFixed(2):'']);});
   downloadCSV('paisafolio-holdings-'+todayStr()+'.csv',rows);}
-// ════════ INIT ════════
+// INIT
 async function init(){
   checkAppLockOnLoad();
   loadState();loadDevicePrefs();applyFonts();loadPriceCache();
@@ -15050,8 +13183,7 @@ async function init(){
   syncPrivacyIcon();
   currentCurrency=CURRENCIES.find(c=>c.code===state.settings.currency)||CURRENCIES[0];
   try{pruneCustomCats();}catch(e){}
-  // The bar has to be laid out before a tab can be measured, so this waits a
-  // frame rather than running inline.
+  // Measure after layout.
   requestAnimationFrame(()=>positionNavIndicator());
   syncAdminVisibility();
   restorePage();
@@ -15059,8 +13191,7 @@ async function init(){
   bindPnlPills();bindCatPills();bindModalOverlays();setupKeyboard();setupGestures();watchSwitchRows();setupModalDrag();setupRipple();setupAiBubble();syncAiEntryPoints();setupAuthKeyListeners();
   document.addEventListener('click',()=>{document.querySelectorAll('.custom-select-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.custom-select-dropdown.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.ccy-sel-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.ccy-sel-dropdown.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.coin-suggestions').forEach(s=>s.style.display='none');},{passive:true});
   setTimeout(()=>{const sp=el('splash');if(sp)sp.classList.add('hide');},650);
-  // After the first paint, not before it: a snapshot is worth a few hundred
-  // milliseconds of somebody's morning only once the app is already up.
+  // Auto-backup after first paint.
   setTimeout(()=>{syncBackupsSub();maybeAutoBackup().then(syncBackupsSub);},2500);
   if(!state.settings.onboarded)setTimeout(startOnboarding,900);
   checkRecoveryUrl();
@@ -15071,10 +13202,8 @@ async function init(){
   window.addEventListener('online',()=>{updateConnBanner();toast('Back online','success');refreshAll();syncSpendCatField();});
   window.addEventListener('offline',()=>{updateConnBanner();syncSpendCatField();});
 }
-// ════════ SMART POLLING ════════
-// Timers only run while the tab is actually visible. Previously both intervals
-// ran forever in the background, refetching prices every 90s for a screen
-// nobody was looking at, battery on mobile, and API quota for nothing.
+// SMART POLLING
+// Timers run only while the tab is visible.
 let _priceTimer=null,_labelTimer=null;
 const PRICE_POLL_MS=90000,LABEL_POLL_MS=15000,STALE_AFTER_MS=120000;
 
@@ -15090,9 +13219,7 @@ function stopPolling(){
 function setupSmartPolling(){
   startPolling();
   document.addEventListener('visibilitychange',()=>{
-    // Timers already stopped when hidden, but the CSS animations (aura blur,
-    // ticker, sheen) kept compositing in the background and burning battery.
-    // The .page-hidden class parks them until the app is actually on screen.
+    // Pause CSS animations while hidden.
     document.body.classList.toggle('page-hidden',document.hidden);
     if(document.hidden){stopPolling();return;}
     // Back on screen: only spend a request if what we're showing is stale.
@@ -15106,15 +13233,7 @@ function setupSmartPolling(){
 }
 
 
-// Horizontal strips (top movers, category pills, the Assets stat row) clip
-// their last item with nothing on screen to say more is there. Tag each one
-// with which edge still has content behind it so the CSS mask can fade only
-// that edge, a scroller sitting at its end never dims the item you are
-// reading. One passive listener per scroller; no work while idle.
-// Every row that scrolls sideways, so the edge fade that says "there is more
-// this way" is the same everywhere rather than on whichever rows happened to
-// get listed. `.atype-row` was in here and matches nothing: the class is
-// `.asset-type-row`, so the one row inside the Add Asset sheet never faded.
+// Horizontal scrollers get edge fades only on the side with more content.
 const SCROLL_X_SELECTOR='.movers-scroll,.cat-bar,.pnl-filter-row,.assets-summary-scroll,'
   +'.ledger-filter-row,.asset-type-row,.tx-summary,.insights,.ledger-summary,.hcal-filter';
 const SCROLL_Y_SELECTOR='.sync-pending-list';
@@ -15125,12 +13244,8 @@ function updateScrollHint(node,vertical){
   const atStart=pos<=2,atEnd=pos>=slack-2;
   node.dataset.scroll=atStart?'end':(atEnd?'start':'middle');
 }
-// The stylesheet names every scroll box it knows about. This catches the
-// ones it cannot: a list given `overflow:auto` in a style attribute, built
-// by a render function, which no selector in the stylesheet ever sees. The
-// same rule applies to them - hand the gesture on when there is nothing left
-// to scroll - and the two exceptions stay exceptions: a sheet must not
-// scroll the page behind it, and the page must not rubber-band the document.
+// Inline-styled scrollers the stylesheet can't target: let the gesture chain to the page
+// at the end. Sheets, pages and the palette keep containment.
 const SCROLL_CHAIN_SKIP='.modal-body,.page,.modal-overlay,.cmdk';
 function relaxScrollChaining(root){
   const scope=root&&root.querySelectorAll?root:document;
@@ -15166,25 +13281,9 @@ function bindScrollHints(root){
 }
 window.addEventListener('resize',()=>bindScrollHints(),{passive:true});
 
-// ════════ SELLING, IN HINDSIGHT ════════
-// Every sale is a bet that the money is better off somewhere else. This is the
-// scoreboard for that bet: what the thing you sold is worth NOW against what
-// you actually got for it.
-//
-//     (your selling price - today's price) x quantity
-//
-// Positive means the price fell after you sold, so selling saved you that
-// much. Negative means it rose, and that is profit you would have had if you
-// had held. Deliberately signed the way the question is usually asked, "was
-// selling the right call", rather than as a portfolio return.
-//
-// What it CANNOT know, which is why the card says so out loud:
-//   - what you did with the money afterwards. Sell at a loss, reinvest well,
-//     and a red row here can still have been the right decision.
-//   - commission, DP charges and capital gains tax, so the amount that
-//     actually reached you was less than the sale price.
-//   - bonus shares, rights and splits, which change what one unit means and
-//     make a per-unit comparison across them meaningless.
+// SELLING, IN HINDSIGHT
+// (selling price - today's price) × quantity: positive means selling saved money.
+// Ignores what the money did next, fees and taxes, and splits or bonus shares.
 const HS_SRC={
   live:  {lbl:'live',       why:'',                              tone:'var(--green)'},
   nepse: {lbl:'NEPSE',      why:'',                              tone:'var(--green)'},
@@ -15192,9 +13291,7 @@ const HS_SRC={
   none:  {lbl:'no price',   why:'no current price for it yet',   tone:'var(--text3)'},
   gone:  {lbl:'removed',    why:'no longer in your assets',      tone:'var(--text3)'},
 };
-// Where a comparison price came from matters as much as the number. A figure
-// you typed in yourself is not a market price, and a row built on one must not
-// look like a row built on a live quote.
+// Track where the comparison price came from; typed prices are not market prices.
 function hindsightPrice(a,txName){
   if(a){
     if(a.coinId&&livePrices[a.coinId])return {price:getAssetCurrentPrice(a),src:'live'};
@@ -15204,16 +13301,13 @@ function hindsightPrice(a,txName){
       return {price:num(a.currentPrice),src:'manual'};
     return {price:null,src:'none'};
   }
-  // Sold out and then deleted. The exchange still quotes the symbol, so the
-  // row is answerable even though the holding is gone from the app.
+  // Deleted after selling: the exchange still quotes it.
   const k=String(txName||'').trim().toUpperCase();
   if(k&&nepsePrices[k]&&nepsePrices[k].price>0)
     return {price:nprToBase(nepsePrices[k].price),src:'nepse'};
   return {price:null,src:'gone'};
 }
-// One row per thing sold, not per sale. Selling the same share three times at
-// three prices is one decision about that share, so the rows carry the
-// quantity-weighted average price actually achieved across the lot.
+// One row per thing sold, with the quantity-weighted average sale price.
 function hindsightRows(){
   const groups=new Map();
   (state.transactions||[]).forEach(t=>{
@@ -15268,8 +13362,7 @@ function hindsightTotals(rows){
 
 let hsOpen=new Set(), hsFilter='all', hsShowAll=false;
 const HS_PAGE=5;
-// fmt() shortens anything over a thousand, which is right for a total and
-// wrong for a unit price sitting next to another unit price.
+// Unit prices unshortened.
 function fmtUnit(v){
   if(state.settings.hideBalance)return currentCurrency.sym+'••••';
   const r=getCurrRate(currentCurrency.code),x=num(v)*r;
@@ -15296,22 +13389,17 @@ function renderHindsight(){
   card.style.display='';
   const rows=all.filter(hsMatches);
   const T=hindsightTotals(rows);
-  // Only offer a filter for the categories actually sold. A row of tabs where
-  // four of five are always empty is just noise.
+  // Filters only for categories actually sold.
   const present=new Set(all.map(r=>['stock','crypto','commodity'].indexOf(r.category)<0?'other':r.category));
   {const _fr=el('hsFilterRow');
    if(_fr){
      const pills=(present.size>1?HS_FILTERS.filter(f=>f.k==='all'||present.has(f.k)):[]);
      _fr.innerHTML=pills.map(f=>`<button class="pnl-pill${f.k===hsFilter?' active':''}" onclick="setHsFilter('${f.k}')">${f.label}</button>`).join('');
-     // An empty filter row still reserves its 44px tap height, which read as a
-     // hole between the summary and the first row when only one kind of thing
-     // had been sold.
+     // Hide an empty filter row.
      _fr.style.display=pills.length?'':'none';
    }}
 
-  // Written through a helper that shrugs at a missing node. This card sits in
-  // the middle of renderAnalytics, and one absent element throwing here would
-  // take every chart below it down with the page.
+  // A missing node must not break renderAnalytics.
   const set=(id,txt)=>{const n=el(id);if(n)n.textContent=txt;};
   const net=T.net,pos=net>=0;
   set('hsNet',(pos?'':'−')+fmt(Math.abs(net)));
@@ -15323,8 +13411,7 @@ function renderHindsight(){
   set('hsCount',T.priced?plural(T.priced,'holding')+' compared'
     +(T.unpriced?', '+T.unpriced+' with no price to compare against':''):'');
 
-  // The single most useful sentence on the card: which call was the best one
-  // and which was the worst, without making anyone read the whole list.
+  // Best and worst call.
   const priced=rows.filter(r=>r.total!==null);
   const best=priced.length?priced[0]:null, worst=priced.length?priced[priced.length-1]:null;
   const vs=el('hsVerdict')||{style:{}};
@@ -15382,8 +13469,7 @@ function hsRowHtml(r){
     <span class="hs-tot" style="color:${up?'var(--green)':'var(--red)'}">${up?'+':'−'}${fmt(Math.abs(r.total))}</span>
   </div>${detail}`;
 }
-// Prices are the whole point, so the card can go and get fresh ones rather
-// than telling you they are an hour old and leaving it at that.
+// Fetch fresh prices on demand.
 async function refreshHindsight(){
   const b=el('hsRefresh');if(b)b.classList.add('spin');
   try{await Promise.all([fetchPrices(true),(typeof fetchNepse==='function')?fetchNepse(true):null]);}
@@ -15413,14 +13499,9 @@ function exportHindsightCSV(){
 }
 
 
-// ════════ ADMIN ════════
-// The panel itself is a separate page, admin.html, because it shares nothing
-// with the rest of this file: no holdings, no charts, no currency. Keeping it
-// here meant every person who never sees it still downloaded it.
-//
-// All that survives in the app is whether to show the way in. The real check
-// happens twice more: admin.html asks again on load, and api/admin.js asks the
-// database on every single call. A hidden link is a convenience, never a lock.
+// ADMIN
+// The panel is admin.html; this only decides whether to show the link. admin.html and
+// api/admin.js check again.
 let _isAdmin=false;
 function isAdmin(){return _isAdmin;}
 async function refreshAdminRole(){
@@ -15442,6 +13523,5 @@ function openAdminPage(){window.location.href='admin.html';}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 window.addEventListener('load',()=>{try{syncChartFallbacks();bindScrollHints();}catch(e){}});
-// Safety net: no matter what fails above (CDN blocked, network issues, etc.)
-// the splash screen must never stay up forever, force-hide it after 4s.
+// Never leave the splash up: force-hide after 4s.
 setTimeout(()=>{const sp=document.getElementById('splash');if(sp&&!sp.classList.contains('hide'))sp.classList.add('hide');},4000);

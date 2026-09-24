@@ -1,31 +1,13 @@
--- ════════════════════════════════════════════════════════════════════════
--- PAISAFOLIO, Supabase Schema
--- Run this whole file once in the Supabase SQL Editor (Project → SQL Editor
--- → New query). Safe to re-run any time, every statement is idempotent
--- (IF NOT EXISTS / CREATE OR REPLACE / DROP ... IF EXISTS throughout).
+-- ═══════════════════════════════════════════════════════════════════════
+-- PAISAFOLIO, Supabase schema
+-- Run the whole file in the Supabase SQL Editor. Idempotent: safe to re-run.
 --
--- Design principles this file follows:
---   • RLS on every table, always: a row is only ever visible/writable by
---     auth.uid() = user_id. No admin role, no service-side backdoor baked
---     into policies, this is personal financial data.
---   • Composite (user_id, id) primary keys, because ids are generated
---     client-side and are only guaranteed unique per-user.
---   • Loose but real integrity checks (no negative amounts, no garbage
---     enum values), permissive of NULL (the app legitimately sends
---     partial objects), strict about anything that IS present.
---   • Soft delete on the user-editable lists (assets/debts/goals/
---     recurring/transactions/spends/habits): a delete from the app still
---     removes the row from every normal query instantly, but the data is
---     recoverable for 30 days if a sync bug ever wipes something it
---     shouldn't.
---   • Every table carries the owner's username, filled in by a trigger, so
---     the Supabase table editor is readable without joining on a uuid. It
---     is a copy; profiles.username is the source of truth (part two, §11).
---
--- The file is in two parts. Part one is the original eight tables. Part two,
--- from §10, adds usernames, spends, habits, friends and sharing. Run the
--- whole file; both parts are idempotent.
--- ════════════════════════════════════════════════════════════════════════
+--   • RLS on every table: rows are visible/writable only where auth.uid() = user_id.
+--   • (user_id, id) primary keys: ids are generated client-side.
+--   • Checks reject bad values; NULL is allowed because the app sends partial objects.
+--   • Soft delete on user lists, recoverable for 30 days.
+--   • Every table carries the owner's username (copied by trigger, §11).
+-- ═══════════════════════════════════════════════════════════════════════
 
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -54,10 +36,7 @@
 -- drop function if exists public.shared_with_me(uuid, text) cascade;
 -- ─────────────────────────────────────────────────────────────────────────
 
--- No admin role exists in this schema, intentionally, see design note
--- above. This line is safe to keep even after the first run: it cleans up
--- the old admin table/function if this project ever had an earlier
--- version of this schema that included one.
+-- Removes the admin table/function from older versions of this schema.
 drop table if exists public.admins cascade;
 drop function if exists public.is_admin() cascade;
 
@@ -83,14 +62,10 @@ begin
   end loop;
 end $$;
 
--- ─────────────────────────────────────────────────────────────────────────
--- MIGRATION, repair the debts.type check constraint.
---
--- If this project was created with an earlier version of this file, the
--- debts table still carries `check (type in ('owed','lent'))`. `create table
--- if not exists` will NOT update it, so the fix has to be explicit. Without
--- this, every push containing an "I owe" debt fails and sync stays broken.
--- ─────────────────────────────────────────────────────────────────────────
+-- ───────────────────────────────────────────────────────────────────────
+-- MIGRATION: older projects have check (type in ('owed','lent')) on debts;
+-- `create table if not exists` will not update it, and "I owe" debts fail to sync.
+-- ───────────────────────────────────────────────────────────────────────
 do $$
 begin
   if to_regclass('public.debts') is not null then
@@ -180,11 +155,9 @@ create trigger trg_touch_profiles before update on public.profiles
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 2. ASSETS, every asset (crypto, stocks, gold, property, liquidity, etc.)
--- Category-specific fields (coinId, coinImage, propertyType, interest,
--- maturity, notes, ...) live in the JSONB `data` column exactly as the app
--- already shapes the object; the handful of fields useful to query/sort
--- directly are pulled out into real columns.
+-- 2. ASSETS
+-- Category-specific fields live in `data` as the app shapes them; queryable
+-- fields are real columns.
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists public.assets (
   id          text not null,
@@ -233,13 +206,7 @@ create trigger trg_touch_assets before update on public.assets
 create table if not exists public.debts (
   id          text not null,
   user_id     uuid not null references auth.users(id) on delete cascade,
-  -- ⚠️ FIXED: this used to be check (type in ('owed','lent')), but the app has
-  -- always written 'iowe' for "money I owe someone", 'lent' is not a value the
-  -- client ever produces. The result was that any user with even one "I owe"
-  -- debt hit a check-constraint violation on push, which failed the WHOLE
-  -- transaction batch, so *nothing* synced for them and the sync dot just sat
-  -- on error forever. 'lent' is kept as an accepted value purely so any row
-  -- written by an older build still validates.
+  -- 'iowe' is what the app writes for money I owe; 'lent' stays valid for old rows.
   type        text check (type is null or type in ('owed','iowe','lent')),
   name        text,
   amount      numeric check (amount is null or amount >= 0),
@@ -428,10 +395,7 @@ create trigger trg_touch_settings before update on public.settings
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 8. NETWORTH_HISTORY, daily net worth snapshots
--- One row per user per day; upserted on (user_id, snapshot_date). Split
--- out total_assets/total_debts alongside net_worth so a history chart can
--- show the two lines separately later without re-deriving them from `data`.
+-- 8. NETWORTH_HISTORY, one row per user per day
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists public.networth_history (
   id            bigint generated always as identity primary key,
@@ -468,14 +432,8 @@ create policy "networth_delete_own" on public.networth_history
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 9. HOUSEKEEPING, auto-purge soft-deleted rows after 30 days
--- Deletes from the app still disappear from every normal query instantly
--- (the app's sync layer already filters/deletes by id, this doesn't
--- require any app-side change to work exactly as before). This just adds
--- a 30-day undo window at the database level in case a sync bug or a
--- bad merge ever wipes something it shouldn't, call
--- public.purge_old_deleted() from a scheduled Supabase Edge Function /
--- cron if you want it to run automatically; harmless if you never do.
+-- 9. HOUSEKEEPING: purge soft-deleted rows after 30 days
+-- Call public.purge_old_deleted() from a scheduled job if you want it automatic.
 -- ═══════════════════════════════════════════════════════════════════════
 create or replace function public.purge_old_deleted()
 returns void
@@ -492,12 +450,8 @@ begin
 end;
 $$;
 
--- ⚠️ SECURITY: this function is `security definer`, so it runs with the
--- owner's privileges and bypasses RLS entirely. By default Postgres grants
--- EXECUTE on new functions to PUBLIC, which means any anon/authenticated
--- caller could invoke it over PostgREST (`/rest/v1/rpc/purge_old_deleted`)
--- and permanently destroy every user's 30-day recovery window on demand.
--- Revoke it and grant only to service_role (cron / Edge Function).
+-- security definer bypasses RLS, and new functions are executable by PUBLIC by
+-- default. Only service_role may call it.
 revoke all on function public.purge_old_deleted() from public;
 revoke all on function public.purge_old_deleted() from anon;
 revoke all on function public.purge_old_deleted() from authenticated;
@@ -509,38 +463,26 @@ revoke all on function public.handle_new_user() from public;
 revoke all on function public.handle_new_user() from anon;
 revoke all on function public.handle_new_user() from authenticated;
 
--- ════════════════════════════════════════════════════════════════════════
--- DONE. Tables: profiles, assets, debts, goals, recurring, transactions,
--- settings, networth_history, every one RLS-locked to auth.uid() = user_id,
--- no exceptions, no admin role. New signups get a profile + settings row
--- automatically. Amounts/quantities can't go negative; debt `type` and
--- settings `theme` are constrained to known values; NULL is always allowed
--- since the app sends partial objects during normal use.
--- ════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════
+-- DONE (part one).
+-- ═══════════════════════════════════════════════════════════════════════
 
--- ════════════════════════════════════════════════════════════════════════
--- PART TWO, added later. Everything above still applies unchanged; this
--- section adds the pieces the app grew into and makes the tables legible
--- in the Supabase table editor.
---
---   10. profiles gains a username, a fonts blob and a base currency
---   11. every table carries the owner's username, filled in automatically
---   12. spends, spending and income, out of the transactions table
---   13. habits, habit tracker, out of the settings blob
---   14. friends and sharing, the groundwork for showing a friend a
---       portfolio, off by default and read-only
---   15. comments, what every table and the non-obvious columns are for,
---       so the table editor explains itself
--- ════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════
+-- PART TWO
+--   10. usernames, fonts and base currency on profiles
+--   11. owner username on every table
+--   12. spends
+--   13. habits
+--   14. friends and sharing
+--   15. table comments
+--   16. roles and AI providers
+--   17. valuation recipes (background snapshots)
+-- ═══════════════════════════════════════════════════════════════════════
 
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 10. PROFILES, EXTENDED
---
--- `username` is the handle a person is known by: it is what makes a row in
--- any other table readable at a glance, and it is what a friend request is
--- addressed to. Lowercase, 3-24 characters, letters/digits/underscore, and
--- unique across the whole project.
+-- `username`: lowercase, 3-24 of [a-z0-9_], unique. Shown to other users.
 -- ═══════════════════════════════════════════════════════════════════════
 alter table public.profiles add column if not exists username      text;
 alter table public.profiles add column if not exists fonts         jsonb not null default '{}';
@@ -560,15 +502,8 @@ create unique index if not exists profiles_username_key on public.profiles(usern
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 11. USERNAME ON EVERY TABLE
---
--- Opening `assets` in the Supabase table editor showed a wall of uuids and
--- no way to tell whose row was whose without joining by hand. Every table
--- now carries the owner's username.
---
--- It is a *copy*, not a source of truth: profiles.username is the real
--- value, and these are filled in by a trigger on insert and update so the
--- app never sends the field and it cannot drift. Renaming yourself rewrites
--- them all (see sync_username_everywhere).
+-- A trigger copies profiles.username onto each row so the table editor is
+-- readable. profiles.username is the source; renaming rewrites the copies.
 -- ═══════════════════════════════════════════════════════════════════════
 do $$
 declare t text;
@@ -620,11 +555,7 @@ revoke all on function public.sync_username_everywhere() from public, anon, auth
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 12. SPENDS, everyday spending and income
---
--- These used to be stuffed into `transactions` with type = 'spend', which
--- meant the investment ledger and the household budget shared one table and
--- neither read cleanly. They are different things and now live apart.
+-- 12. SPENDS, everyday spending and income (formerly transactions type='spend')
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists public.spends (
   id          text not null,
@@ -670,16 +601,8 @@ create trigger trg_touch_spends before update on public.spends
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 13. HABITS, the habit tracker
---
--- Habits rode inside the settings JSON blob, which is why syncing them
--- needed a hand-written merge in the client: two devices editing settings
--- would each overwrite the other's habits wholesale. As real rows they
--- merge the same way every other list does.
---
--- The daily ticks stay as one JSON object per habit ({"2026-09-03": true})
--- rather than a row per day: a year of five habits is 1,825 rows to say
--- almost nothing, and the app always reads a whole habit at once.
+-- 13. HABITS
+-- Daily ticks stay one JSON object per habit ({"2026-09-03": true}).
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists public.habits (
   id          text not null,
@@ -724,17 +647,9 @@ create trigger trg_touch_habits before update on public.habits
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 14. FRIENDS AND SHARING
---
--- Two tables, deliberately separate: being someone's friend grants nothing
--- on its own, and a share can be revoked without unfriending anybody.
---
---   friendships, one row per direction, so a friendship is two rows and
---                    "accepted" is not something one side can fake.
---   portfolio_shares, an explicit grant: this user lets that user read
---                    these parts of their data, read-only, until revoked.
---
--- Nothing is shared by default. The scopes column names what is visible, so
--- "my net worth but not my debts" is expressible.
+-- friendships: one row per direction; both must say accepted.
+-- portfolio_shares: explicit, read-only, revocable grants by scope. Nothing is
+-- shared by default.
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists public.friendships (
   user_id     uuid not null references auth.users(id) on delete cascade,
@@ -813,9 +728,7 @@ create trigger trg_touch_shares before update on public.portfolio_shares
   for each row execute function public.touch_updated_at();
 
 
--- Is `owner` sharing `scope` with the person making this request?
--- Both directions of the friendship must be accepted, so an unanswered
--- request grants nothing even if a share row exists.
+-- Is `owner` sharing `scope` with the caller? Both friendship rows must be accepted.
 create or replace function public.shared_with_me(owner uuid, scope text)
 returns boolean
 language sql
@@ -835,15 +748,7 @@ as $$
 $$;
 grant execute on function public.shared_with_me(uuid, text) to authenticated;
 
--- The base currency behind a shared net-worth figure. Without it a number in
--- someone else's circle card is just digits: theirs might be rupees and yours
--- dollars, and putting your own symbol on their figure reads as a conversion
--- that never happened.
---
--- Deliberately a function rather than another column on public_profiles.
--- That view is readable by every signed-in user; this answers only for
--- someone who can already see the figure it describes, and returns null to
--- everyone else.
+-- The owner's base currency, only for someone allowed to see their figure.
 create or replace function public.shared_currency(owner uuid)
 returns text
 language sql
@@ -858,9 +763,7 @@ as $$
 $$;
 grant execute on function public.shared_currency(uuid) to authenticated;
 
--- The read-only windows a share opens. These are additional SELECT policies:
--- the owner's own "select_own" policy is untouched, and no INSERT, UPDATE or
--- DELETE policy anywhere mentions a viewer, so a share can never write.
+-- Extra SELECT policies for viewers. No write policy mentions a viewer.
 drop policy if exists "assets_select_shared" on public.assets;
 create policy "assets_select_shared" on public.assets
   for select using (public.shared_with_me(user_id, 'assets'));
@@ -885,9 +788,7 @@ drop policy if exists "networth_select_shared" on public.networth_history;
 create policy "networth_select_shared" on public.networth_history
   for select using (public.shared_with_me(user_id, 'networth'));
 
--- A username has to be discoverable for anyone to be added as a friend, but
--- an email address does not. This view exposes the handle and display name
--- and nothing else, and is the only way one user ever sees another's row.
+-- Handle and display name only (never email): how users find each other.
 create or replace view public.public_profiles
 with (security_invoker = off) as
   select user_id, username, full_name, avatar_url
@@ -953,8 +854,7 @@ grant execute on function public.purge_old_deleted() to service_role;
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 15. COMMENTS, the table editor should say what a table is for without
--- anyone having to open this file.
+-- 15. TABLE COMMENTS, so the table editor explains each table
 -- ═══════════════════════════════════════════════════════════════════════
 comment on table public.profiles         is 'One row per person: handle, name, and the preferences that describe the account rather than a device.';
 comment on table public.assets           is 'Everything owned: crypto, stocks, commodities, property, bank balances and cash.';
@@ -978,25 +878,12 @@ comment on column public.spends.account_id      is 'The liquidity asset the mone
 comment on column public.habits.log             is 'Daily ticks: {"YYYY-MM-DD": true}. One object per habit rather than a row per day.';
 comment on column public.portfolio_shares.scopes is 'Any of networth, assets, goals, habits, spends, debts. Empty array shares nothing.';
 
--- =======================================================================
--- 13. ROLES AND AI PROVIDERS
--- =======================================================================
--- Two things that must never be readable by the browser, for two different
--- reasons.
---
--- profiles.role decides who is an administrator. A client that could UPDATE
--- it could make itself one, so no client policy grants UPDATE on it: the
--- column is written from the admin API with the service role, or by hand
--- here. Reading your own role is fine and is how the app decides whether to
--- show the Admin tab.
---
--- ai_providers holds the API keys for every AI service. It has NO client
--- policy at all, which means RLS denies every request the anon key can make.
--- That is deliberate and load-bearing: the anon key ships inside supabase.js
--- and is public by design, so a table the browser can SELECT is a table the
--- whole internet can SELECT. Only api/_aiconfig.js reads this, server-side,
--- with the service role.
--- =======================================================================
+-- ═══════════════════════════════════════════════════════════════════════
+-- 16. ROLES AND AI PROVIDERS
+-- profiles.role: no client policy may UPDATE it (it grants admin).
+-- ai_providers: holds API keys and has NO client policy, so the public anon key
+-- can never read it. Only api/_aiconfig.js reads it, with the service role.
+-- ═══════════════════════════════════════════════════════════════════════
 
 alter table public.profiles
   add column if not exists role text not null default 'user';
@@ -1024,9 +911,7 @@ create table if not exists public.ai_providers (
 
 alter table public.ai_providers enable row level security;
 
--- No policies on purpose. With RLS on and nothing granted, every request
--- made with the anon key is refused, and the service role bypasses RLS
--- entirely. Adding a "read own" policy here would defeat the whole point.
+-- No policies on purpose: the anon key is refused, the service role bypasses RLS.
 
 revoke all on public.ai_providers from anon, authenticated;
 
@@ -1036,20 +921,11 @@ create trigger trg_touch_ai_providers before update on public.ai_providers
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 14. VALUATION RECIPES, so the chart keeps moving with the app closed
+-- 17. VALUATION RECIPES, so snapshots continue while the app is closed
+-- Written on every sync: per holding, the feed price used (p) and its value then
+-- (v), plus `fixed` for everything unpriced. api/snapshot.js scales each leg by
+-- newPrice / p. No names, notes or transactions.
 -- ═══════════════════════════════════════════════════════════════════════
--- A snapshot used to happen only while the app was open, which meant a day
--- you never opened it had no reading and the line ran straight across it.
---
--- The app writes one row here on every sync: for each holding, the price
--- reading it last used and what that holding was worth at that reading, plus
--- one `fixed` number covering everything with no live price (bank balances,
--- land, debts). The scheduled job in api/snapshot.js re-reads the same feeds
--- and scales each leg by newPrice / oldPrice, which is enough to re-value the
--- whole portfolio without a second copy of how any of it is worked out.
---
--- This holds no names, no notes, no transactions: a currency code, a total,
--- and a list of (asset id, feed key, two numbers).
 create table if not exists public.valuation_recipes (
   user_id     uuid primary key references auth.users(id) on delete cascade,
   base_ccy    text not null default 'NPR',
@@ -1082,39 +958,22 @@ drop trigger if exists trg_touch_valuation_recipes on public.valuation_recipes;
 create trigger trg_touch_valuation_recipes before update on public.valuation_recipes
   for each row execute function public.touch_updated_at();
 
--- A recipe goes stale: if the app has not synced for a fortnight the holdings
--- behind it may be nothing like what is actually held, and a job that keeps
--- re-pricing it is drawing a line about a portfolio that no longer exists.
--- The job skips anything older than this; the index is what makes that cheap.
+-- The job skips recipes older than its cut-off; this index keeps that cheap.
 create index if not exists valuation_recipes_captured_idx
   on public.valuation_recipes(captured_at);
 
--- The row the job writes into carries today's per-holding values and today's
--- two-hourly readings, so the existing pull picks both up with no change.
--- `snapshot_date <= current_date` on networth_history is deliberate and still
--- correct here: the job only ever writes today.
+-- The job writes today's row (per-holding values and two-hourly readings), which
+-- the app's normal pull already reads.
 
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 15. THE SCHEDULE, every two hours
+-- 18. THE SCHEDULE: see setup-snapshot.sql (kept separate so re-running this
+-- file never re-points a live schedule).
 -- ═══════════════════════════════════════════════════════════════════════
--- It does not live in this file. `setup-snapshot.sql`, beside this one, is
--- a ready-to-run file with two lines to fill in: your deployment URL and
--- your CRON_SECRET. It also has the queries for checking it afterwards.
---
--- It is kept separate because this file is meant to be re-run whenever the
--- schema changes, and re-running it should never silently re-point a live
--- schedule at a different deployment.
 
 
--- ════════════════════════════════════════════════════════════════════════
--- DONE (part two). Tables now: profiles, assets, debts, goals, recurring,
--- transactions, spends, habits, settings, networth_history, friendships,
--- portfolio_shares, ai_providers, valuation_recipes. Every one RLS-locked to
--- auth.uid(); the only way anyone
--- else reads a row is an accepted friendship plus an explicit share, and
--- that path is SELECT only. The scheduled snapshot job reads recipes and
--- writes networth_history with the service role, which bypasses RLS: it is
--- the only thing that ever touches another user's row, it reads no names and
--- no notes, and it is reachable only with CRON_SECRET.
--- ════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════
+-- DONE (part two). Every table is RLS-locked to auth.uid(). Other users can only
+-- SELECT through an accepted friendship plus a share. The snapshot job uses the
+-- service role, reads no names or notes, and needs CRON_SECRET.
+-- ═══════════════════════════════════════════════════════════════════════

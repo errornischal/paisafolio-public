@@ -1,22 +1,4 @@
-// api/coinimage.js — Vercel Serverless Function
-// Proxies coin images from coin-images.coingecko.com
-// so Nepal IPs (which are blocked) can load them.
-//
-// Usage: /api/coinimage?url=https://coin-images.coingecko.com/coins/images/1/thumb/bitcoin.png
-//
-// HARDENING NOTES (v2):
-//  • `req.query.url` can be an array (`?url=a&url=b`). The old code called
-//    `.startsWith()` on it *outside* the try block, so that request threw an
-//    uncaught TypeError and returned a 500. Now collapsed to a string first.
-//  • Validation was a string prefix check. Now the URL is actually parsed and
-//    the hostname compared exactly, which can't be fooled by odd encodings.
-//  • `redirect: 'manual'` — previously fetch followed redirects automatically,
-//    so if the upstream ever 302'd somewhere else we'd happily proxy it. This
-//    is the classic SSRF escape hatch and it's now closed.
-//  • Upstream Content-Type is no longer echoed blindly. Serving, say,
-//    `text/html` from our own origin would turn this into a stored-XSS vector;
-//    only real image types are allowed through.
-//  • Added a timeout and a response size cap.
+// Proxies coin images, which are blocked from Nepal. The host is matched exactly, redirects are not followed, and only image types are served.
 
 const ALLOWED_HOST = 'coin-images.coingecko.com';
 const TIMEOUT_MS = 8000;

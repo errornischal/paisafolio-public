@@ -1,39 +1,9 @@
-// api/nepse.js — Vercel Serverless Function
-// Returns last traded prices for NEPSE-listed shares, in NPR.
-//
-// WHY THIS EXISTS AT ALL, rather than fetching from app.js:
-// Crypto works from the browser because CoinGecko answers with
-// `Access-Control-Allow-Origin: *`. Nothing that carries NEPSE prices does.
-// NEPSE's own JSON backend sends no CORS headers, rejects non-browser
-// clients, and gates its endpoints behind a token computed in WebAssembly;
-// every third party (broker portals, aggregators) is an HTML page with no
-// CORS either. A static PWA cannot read any of them. A server can, because
-// the same-origin policy is a browser rule and this is not a browser.
-//
-// WHERE THE PRICES COME FROM:
-// There is no official public NEPSE API, so this reads a public page that
-// prints the day's prices in a table, the same way api/metals.js reads gold
-// and silver rates. The sources are below, in the file, because none of this
-// is secret: they are public URLs anyone can open. A Vercel environment
-// variable would be the right home for a key, and the wrong home for this,
-// since changing one needs a redeploy anyway and a line of code at least
-// leaves a trace in the history of what changed and when.
-//
-// Tried in order. These sites are unofficial and they do go down; a second
-// one costs nothing and means a bad afternoon at one is not a bad afternoon
-// for the app.
+// Last traded NEPSE prices in NPR, read server-side: no NEPSE source sends CORS headers, so the browser cannot. Sources are tried in order.
 const DEFAULT_SCRAPE_URLS = [
   'https://merolagani.com/LatestMarket.aspx',
   'https://www.sharesansar.com/today-share-price',
 ];
-// Overrides, for pointing this somewhere else without editing the file. All
-// optional, and all of them empty is the normal case.
-//   NEPSE_SCRAPE_URL   page(s) to read instead of the two above, comma-separated
-//   NEPSE_API_URL      a JSON endpoint, if a working one ever turns up
-//   NEPSE_API_HEADERS  JSON, auth for that endpoint: {"Authorization":"Bearer ..."}
-//   NEPSE_API_MAP      JSON, when its field names cannot be guessed:
-//                      {"list":"data","symbol":"symbol",
-//                       "price":"lastTradedPrice","change":"percentChange"}
+// Optional overrides: NEPSE_SCRAPE_URL, NEPSE_API_URL, NEPSE_API_HEADERS (JSON), NEPSE_API_MAP (JSON field names).
 
 const DEFAULT_ORIGINS = [
   'https://nepbytebazaar.kesug.com',
@@ -60,9 +30,7 @@ function allowedOrigin(origin) {
   return null;
 }
 
-// The shape of the answer is not knowable in advance, so rather than demand
-// one, look for the fields under the names they are usually given. Checked
-// in order, so the more specific name wins over the vaguer one.
+// Field names are guessed; more specific names come first.
 const SYMBOL_KEYS = ['symbol', 'sym', 'ticker', 'scrip', 'stockSymbol', 'securitySymbol', 'securityId', 'code'];
 const PRICE_KEYS = ['lastTradedPrice', 'lasttradedprice', 'ltp', 'lastPrice', 'closePrice',
   'close', 'lastTradedPriceValue', 'currentPrice', 'price', 'marketPrice'];
@@ -82,8 +50,6 @@ function pick(row, keys) {
   }
   return undefined;
 }
-// "1,234.50" and "1234.5" and 1234.5 all mean the same thing. A percentage
-// may arrive as "-2.35%" or as a bare number.
 function toNum(v) {
   if (typeof v === 'number') return isFinite(v) ? v : null;
   if (typeof v !== 'string') return null;
@@ -122,12 +88,9 @@ function normalise(body, map) {
     if (!row || typeof row !== 'object') continue;
     const symRaw = map.symbol ? row[map.symbol] : (pick(row, SYMBOL_KEYS) ?? row.__key);
     const sym = String(symRaw || '').trim().toUpperCase();
-    // A symbol is letters and digits. Anything else is a header row, a total,
-    // or a field that only looked like a symbol.
     if (!sym || !/^[A-Z0-9._-]{1,20}$/.test(sym)) continue;
     const price = toNum(map.price ? row[map.price] : pick(row, PRICE_KEYS));
-    // Zero is what an untraded scrip reports, and it is not a price. Carrying
-    // it through would mark a holding as worthless.
+    // Zero is an untraded scrip, not a price.
     if (price === null || price <= 0) continue;
     const change = toNum(map.change ? row[map.change] : pick(row, CHANGE_KEYS));
     const name = map.name ? row[map.name] : pick(row, NAME_KEYS);
@@ -140,18 +103,7 @@ function normalise(body, map) {
   return Object.keys(out).length ? out : null;
 }
 
-// ── Reading a page instead of an API ─────────────────────────────────
-// There is no free official NEPSE API. What there is: public pages that
-// print the day's prices in an ordinary HTML table. Reading one server-side
-// is the same thing api/metals.js already does for gold and silver, it needs
-// no key, no third service and no account, and it is free for as long as the
-// page exists.
-//
-// The parser is deliberately generic. Rather than match one site's markup,
-// which would break the first time they touch their template, it looks at
-// every table on the page, works out which columns are the symbol and the
-// price from the header row, and reads the rows under them. That survives a
-// redesign and works on more than one site without a rewrite.
+// Generic table reader: finds symbol/price columns from each table's header row, so it survives redesigns.
 const SCRAPE_HOSTS = [
   'merolagani.com', 'www.merolagani.com',
   'sharesansar.com', 'www.sharesansar.com',
@@ -174,10 +126,7 @@ const cellText = (html) => decodeEntities(String(html).replace(/<[^>]*>/g, ' '))
 
 // Column headers, as the sites that carry this data tend to word them.
 const H_SYMBOL = /^(symbol|scrip|stock|company|securities?|traded companies)$/i;
-// Ranked, not first-match. ShareSansar's table carries Close at column 6 and
-// LTP at column 7; taking whichever appeared first meant reading the closing
-// price while the market was still open. The last traded price is the live
-// one, so it wins wherever both are offered.
+// Ranked: LTP beats Close, which is stale while the market is open.
 const H_PRICE_RANK = [
   /^ltp$/i, /last\s*traded\s*price/i, /^last\s*price$/i,
   /^close$/i, /clos(e|ing)\s*price/i, /market\s*price/i,
@@ -204,9 +153,7 @@ function parseRows(tableHtml) {
   }
   return rows;
 }
-// `diag`, when passed, comes back describing which table was chosen and which
-// column was read as what. Guessing a column is the one way this can be
-// confidently wrong, so it has to be checkable before anyone trusts it.
+// `diag` reports which table and columns were chosen, so a guess can be checked.
 function scrapePrices(html, diag) {
   let bestDiag = null;
   const clean = String(html)
@@ -237,14 +184,12 @@ function scrapePrices(html, diag) {
       const sym = String(cells[iSym] || '').trim().toUpperCase();
       if (!/^[A-Z0-9._-]{2,20}$/.test(sym)) continue;
       const price = toNum(cells[iPrice]);
-      // A price of zero is an untraded scrip. Anything above a crore per share
-      // is a parse that has picked up the wrong column, not a share price.
+      // Zero is untraded; above a crore is the wrong column.
       if (price === null || price <= 0 || price > 1e7) continue;
       const change = iChg >= 0 ? toNum(cells[iChg]) : null;
       out[sym] = { price, change: change === null ? 0 : change };
     }
-    // A real day's table is hundreds of rows. A handful means the wrong table
-    // was picked, and a wrong price is worse than no price.
+    // A real day's table is hundreds of rows; a handful means the wrong table.
     if (Object.keys(out).length >= 20 && (!best || Object.keys(out).length > Object.keys(best).length)) {
       best = out;
       bestDiag = { header: rows[hi], columns: { symbol: iSym, price: iPrice, change: iChg },
@@ -255,15 +200,12 @@ function scrapePrices(html, diag) {
   return best;
 }
 
-// Last good answer, so one bad minute upstream serves a slightly old price
-// rather than none. The app is told how old it is and says so.
+// Served when upstream fails, with its age.
 let lastGood = null;             // { prices, ts }
 const FRESH_MS = 60 * 1000;      // reuse within a minute rather than refetch
 const STALE_OK_MS = 24 * 60 * 60 * 1000;
 
-// Shared across everything this instance serves. Not a real rate limiter,
-// serverless spreads requests over many instances, but it keeps one page from
-// hammering the upstream.
+// Per-instance only; keeps one client from hammering upstream.
 const hits = new Map();
 function overLimit(ip) {
   const now = Date.now(), win = 60_000, max = 30;
@@ -303,16 +245,12 @@ module.exports = async (req, res) => {
   if (overLimit(ip)) return res.status(429).json({ error: 'Too many requests.' });
 
   const url = (process.env.NEPSE_API_URL || '').trim();
-  // Unset means the built-in sources. "off" means off, so there is a way to
-  // stop it reaching out at all without editing the file.
+  // Unset uses the built-in sources; "off" disables.
   const scrapeEnv = (process.env.NEPSE_SCRAPE_URL || '').trim();
   const scrapeOff = /^(off|none|false|0)$/i.test(scrapeEnv);
   const scrapeUrl = scrapeOff ? '' : (scrapeEnv || DEFAULT_SCRAPE_URLS.join(','));
 
-  // A look at what a candidate source actually returns, so a page can be
-  // checked from a phone without deploying anything. Restricted to the hosts
-  // that carry this data: an endpoint that will fetch any URL you hand it is
-  // a way to make this server knock on doors on someone else's behalf.
+  // Probe is limited to known hosts so this cannot fetch arbitrary URLs.
   if (req.query && req.query.probe) {
     const target = String(req.query.probe);
     if (!scrapeHostAllowed(target)) {
@@ -348,9 +286,6 @@ module.exports = async (req, res) => {
   }
 
   if (!url && !scrapeUrl) {
-    // Only reachable if someone deliberately blanks the sources. The app asks
-    // on every price refresh, and a feature switched off is not a failure to
-    // report.
     return res.status(200).json({ configured: false, prices: {}, asOf: null });
   }
 
@@ -364,9 +299,6 @@ module.exports = async (req, res) => {
 
   const map = parseJsonEnv('NEPSE_API_MAP');
   const scraping = !url;
-  // A comma-separated list is allowed, tried in order. These sources are
-  // unofficial and go down; a second one costs nothing to name and means a
-  // bad afternoon at one site is not a bad afternoon for the app.
   const targets = scraping
     ? scrapeUrl.split(',').map((x) => x.trim()).filter(Boolean)
     : [url];
@@ -378,9 +310,7 @@ module.exports = async (req, res) => {
     }
   }
   const headers = scraping
-    // A page served to a browser, asked for the way a browser asks. Sites that
-    // return a stub to anything else are not being difficult, they are being
-    // asked the wrong question.
+    // Some sites serve a stub to non-browser user agents.
     ? { 'user-agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
         accept: 'text/html,application/xhtml+xml' }
     : { accept: 'application/json', ...parseJsonEnv('NEPSE_API_HEADERS') };
@@ -408,9 +338,6 @@ module.exports = async (req, res) => {
         } else {
           let body = null;
           try { body = JSON.parse(text); } catch {
-            // An HTML page, which is what an expired endpoint serves. Not
-            // something to parse hopefully and guess at. If a page is what
-            // you meant, it goes in NEPSE_SCRAPE_URL instead.
             console.error('[nepse] not JSON:', text.slice(0, 120));
             troubles.push('that is a page, not a JSON endpoint, put it in NEPSE_SCRAPE_URL');
             continue;
@@ -437,8 +364,7 @@ module.exports = async (req, res) => {
   }
 };
 
-// A day-old last traded price is worth more than nothing, as long as the app
-// is told how old it is and can say so on screen.
+// A day-old price beats none, as long as the app is told its age.
 function serveStaleOrFail(res, reason) {
   if (lastGood && (Date.now() - lastGood.ts) < STALE_OK_MS) {
     return res.status(200).json({

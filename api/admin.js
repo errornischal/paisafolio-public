@@ -1,13 +1,5 @@
-// ════════════════════════════════════════════════════════════════════════
-// ADMIN API
-// ════════════════════════════════════════════════════════════════════════
-// Everything here requires a real Supabase session belonging to someone whose
-// profiles.role is 'admin', checked server-side on every single call. There is
-// no "admin mode" flag the browser can set.
-//
-// Provider keys are write-only across this boundary: they go in, they are
-// never sent back, and the UI shows a mask. An admin who forgets a key pastes
-// a new one rather than reading the old one out of their own dashboard.
+// Admin API. Every call is re-checked server-side against profiles.role.
+// Provider keys are write-only: stored, never returned.
 
 const { requireAdmin, sql, maskKey, configured } = require('./_adminAuth.js');
 const { PROVIDERS, PROVIDER_IDS, listModels, callProvider } = require('./_providers.js');
@@ -38,7 +30,7 @@ async function rows(path) {
   return r.json();
 }
 
-// ── the actions ────────────────────────────────────────────────────────
+// the actions
 const ACTIONS = {
   // Everything the admin page needs to draw itself, in one round trip.
   async overview() {
@@ -57,8 +49,7 @@ const ACTIONS = {
         jobs: cfg.jobs || null,
       };
     });
-    // What WOULD serve the next request of each kind, so the routing is
-    // visible rather than something you have to take on trust.
+    // Which provider would serve the next request of each kind.
     const plan = {};
     ['chat', 'quick'].forEach((job) => {
       plan[job] = planFor(job, config).map((r) => ({
@@ -68,8 +59,7 @@ const ACTIONS = {
     return { providers, plan, storage: configured() ? 'database' : 'environment' };
   },
 
-  // Save one provider. An empty api_key means "leave whatever is stored",
-  // so the admin can change a model list without retyping the key.
+  // An empty api_key keeps the stored one.
   async saveProvider(body) {
     const id = String(body.provider || '');
     if (PROVIDER_IDS.indexOf(id) < 0) throw Object.assign(new Error('Unknown provider'), { status: 400 });
@@ -107,8 +97,7 @@ const ACTIONS = {
     return { cleared: id };
   },
 
-  // Ask the provider what this key can actually run today. This is the whole
-  // answer to model ids going stale.
+  // Live model list for this key.
   async models(body) {
     const id = String(body.provider || '');
     const config = await loadConfig(true);
@@ -118,8 +107,7 @@ const ACTIONS = {
     return { provider: id, models: list, count: list.length };
   },
 
-  // Send one real question through one provider and report exactly what came
-  // back, so a dead key is obvious here rather than in front of a user.
+  // One real request through one provider.
   async test(body) {
     const id = String(body.provider || '');
     const config = await loadConfig(true);
@@ -141,8 +129,7 @@ const ACTIONS = {
     }
   },
 
-  // Who uses this app. Counts only, plus the roster, never anybody's figures:
-  // being an administrator is not a reason to read someone's holdings.
+  // Roster and counts only, never anyone's figures.
   async users() {
     const list = await rows('profiles?select=user_id,email,full_name,username,role,currency,created_at,updated_at&order=created_at.desc&limit=500');
     return { users: list, count: list.length };
@@ -160,8 +147,7 @@ const ACTIONS = {
     return { userId: id, role };
   },
 
-  // Row counts per table, which is the honest version of "how is the app
-  // doing" without reading anybody's contents.
+  // Row counts per table, never contents.
   async stats() {
     const tables = ['profiles', 'assets', 'transactions', 'spends', 'debts', 'goals', 'recurring', 'habits'];
     const out = {};
