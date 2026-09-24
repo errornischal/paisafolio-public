@@ -1,6 +1,6 @@
 // Network-first for the app shell, cache-first for fonts, network-only for live APIs. Bump VERSION on every deploy.
 
-const VERSION = 'paisafolio-v5.66.0';
+const VERSION = 'paisafolio-v5.67.0';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 

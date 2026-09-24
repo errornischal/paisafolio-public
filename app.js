@@ -3963,20 +3963,72 @@ function txQtyInBase(t,asset){
 }
 // `opts.emptied`: the last transaction was just deleted, so zero is correct (unlike a
 // holding that never had any).
+function ledgerTxs(asset){
+  return txsForAsset(asset).map((t,i)=>({t,i})).sort((a,b)=>(new Date(a.t.date)-new Date(b.t.date))||(a.i-b.i)).map(x=>x.t);
+}
+// Average-cost replay of a holding's ledger. `open` is an optional lot placed first.
+function replayLedger(asset,txs,open){
+  let qty=open?open.qty:0,avg=open&&open.qty>0?open.cost/open.qty:0;
+  const realized=[];
+  txs.forEach(t=>{
+    if(t.txType==='income')return;
+    const q=txQtyInBase(t,asset);
+    if(t.txType==='sell'){
+      realized.push([t,(t.amount||0)-avg*q]);
+      qty=Math.max(0,qty-q);
+    }else{
+      const newQty=qty+q;
+      avg=newQty>0?((avg*qty)+(t.amount||0))/newQty:avg;
+      qty=newQty;
+    }
+  });
+  return {qty,avg,realized};
+}
+// A holding typed in by hand has no ledger behind it, so replaying the ledger alone
+// would forget it. Before anything replays, record whatever the ledger does not explain
+// as an opening entry dated before the first transaction.
+function reconcileLedger(asset){
+  if(!asset||asset.category==='liquidity')return;
+  const txs=ledgerTxs(asset);
+  const first=txs.length?new Date(new Date(txs[0].date).getTime()-1000).toISOString():null;
+  const date=(asset.date&&(!first||new Date(asset.date)<new Date(first)))?asset.date:(first||asset.date||new Date().toISOString());
+  const base={id:uid(),assetId:asset.id,name:asset.name,category:asset.category,icon:asset.icon,
+    coinImage:asset.coinImage||null,txType:'buy',opening:true,notes:'Opening balance',date};
+  if(!assetNoQty(asset)&&asset.qty!=null){
+    const held=num(asset.qty);
+    let net=0;
+    txs.forEach(t=>{if(t.txType==='income')return;const q=txQtyInBase(t,asset);net+=t.txType==='sell'?-q:q;});
+    const q0=held-net;
+    if(!(q0>1e-9*Math.max(1,held)))return;
+    // Final cost is linear in the opening lot's cost, so two replays pin it exactly.
+    const r0=replayLedger(asset,txs,{qty:q0,cost:0}),r1=replayLedger(asset,txs,{qty:q0,cost:1});
+    const c0=r0.avg*r0.qty,slope=r1.avg*r1.qty-c0;
+    let cost=slope>1e-12?(held*num(asset.buyPrice)-c0)/slope:q0*num(asset.buyPrice);
+    if(!(cost>=0))cost=q0*num(asset.buyPrice);
+    q0&&state.transactions.push({...base,qty:+q0.toFixed(10),enteredQty:+q0.toFixed(10),enteredUnit:asset.unit||null,
+      perUnit:cost/q0,amount:cost});
+    return;
+  }
+  if(txs.some(t=>t.txType==='sell'))return;
+  const held=num(asset.buyPrice)*assetUnits(asset);
+  const paid=txs.reduce((sum,t)=>sum+(t.txType==='buy'?(t.amount||0):0),0);
+  if(held-paid>0.005)state.transactions.push({...base,qty:null,enteredQty:null,enteredUnit:null,perUnit:null,amount:held-paid});
+}
+// `opts.emptied`: nothing but income is left because the caller just deleted the rest,
+// so zero is correct (unlike a holding that never had any).
 function recalcAssetFromTransactions(asset,opts){
-  if(asset.category==='liquidity')return; // liquidity has no transaction-based qty model
-  const txs=txsForAsset(asset).map((t,i)=>({t,i})).sort((a,b)=>(new Date(a.t.date)-new Date(b.t.date))||(a.i-b.i)).map(x=>x.t);
-  // No quantity anywhere: cost is the money put in; skip the per-unit maths.
+  if(asset.category==='liquidity')return;
+  const txs=ledgerTxs(asset);
   const anyQty=txs.some(t=>t.txType!=='income'&&txQtyInBase(t,asset)>0);
   if(!anyQty){
-    if(!txs.length){
-      // Zero only when the caller says it was emptied.
+    if(!txs.some(t=>t.txType!=='income')){
       if(opts&&opts.emptied){
         if(asset.qty!=null)asset.qty=0;
         asset.buyPrice=0;
       }
       return;
     }
+    // No quantity anywhere: cost is the money put in.
     let cost=0,sold=false;
     txs.forEach(t=>{ if(t.txType==='income')return; if(t.txType==='sell')sold=true; cost+=(t.txType==='sell'?-1:1)*(t.amount||0); });
     asset.buyPrice=Math.max(0,cost);
@@ -3984,24 +4036,14 @@ function recalcAssetFromTransactions(asset,opts){
     if(asset.category==='property'&&asset.qty!=null)asset.qty=sold?0:1;
     return;
   }
-  let qty=0,avgCost=0;
-  txs.forEach(t=>{
-    // Income is a return, not more of the holding.
-    if(t.txType==='income')return;
-    const q=txQtyInBase(t,asset);
-    if(t.txType==='sell'){
-      t.realized=(t.amount||0)-avgCost*q; // recompute realized P&L at this point in the replay
-      qty=Math.max(0,qty-q);
-      // avgCost per unit stays the same on a sell, selling doesn't change the cost basis of what remains
-    }else{
-      const newQty=qty+q;
-      avgCost=newQty>0?((avgCost*qty)+(t.amount||0))/newQty:avgCost;
-      qty=newQty;
-    }
-  });
+  const r=replayLedger(asset,txs);
+  r.realized.forEach(([t,v])=>{t.realized=v;});
   // Round at the source: exports and sync see this value.
-  asset.qty=+qty.toFixed(10);asset.buyPrice=avgCost;
+  asset.qty=+r.qty.toFixed(10);asset.buyPrice=r.avg;
 }
+// What an entry did to a bank or cash balance.
+function cashEffect(t){return t.txType==='sell'?-(t.amount||0):t.txType==='income'?0:(t.amount||0);}
+
 let editingTxId=null;
 let editTxPriceEntryCcy=null;
 let isEditTxPerUnitMode=true;
@@ -4156,6 +4198,9 @@ function saveEditTx(){
   const qty=parseFloat(el('editTxQty').value)||0,priceEntered=parseFloat(el('editTxPrice').value)||0;
   const rate=getCurrRate(editTxPriceEntryCcy||currentCurrency.code);
   const type=t.txType||'buy'; // type is fixed at edit time, buy/sell can't be toggled here
+  if(t.transfer&&t.linkId&&state.transactions.some(x=>x.linkId===t.linkId&&!x.transfer)){
+    toast('This payment belongs to a trade. Edit the trade instead.','error');return;}
+  if(a)reconcileLedger(a);
   // No quantity required for amount-only assets.
   const noQty=assetNoQty(a);
   if(noQty){
@@ -4164,8 +4209,12 @@ function saveEditTx(){
     t.txType=type;
     t.qty=null;t.enteredQty=null;t.enteredUnit=null;t.perUnit=null;
     const _newAmt=priceEntered/rate;
+    // A plain deposit or withdrawal moves the balance by the difference.
+    const _cashDelta=(assetIsCash(a)&&!t.linkId)?cashEffect({txType:type,amount:_newAmt})-cashEffect(t):0;
+    if(_cashDelta&&(a.value||0)+_cashDelta<-1e-9){toast(a.name+' only has '+fmt(a.value||0),'error');return;}
     t.date=el('editTxDate').value?dayToISO(el('editTxDate').value):t.date;
     {const err=resyncCashLegs(t,_newAmt);if(err){toast(err,'error');return;}}
+    if(_cashDelta)a.value=(a.value||0)+_cashDelta;
     t.amount=_newAmt;
     t.notes=el('editTxNotes').value||null;
     recalcAssetFromTransactions(a);trackPnLHistory();
@@ -4223,6 +4272,7 @@ function resyncCashLegs(t,newTotalNPR){
     }
   }
   const replay=[];
+  plan.forEach(({acct,units})=>{if(units!==undefined)reconcileLedger(acct);});
   plan.forEach(({leg,acct,units,per})=>{
     const out=leg.txType==='sell';
     if(units!==undefined){
@@ -4240,52 +4290,39 @@ function resyncCashLegs(t,newTotalNPR){
 }
 async function deleteEditTx(){
   const t=state.transactions.find(x=>x.id===editingTxId);if(!t)return;
-  // Warn when undoing the trade would overdraw its cash account.
-  let _msg='This asset\u2019s quantity and average cost will be recalculated from the remaining transactions.';
-  const _legs=t.linkId?state.transactions.filter(x=>x.linkId===t.linkId&&x.transfer):[];
-  const _overdrawn=[];
-  _legs.forEach(leg=>{
-    const acct=state.assets.find(x=>x.id===leg.assetId);if(!acct)return;
-    // Stablecoin legs are units, not a balance.
-    if(isStablecoin(acct)){
-      const units=(leg.txType==='buy'?-1:1)*(leg.qty||0);
-      const after=(acct.qty||0)+units;
-      const sym=acct.ticker||acct.name;
-      if(after<-1e-9)_overdrawn.push(sym+' would go to '+(+after.toFixed(4))+' units');
-      else _msg+=' '+sym+' goes back to '+(+after.toFixed(4))+'.';
-      return;
+  // A trade and the cash legs it moved are one event: deleting any part deletes all of it.
+  const group=t.linkId?state.transactions.filter(x=>x.linkId===t.linkId):[t];
+  const assetOf=x=>state.assets.find(a=>a.id===x.assetId)||state.assets.find(a=>a.name===x.name&&a.category===x.category);
+  const main=group.find(x=>!x.transfer),mainAcct=main&&assetOf(main);
+  const parts=[],overdrawn=[];
+  if(t.transfer&&main)parts.push('This also deletes the '+txTypeNoun(main).toLowerCase()+' of '+txDisplayName(main)+' it belongs to.');
+  if(mainAcct&&mainAcct.category!=='liquidity')parts.push(stripParens(mainAcct.name)+'’s quantity and average cost will be recalculated from the remaining transactions.');
+  group.forEach(x=>{
+    const acct=assetOf(x);if(!acct)return;
+    if(acct.category==='liquidity'){
+      const after=(acct.value||0)-cashEffect(x);
+      if(after<-1e-9)overdrawn.push(acct.name+' would go to '+fmt(after));
+      else parts.push(acct.name+' goes back to '+fmt(after)+'.');
+    }else if(x.transfer&&isStablecoin(acct)){
+      const after=(acct.qty||0)-(x.txType==='buy'?1:-1)*(x.qty||0),sym=acct.ticker||acct.name;
+      if(after<-1e-9)overdrawn.push(sym+' would go to '+(+after.toFixed(4))+' units');
+      else parts.push(sym+' goes back to '+(+after.toFixed(4))+'.');
     }
-    const after=(acct.value||0)+(leg.txType==='buy'?-1:1)*(leg.amount||0);
-    if(after<-1e-9)_overdrawn.push(acct.name+' would go to '+fmt(after));
-    else _msg+=' '+acct.name+' goes back to '+fmt(after)+'.';
   });
-  if(_overdrawn.length)_msg+=' '+_overdrawn.join(', ')+', because that money has already been spent.';
-  if(!await askConfirm({title:'Delete transaction?',message:_msg,confirmText:'Delete'}))return;
-  const a=state.assets.find(x=>x.id===t.assetId)||state.assets.find(x=>x.name===t.name&&x.category===t.category);
+  if(overdrawn.length)parts.push(overdrawn.join(', ')+', because that money has already been spent.');
+  const msg=parts.join(' ')||'This transaction will be removed.';
+  if(!await askConfirm({title:'Delete transaction?',message:msg,confirmText:'Delete'}))return;
   // Undoable: deleting a transaction rewrites the asset's cost basis.
-  const _txLabel=(txDisplayName(t)?txDisplayName(t)+' ':'')+txTypeNoun(t)+' deleted';
-  withUndo(_txLabel,['transactions','assets'],()=>{
-  // Delete the linked cash leg too and restore the balance.
-  const _link=t.linkId;
-  if(_link){
-    const _touched=[];
-    state.transactions.filter(x=>x.linkId===_link&&x.transfer).forEach(leg=>{
-      const acct=state.assets.find(x=>x.id===leg.assetId);
-      if(!acct)return;
-      // Stablecoins replay from their own ledger.
-      if(isStablecoin(acct)){_touched.push(acct);return;}
-      acct.value=(acct.value||0)+(leg.txType==='buy'?-1:1)*(leg.amount||0);
-    });
-    state.transactions=state.transactions.filter(x=>!(x.linkId===_link&&x.transfer));
-    _touched.forEach(acct=>recalcAssetFromTransactions(acct));
-  }
-  state.transactions=state.transactions.filter(x=>x.id!==editingTxId);
-  if(a){recalcAssetFromTransactions(a,{emptied:!txsForAsset(a).length});trackPnLHistory();
-    if(a.qty<=0&&!txsForAsset(a).length){
-      // Keep a zero-qty record rather than deleting the asset.
-    }
-  }
-  saveState();
+  const label=(txDisplayName(t)?txDisplayName(t)+' ':'')+txTypeNoun(t)+' deleted';
+  withUndo(label,['transactions','assets'],()=>{
+    const holdings=new Set();
+    group.forEach(x=>{const acct=assetOf(x);if(acct&&acct.category!=='liquidity')holdings.add(acct);});
+    holdings.forEach(reconcileLedger);
+    group.forEach(x=>{const acct=assetOf(x);if(acct&&acct.category==='liquidity')acct.value=(acct.value||0)-cashEffect(x);});
+    const ids=new Set(group.map(x=>x.id));
+    state.transactions=state.transactions.filter(x=>!ids.has(x.id));
+    holdings.forEach(acct=>recalcAssetFromTransactions(acct,{emptied:!txsForAsset(acct).some(x=>x.txType!=='income')}));
+    trackPnLHistory();saveState();
   });
   closeModal('editTxModal');renderAll();haptic('tap');
 }
@@ -4308,7 +4345,7 @@ async function deleteAllPickerTx(){const a=state.assets.find(x=>x.id===ctxAssetI
   // Undoable, like a single delete.
   withUndo(plural(txs.length,'transaction')+' deleted',['transactions','assets'],()=>{
     state.transactions=(state.transactions||[]).filter(t=>!txIds.has(t.id));
-    recalcAssetFromTransactions(a,{emptied:!txsForAsset(a).length});
+    recalcAssetFromTransactions(a,{emptied:!txsForAsset(a).some(x=>x.txType!=='income')});
     trackPnLHistory();saveState();
   });
   closeModal('assetEditPickerModal');renderAll();haptic('tap');}
@@ -4461,6 +4498,7 @@ function reverseDebtCash(d,entry,kind){
   if(!d||!entry||!entry.account||!entry.linkId)return;
   const acct=(state.assets||[]).find(x=>x.id===entry.account);
   const dir=debtCashDir(d.type==='owed',kind);
+  if(acct&&isStablecoin(acct))reconcileLedger(acct);
   if(acct)applyCashLegBalance(acct,num(entry.amount),dir==='in'?'out':'in');
   state.transactions=(state.transactions||[]).filter(t=>!(t.linkId===entry.linkId&&t.transfer));
   // Stablecoin balances live in the quantity; replay after removing the leg.
@@ -6976,14 +7014,9 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
           if(t.perUnit!=null)t.perUnit=t.perUnit/f;
         });
       }
-      // No ledger: what was typed becomes the opening entry.
-      if(!txsForAsset(asset).some(t=>!t.transfer)&&(asset.qty||asset.buyPrice)){
-        state.transactions=state.transactions||[];
-        state.transactions.push({id:uid(),assetId:asset.id,name:asset.name,category:asset.category,
-          icon:asset.icon,coinImage:asset.coinImage||null,amount:(asset.buyPrice||0)*(asset.qty||1),
-          qty:assetNoQty(asset)?null:asset.qty,perUnit:assetNoQty(asset)?null:asset.buyPrice,txType:'buy',notes:asset.notes||null,
-          date:asset.date||new Date().toISOString()});
-      }
+      // Whatever the ledger does not explain (a hand-typed holding) becomes its opening entry.
+      state.transactions=state.transactions||[];
+      reconcileLedger(asset);
       // And then the ledger has the last word, always.
       recalcAssetFromTransactions(asset);
     }
@@ -10311,6 +10344,7 @@ function pushCashLeg(acct,amountNPR,dir,date,linkId,note){
     const per=getAssetCurrentPrice(acct)||0;
     const units=per>0?+(amountNPR/per).toFixed(8):0;
     if(!units)return 0;
+    reconcileLedger(acct);
     state.transactions.push({id:uid(),assetId:acct.id,name:acct.name,category:'crypto',
       icon:acct.icon||'coins',coinImage:acct.coinImage||null,
       txType:dir==='in'?'buy':'sell',qty:units,enteredQty:units,
