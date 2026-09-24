@@ -10,6 +10,8 @@
 // responds with counts only. Called by pg_cron with `Authorization: Bearer CRON_SECRET`
 // (see setup-snapshot.sql); Vercel Hobby cron is limited to once a day.
 
+import limit from './_limit.js';
+
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 // Vercel keeps pasted quotes as part of the value; strip them on both sides.
@@ -17,9 +19,6 @@ function tidySecret(v) {
   return String(v || '').trim().replace(/^["']|["']$/g, '').trim();
 }
 const CRON_SECRET = tidySecret(process.env.CRON_SECRET);
-
-// Sent with every refusal: a stale deployment and a wrong secret both look like 401.
-const BUILD = { commit: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'unknown' };
 
 // Older recipes may describe holdings that no longer exist.
 const RECIPE_MAX_AGE_DAYS = 21;
@@ -212,51 +211,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-  if (!configured()) {
-    const missing = [
-      !SUPABASE_URL && 'SUPABASE_URL',
-      !SERVICE_KEY && 'SUPABASE_SERVICE_ROLE_KEY',
-      !CRON_SECRET && 'CRON_SECRET',
-    ].filter(Boolean);
-    return res.status(503).json({
-      error: 'Not configured',
-      missing,
-      build: BUILD.commit,
-      detail: 'Add ' + missing.join(' and ') + ' to the Vercel project (Production), then REDEPLOY. ' +
-        'A new environment variable does not reach a deployment that is already running.',
-    });
-  }
+  if (limit.blocked(req, res, 'snapshot-auth', 10)) return;
+  if (!configured()) return res.status(503).json({ error: 'Not configured' });
   const auth = String(req.headers.authorization || '');
   const bearer = /^Bearer\s+(.+)$/i.exec(auth);
   if (!bearer || !secretMatches(bearer[1])) {
-    // Lengths and a hash prefix help spot a paste mistake without revealing the secret.
-    const got = bearer ? tidySecret(bearer[1]) : '';
-    const fp = async (v) => {
-      if (!v) return '-';
-      const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
-      return [...new Uint8Array(h)].slice(0, 3).map(b => b.toString(16).padStart(2, '0')).join('');
-    };
-    let hint;
-    try {
-      const [a, b] = await Promise.all([fp(CRON_SECRET), fp(got)]);
-      hint = !bearer
-        ? (auth
-            ? 'An Authorization header arrived but does not start with "Bearer ". It must read exactly: Bearer <your secret>'
-            : 'No Authorization header arrived. `got` lists the header names that did, so you can see whether it was '
-              + 'dropped on the way or never sent. A redirect between the address you called and this function will '
-              + 'drop it; call the deployment directly, with no trailing slash.')
-        : got.length !== CRON_SECRET.length
-          ? 'Length differs: this deployment holds ' + CRON_SECRET.length +
-            ' characters, you sent ' + got.length + '. Check for a missing character or a trailing space.'
-          : 'Same length, different value. This deployment holds a secret starting ' + a +
-            '…; you sent one starting ' + b + '… (first bytes of their hashes, not the secrets). ' +
-            'Update CRON_SECRET in Vercel and redeploy, or use the value this deployment already has.';
-    } catch (e) {
-      hint = 'Secret does not match the one this deployment was built with.';
-    }
-    // Header names only, never values.
-    const arrived = Object.keys(req.headers || {}).sort().slice(0, 40);
-    return res.status(401).json({ error: 'Unauthorized', hint, got: arrived, build: BUILD.commit });
+    limit.failed(req, 'snapshot-auth');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const started = Date.now();

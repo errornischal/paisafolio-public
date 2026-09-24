@@ -2,6 +2,7 @@
 // Provider keys are write-only: stored, never returned.
 
 const { requireAdmin, sql, maskKey, configured } = require('./_adminAuth.js');
+const { limited } = require('./_limit.js');
 const { PROVIDERS, PROVIDER_IDS, listModels, callProvider } = require('./_providers.js');
 const { loadConfig, invalidate, planFor } = require('./_aiconfig.js');
 
@@ -138,7 +139,7 @@ const ACTIONS = {
   async setRole(body) {
     const id = String(body.userId || '');
     const role = String(body.role || 'user');
-    if (!id) throw Object.assign(new Error('Which user?'), { status: 400 });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw Object.assign(new Error('Which user?'), { status: 400 });
     if (['user', 'admin'].indexOf(role) < 0) throw Object.assign(new Error('Unknown role'), { status: 400 });
     const r = await sql('profiles?user_id=eq.' + encodeURIComponent(id), {
       method: 'PATCH', body: JSON.stringify({ role }),
@@ -171,16 +172,17 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
   if (req.headers.origin && !origin) return res.status(403).json({ error: 'Origin not allowed.' });
+  if (limited(req, res, 'admin', 60)) return;
 
   const gate = await requireAdmin(req);
-  if (!gate.ok) return res.status(gate.status).json({ error: gate.error, detail: gate.detail });
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
   if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Bad request body.' });
 
   const action = String(body.action || '');
-  const fn = ACTIONS[action];
+  const fn = Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : null;
   if (!fn) return res.status(400).json({ error: 'Unknown action.' });
   try {
     const out = await fn(body);

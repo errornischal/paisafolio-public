@@ -161,10 +161,8 @@ function initSupabase() {
     return;
   }
   if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-    // CDN blocked/offline/failed to load, app must still work fully offline.
-    console.warn('Supabase library unavailable, running in offline/local-only mode. ' +
-      'This usually means https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 failed to load ' +
-      '(blocked by host/firewall, ad-blocker, or no internet).');
+    // The library did not load; the app still works fully offline.
+    console.warn('Supabase library unavailable (vendor/supabase-js.umd.js did not load), running local-only.');
     updateSyncDot('offline');
     window.__paisafolioSbLoadFailed = true;
     return;
@@ -390,10 +388,6 @@ async function syncTable(table, userId, items, toRow, bypassWipeGuard = false) {
       })
     : rows;
 
-  if (changedRows.length !== rows.length) {
-    console.info(`[sync] "${table}": ${changedRows.length}/${rows.length} row(s) changed, skipping the rest.`);
-  }
-
   // Chunk so a large portfolio doesn't hit PostgREST's request size limit.
   const CHUNK = 500;
   for (let i = 0; i < changedRows.length; i += CHUNK) {
@@ -505,7 +499,7 @@ async function pushToCloud(bypassWipeGuard = false) {
       fonts: { text: st.fontText || null, numbers: st.fontNum || null },
       updated_at: new Date().toISOString(),
     };
-    if ((st.displayName || '').trim()) profileRow.full_name = st.displayName.trim();
+    if ((st.displayName || '').trim()) profileRow.full_name = st.displayName.trim().slice(0, 80);
     if ((st.username || '').trim()) profileRow.username = st.username.trim().toLowerCase();
     const { error: profErr } = await sbClient.from('profiles').upsert(profileRow, { onConflict: 'user_id' });
     // A taken username must not stall everything else that just synced fine.

@@ -1,4 +1,6 @@
 // Last traded NEPSE prices in NPR, read server-side: no NEPSE source sends CORS headers, so the browser cannot. Sources are tried in order.
+const { limited } = require('./_limit.js');
+
 const DEFAULT_SCRAPE_URLS = [
   'https://merolagani.com/LatestMarket.aspx',
   'https://www.sharesansar.com/today-share-price',
@@ -205,17 +207,6 @@ let lastGood = null;             // { prices, ts }
 const FRESH_MS = 60 * 1000;      // reuse within a minute rather than refetch
 const STALE_OK_MS = 24 * 60 * 60 * 1000;
 
-// Per-instance only; keeps one client from hammering upstream.
-const hits = new Map();
-function overLimit(ip) {
-  const now = Date.now(), win = 60_000, max = 30;
-  const rec = hits.get(ip) || { n: 0, t: now };
-  if (now - rec.t > win) { rec.n = 0; rec.t = now; }
-  rec.n += 1; hits.set(ip, rec);
-  if (hits.size > 500) for (const [k, v] of hits) if (now - v.t > win) hits.delete(k);
-  return rec.n > max;
-}
-
 function parseJsonEnv(name) {
   const raw = (process.env[name] || '').trim();
   if (!raw) return {};
@@ -241,8 +232,7 @@ module.exports = async (req, res) => {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Use GET.' });
   if (origin && !allow) return res.status(403).json({ error: 'Origin not allowed.' });
 
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'anon';
-  if (overLimit(ip)) return res.status(429).json({ error: 'Too many requests.' });
+  if (limited(req, res, 'nepse', 30)) return;
 
   const url = (process.env.NEPSE_API_URL || '').trim();
   // Unset uses the built-in sources; "off" disables.
@@ -250,8 +240,9 @@ module.exports = async (req, res) => {
   const scrapeOff = /^(off|none|false|0)$/i.test(scrapeEnv);
   const scrapeUrl = scrapeOff ? '' : (scrapeEnv || DEFAULT_SCRAPE_URLS.join(','));
 
-  // Probe is limited to known hosts so this cannot fetch arbitrary URLs.
-  if (req.query && req.query.probe) {
+  // Diagnostic probe for setting up a price source; off unless NEPSE_PROBE=on.
+  // Limited to known hosts so it cannot fetch arbitrary URLs.
+  if (req.query && req.query.probe && /^on$/i.test(process.env.NEPSE_PROBE || '')) {
     const target = String(req.query.probe);
     if (!scrapeHostAllowed(target)) {
       return res.status(400).json({ error: 'Not one of the known price sites.', allowed: SCRAPE_HOSTS });

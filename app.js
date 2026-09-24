@@ -219,8 +219,7 @@ async function saveUsername(){
   let unchecked=false;
   try{
     if(sbClient&&supabaseUser){
-      const {data,error:qErr}=await sbClient.from('public_profiles')
-        .select('user_id').eq('username',next).maybeSingle();
+      const {data,error:qErr}=await findProfile(next);
       if(qErr&&!offlineish(qErr))throw qErr;
       if(qErr)unchecked=true;
       else if(data&&data.user_id!==supabaseUser.id){credFail('That one is taken. Try another.');return;}
@@ -248,6 +247,7 @@ function openChangeEmail(){
   el('credTitle').textContent='Change Email';
   el('credNewLbl').textContent='NEW EMAIL';
   el('credNew').type='email';
+  el('credNew').maxLength=254;
   el('credNew').placeholder='you@example.com';
   el('credNew').value='';
   el('credConfirmRow').style.display='none';
@@ -264,6 +264,7 @@ function openChangePassword(){
   el('credTitle').textContent=adding?'Add a Password':'Change Password';
   el('credNewLbl').textContent=adding?'PASSWORD':'NEW PASSWORD';
   el('credNew').type='password';
+  el('credNew').maxLength=72;
   el('credNew').placeholder='At least 8 characters';
   el('credNew').value='';
   el('credConfirmRow').style.display='';
@@ -381,6 +382,13 @@ async function circleLoad(force){
   }finally{ circleState.busy=false; }
 }
 // Missing tables means schema.sql has not been re-run.
+// One profile by exact handle. Databases without find_profile() use the old view.
+async function findProfile(handle){
+  const r=await sbClient.rpc('find_profile',{handle});
+  if(!r.error)return {data:(r.data||[])[0]||null,error:null};
+  const v=await sbClient.from('public_profiles').select('user_id,username,full_name,avatar_url').eq('username',handle).limit(1);
+  return {data:(v.data||[])[0]||null,error:v.error||null};
+}
 function circleErr(e){
   const m=String((e&&(e.message||e.error_description))||e||'');
   if(/does not exist|schema cache|relation/i.test(m))
@@ -396,10 +404,8 @@ async function circleSearch(){
   if(!circleReady()){circleState.err='Sign in first.';renderCircle();return;}
   circleState.busy=true;renderCircle();
   try{
-    const {data,error}=await sbClient.from('public_profiles')
-      .select('user_id,username,full_name,avatar_url').eq('username',q).limit(1);
+    const {data:hit,error}=await findProfile(q);
     if(error)throw error;
-    const hit=(data||[])[0]||null;
     if(hit&&hit.user_id===circleId()){circleState.err='That is you.';}
     else if(!hit){circleState.err='No one is using @'+esc(q)+'.';}
     else{circleState.people[hit.user_id]=hit;circleState.found=hit;}
@@ -526,7 +532,7 @@ function circleAvatar(id,size){
   const p=circlePerson(id);
   const cls=size==='lg'?'acct-avatar-lg':'acct-avatar';
   const letter=esc((circleName(id)||'?').trim()[0].toUpperCase()||'?');
-  if(!p.avatar_url)return `<span class="${cls}">${letter}</span>`;
+  if(!p.avatar_url||!/^(https:\/\/|data:image\/(png|jpeg|webp|gif);base64,)/i.test(p.avatar_url))return `<span class="${cls}">${letter}</span>`;
   return `<span class="${cls} has-photo" role="button" tabindex="0" title="View photo"
     onclick="event.stopPropagation();openPhotoView('${jsAttr(p.avatar_url)}','${jsAttr(circleName(id))}')"><img alt="" src="${esc(p.avatar_url)}"/></span>`;
 }
@@ -583,7 +589,7 @@ function renderCircle(){
     const f=circleState.found;const st=circleStatus(f.user_id);
     const action=st==='friend'?'<span class="s-badge">In your circle</span>'
       :st==='outgoing'?'<span class="s-badge">Asked</span>'
-      :`<button class="wiz-btn primary" style="padding:7px 13px" onclick="circleAdd('${esc(f.user_id)}')">${st==='incoming'?'Accept':'Add'}</button>`;
+      :`<button class="wiz-btn primary" style="padding:7px 13px" onclick="circleAdd('${jsAttr(f.user_id)}')">${st==='incoming'?'Accept':'Add'}</button>`;
     html+='<div class="settings-sec-lbl" style="margin:14px 2px 6px">FOUND</div>'+circlePersonRow(f.user_id,action);
   }
   const others=[...new Set(circleState.links.map(l=>l.user_id===uid?l.friend_id:l.user_id))];
@@ -592,8 +598,8 @@ function renderCircle(){
   if(incoming.length){
     html+='<div class="settings-sec-lbl" style="margin:16px 2px 6px">WANTS TO CONNECT</div>';
     html+=incoming.map(id=>circlePersonRow(id,
-      `<span class="circle-acts"><button class="wiz-btn ghost" onclick="event.stopPropagation();circleDecline('${esc(id)}')">No</button>`
-      +`<button class="wiz-btn primary" onclick="event.stopPropagation();circleAdd('${esc(id)}')">Accept</button></span>`)).join('');
+      `<span class="circle-acts"><button class="wiz-btn ghost" onclick="event.stopPropagation();circleDecline('${jsAttr(id)}')">No</button>`
+      +`<button class="wiz-btn primary" onclick="event.stopPropagation();circleAdd('${jsAttr(id)}')">Accept</button></span>`)).join('');
   }
   html+='<div class="settings-sec-lbl" style="margin:16px 2px 6px">YOUR CIRCLE</div>';
   if(!friends.length){
@@ -603,13 +609,13 @@ function renderCircle(){
       const mine=circleScopesFor(id).length;
       const sub=`<span class="circle-meta">${mine?'Sharing '+plural(mine,'thing','things'):'Sharing nothing'}</span>`;
       return circlePersonRow(id,sub+'<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-        `openCircleFriend('${esc(id)}')`);
+        `openCircleFriend('${jsAttr(id)}')`);
     }).join('');
   }
   if(outgoing.length){
     html+='<div class="settings-sec-lbl" style="margin:16px 2px 6px">WAITING ON THEM</div>';
     html+=outgoing.map(id=>circlePersonRow(id,
-      `<button class="wiz-btn ghost" onclick="event.stopPropagation();circleRemove('${esc(id)}')">Cancel</button>`)).join('');
+      `<button class="wiz-btn ghost" onclick="event.stopPropagation();circleRemove('${jsAttr(id)}')">Cancel</button>`)).join('');
   }
   if(circleState.busy)html+='<div class="circle-meta" style="text-align:center;padding:12px">Working…</div>';
   box.innerHTML=html;
@@ -654,10 +660,10 @@ function renderCircleFriend(id,shared){
   }
   html+='<div class="settings-sec-lbl" style="margin:18px 2px 6px">WHAT THEY CAN SEE OF YOURS</div>';
   const mine=circleScopesFor(id);
-  html+=CIRCLE_SCOPES.map(sc=>`<button class="s-item" onclick="circleToggleScope('${esc(id)}','${sc.k}')">
+  html+=CIRCLE_SCOPES.map(sc=>`<button class="s-item" onclick="circleToggleScope('${jsAttr(id)}','${jsAttr(sc.k)}')">
     <span class="s-item-info"><span class="s-item-name">${sc.label}</span><span class="s-item-sub">${sc.sub}</span></span>
     <span class="toggle${mine.includes(sc.k)?' on':''}" role="switch" aria-checked="${mine.includes(sc.k)}"></span></button>`).join('');
-  html+='<button class="danger-btn" style="margin-top:16px" onclick="circleRemove(\''+esc(id)+'\')">Remove from circle</button>';
+  html+='<button class="danger-btn" style="margin-top:16px" onclick="circleRemove(\''+jsAttr(id)+'\')">Remove from circle</button>';
   box.innerHTML=html;
   syncSwitchRows(box);
 }
@@ -787,7 +793,7 @@ function googleAvatarUrl(px){
   return raw.replace(/=s\d+(-c)?$/i,'=s'+(px||256)+'-c');
 }
 function hasGoogleAvatar(){return !!googleAvatarUrl(96);}
-function avatarSrc(){return (state.settings&&state.settings.avatar)||'';}
+function avatarSrc(){const a=(state.settings&&state.settings.avatar)||'';return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(a)?a:'';}
 // Re-encode small so it lives in settings and works offline.
 async function shrinkImage(blob,px){
   try{
@@ -1073,7 +1079,7 @@ function togglePw(inputId, btn) {
 function getPasswordStrength(pass) {
   if (!pass) return 0;
   let s = 0;
-  if (pass.length >= 6) s++;
+  if (pass.length >= 8) s++;
   if (pass.length >= 10) s++;
   if (/[A-Z]/.test(pass) && /[a-z]/.test(pass)) s++;
   if (/[0-9]/.test(pass)) s++;
@@ -1156,7 +1162,7 @@ async function doRegister() {
   else if (fullName.length < 2) { showFieldErr('authRegNameErr', 'That is a little short', el('authRegName')); hasErr = true; }
   if (!email) { showFieldErr('authRegEmailErr', 'Enter an email address', el('authRegEmail')); hasErr = true; }
   else if (!isValidEmail(email)) { showFieldErr('authRegEmailErr', 'Enter a valid email address', el('authRegEmail')); hasErr = true; }
-  if (pass.length < 6) { showFieldErr('authRegPassErr', 'Password must be at least 6 characters', el('authRegPassword')); hasErr = true; }
+  if (pass.length < 8) { showFieldErr('authRegPassErr', 'Password must be at least 8 characters', el('authRegPassword')); hasErr = true; }
   if (pass !== pass2) { showFieldErr('authRegPass2Err', 'Passwords do not match', el('authRegPassword2')); hasErr = true; }
   if (hasErr) return;
   const btn = el('authRegBtn');
@@ -1881,7 +1887,7 @@ function renderFontOptions(){
       : FONT_CHOICES;
     return opts.map(f => `
       <button class="font-opt ${(current || '') === f.id ? 'active' : ''}"
-              onclick="setFontChoice('${which}','${f.id}')"
+              onclick="setFontChoice('${jsAttr(which)}','${jsAttr(f.id)}')"
               style="${f.id ? `font-family:${f.stack.replace(/"/g, '&quot;')}` : ''}">
         <span class="font-opt-name">${esc(f.label)}</span>
         <span class="font-opt-sample">${which === 'num' ? '1,234.50' : 'Aa'}</span>
@@ -3078,7 +3084,7 @@ function renderPnlCal(){
   if(chips){
     const cats=CAT_ORDER.filter(c=>(state.assets||[]).some(a=>a&&a.category===c));
     chips.innerHTML=`<button class="pnl-scope${scope==='all'?' on':''}" onclick="setPnlCalScope('all')">Everything</button>`
-      +cats.map(c=>`<button class="pnl-scope${scope===c?' on':''}" style="--sc:${CAT_COLORS[c]||'var(--accent)'}" onclick="setPnlCalScope('${esc(c)}')">${esc(catLabel(c))}</button>`).join('');
+      +cats.map(c=>`<button class="pnl-scope${scope===c?' on':''}" style="--sc:${CAT_COLORS[c]||'var(--accent)'}" onclick="setPnlCalScope('${jsAttr(c)}')">${esc(catLabel(c))}</button>`).join('');
     chips.hidden=pnlCalHost!=='dash';
   }
 
@@ -3170,7 +3176,7 @@ function renderPnlCalGrid(byDay){
     const amt=p?((p.pnl>=0?'+':'−')+pnlCellNum(p.pnl)):'';
     const label=p?(key+' '+(p.pnl>=0?'up ':'down ')+fmt(Math.abs(p.pnl))):(key+', no reading');
     html+=`<button type="button" class="${cls}" style="${style}" data-key="${key}" ${p?'':'disabled'}
-      onclick="pickPnlDay('${key}')" aria-label="${esc(label)}">
+      onclick="pickPnlDay('${jsAttr(key)}')" aria-label="${esc(label)}">
       <span class="hcal-n">${d}</span>
       ${p?`<span class="pnl-d-amt">${esc(amt)}</span>`:''}
     </button>`;
@@ -3743,7 +3749,7 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
     // NEPSE day change uses the same badge as crypto 24h.
     let chg='';const c24=hasLive?livePrices[a.coinId].change24h:(nq?nq.change:null);
     if(c24!=null)chg=`<span style="font-size:9.5px;font-weight:700;color:${c24>=0?'var(--green)':'var(--red)'}">${c24>=0?'▲':'▼'}${Math.abs(c24).toFixed(1)}%</span>`;
-    return `<div class="asset-item${enterCls()}${isPendingSync('assets',a.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-asset-id="${a.id}" onclick="openAssetDetail('${a.id}')" aria-label="${esc(a.name)}, ${fmt(cv)}">${isPendingSync('assets',a.id)?pendingBadge():''}<div class="asset-ico" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'" decoding="async" loading="lazy"/><div style="display:none;color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`}</div><div class="asset-info"><div class="asset-name">${esc(a.name)}</div><div class="asset-sub">${esc(sub)}${badges} ${chg}</div></div><div class="asset-vals"><div class="asset-val">${fmt(cv)}</div><div class="asset-pnl ${pnl===null?'neu':pnl>=0?'pos':'neg'}">${a.category==='liquidity'?'':(pnl===null?fmt((a.buyPrice||0)*assetUnits(a))+' cost':(pnl>=0?'▲+':'▼')+fmt(Math.abs(pnl))+(pp!==null?' ('+Math.abs(pp).toFixed(1)+'%)':''))}</div></div></div>`;};
+    return `<div class="asset-item${enterCls()}${isPendingSync('assets',a.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-asset-id="${a.id}" onclick="openAssetDetail('${jsAttr(a.id)}')" aria-label="${esc(a.name)}, ${fmt(cv)}">${isPendingSync('assets',a.id)?pendingBadge():''}<div class="asset-ico" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex'" decoding="async" loading="lazy"/><div style="display:none;color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',18)}</div>`}</div><div class="asset-info"><div class="asset-name">${esc(a.name)}</div><div class="asset-sub">${esc(sub)}${badges} ${chg}</div></div><div class="asset-vals"><div class="asset-val">${fmt(cv)}</div><div class="asset-pnl ${pnl===null?'neu':pnl>=0?'pos':'neg'}">${a.category==='liquidity'?'':(pnl===null?fmt((a.buyPrice||0)*assetUnits(a))+' cost':(pnl>=0?'▲+':'▼')+fmt(Math.abs(pnl))+(pp!==null?' ('+Math.abs(pp).toFixed(1)+'%)':''))}</div></div></div>`;};
   // Grouped by category on All; a single-category filter stays flat.
   const groupIds=CAT_ORDER.filter(c=>assets.some(a=>a.category===c))
     .concat(assets.some(a=>!CAT_ORDER.includes(a.category))?['__rest']:[]);
@@ -3773,7 +3779,7 @@ function renderAssets(){const list=el('assetsList'),tw=el('assetsTableWrap'),sba
       const body=g.items.map(a=>renderRow(a,i0++)).join('');
       // Rail in the category's colour.
       return `<section class="ag-group${open?' open':''}" data-cat="${esc(g.id)}" style="--ag-col:${type.color}">`
-        +`<button type="button" class="ag-head" aria-expanded="${open?'true':'false'}" onclick="toggleAssetGroup('${esc(g.id)}')">`
+        +`<button type="button" class="ag-head" aria-expanded="${open?'true':'false'}" onclick="toggleAssetGroup('${jsAttr(g.id)}')">`
         +`<span class="ag-ico" style="background:${type.bg};color:${readableInk(type.color)}">${type.svg||svgIcon('coins',16)}</span>`
         +`<span class="ag-txt"><span class="ag-name">${esc(label)}</span>`
         +`<span class="ag-meta">${plural(g.items.length,'asset')}${pnlTxt?' · ':''}${pnlTxt}</span></span>`
@@ -3840,7 +3846,7 @@ function renderGlobalSearch(){
   if(assets.length){
     html+='<div class="settings-sec-lbl">ASSETS</div>';
     html+=assets.map(a=>{const type=tm[a.category]||ASSET_TYPES[5];const cv=getAssetCurrentValue(a);
-      return `<button class="s-item" onclick="closeModal('globalSearchModal');openAssetDetail('${a.id}')"><span class="s-item-ico" style="color:${readableInk(type.color)}">${a.coinImage?`<img src="${esc(a.coinImage)}" style="width:18px;height:18px;border-radius:50%" onerror="this.style.display='none'"/>`:(a.icon?svgIcon(a.icon,16):type.svg)}</span><span class="s-item-info"><span class="s-item-name">${esc(a.name)}</span><span class="s-item-sub">${esc(type.label||a.category)}${a.notes?' · '+esc(a.notes.slice(0,40)):''}</span></span><span class="s-item-right" style="font-weight:700;font-size:13px">${fmt(cv)}</span></button>`;
+      return `<button class="s-item" onclick="closeModal('globalSearchModal');openAssetDetail('${jsAttr(a.id)}')"><span class="s-item-ico" style="color:${readableInk(type.color)}">${a.coinImage?`<img src="${esc(a.coinImage)}" style="width:18px;height:18px;border-radius:50%" onerror="this.style.display='none'"/>`:(a.icon?svgIcon(a.icon,16):type.svg)}</span><span class="s-item-info"><span class="s-item-name">${esc(a.name)}</span><span class="s-item-sub">${esc(type.label||a.category)}${a.notes?' · '+esc(a.notes.slice(0,40)):''}</span></span><span class="s-item-right" style="font-weight:700;font-size:13px">${fmt(cv)}</span></button>`;
     }).join('');
   }
   if(spends.length){
@@ -3855,11 +3861,11 @@ function renderGlobalSearch(){
   }
   if(debts.length){
     html+='<div class="settings-sec-lbl">DEBTS</div>';
-    html+=debts.map(d=>`<button class="s-item" onclick="closeModal('globalSearchModal');openDebtDetail('${d.id}')"><span class="s-item-ico">${svgIcon('wallet',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(d.name)}</span><span class="s-item-sub">${d.type==='owed'?'Owed to you':'You owe'}${d.note?' · '+esc(d.note.slice(0,40)):''}</span></span><span class="s-item-right" style="font-weight:700;font-size:13px">${fmt(d.amount)}</span></button>`).join('');
+    html+=debts.map(d=>`<button class="s-item" onclick="closeModal('globalSearchModal');openDebtDetail('${jsAttr(d.id)}')"><span class="s-item-ico">${svgIcon('wallet',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(d.name)}</span><span class="s-item-sub">${d.type==='owed'?'Owed to you':'You owe'}${d.note?' · '+esc(d.note.slice(0,40)):''}</span></span><span class="s-item-right" style="font-weight:700;font-size:13px">${fmt(d.amount)}</span></button>`).join('');
   }
   if(goals.length){
     html+='<div class="settings-sec-lbl">GOALS</div>';
-    html+=goals.map(g=>`<button class="s-item" onclick="closeModal('globalSearchModal');goPage('plan');setTimeout(()=>openGoalDetail&&openGoalDetail('${g.id}'),250)"><span class="s-item-ico">${svgIcon(g.icon||'target',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(g.name)}</span><span class="s-item-sub">${fmt(g.saved||0)} of ${fmt(g.target||0)}</span></span></button>`).join('');
+    html+=goals.map(g=>`<button class="s-item" onclick="closeModal('globalSearchModal');goPage('plan');setTimeout(()=>openGoalDetail&&openGoalDetail('${jsAttr(g.id)}'),250)"><span class="s-item-ico">${svgIcon(g.icon||'target',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(g.name)}</span><span class="s-item-sub">${fmt(g.saved||0)} of ${fmt(g.target||0)}</span></span></button>`).join('');
   }
   if(bills.length){
     html+='<div class="settings-sec-lbl">RECURRING</div>';
@@ -3874,7 +3880,7 @@ function renderGlobalSearch(){
   if(txs.length){
     html+='<div class="settings-sec-lbl">TRANSACTIONS</div>';
     html+=txs.slice(0,30).map(t=>{const isSell=t.txType==='sell';const type=tm[t.category]||ASSET_TYPES[5];
-      const openFn=t.assetId?`openAssetDetail('${t.assetId}')`:`openLedger()`;
+      const openFn=t.assetId?`openAssetDetail('${jsAttr(t.assetId)}')`:`openLedger()`;
       return `<button class="s-item" onclick="closeModal('globalSearchModal');${openFn}"><span class="s-item-ico" style="color:${isSell?'var(--green)':'var(--blue)'}">${svgIcon(isSell?'trending':'trending',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(txTypePhrase(t))}</span><span class="s-item-sub">${formatDate(t.date)}${t.notes?' · '+esc(t.notes.slice(0,40)):''}</span></span><span class="s-item-right" style="font-weight:700;font-size:13px">${fmt(t.amount)}</span></button>`;
     }).join('');
     if(txs.length>30)html+=`<div class="empty-state" style="padding:10px"><p>+${txs.length-30} more transaction matches, open Transactions to see all.</p></div>`;
@@ -4290,7 +4296,7 @@ function openAssetEditPicker(id){
   if(a.category==='liquidity'||!txs.length){list.innerHTML=a.category==='liquidity'?'':'<div class="empty-state" style="padding:16px"><p>No transactions yet for this asset.</p></div>';}
   else{
     list.innerHTML=txs.map(t=>{const isSell=t.txType==='sell';const q=fmtQty(t.enteredQty!=null?t.enteredQty:t.qty,a);const unitTxt=t.enteredUnit||a.unit||'';
-      return `<button class="s-item" onclick="openEditTxFromPicker('${t.id}')"><span class="s-item-ico" style="color:${isSell?'var(--green)':'var(--blue)'}">${svgIcon(isSell?'trending':'trending',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(txTypeWord(t))} ${q?q+(unitTxt?' '+esc(unitTxt):''):''}</span><span class="s-item-sub">${formatDate(t.date)} · ${fmt(t.amount)}</span></span><span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span></button>`;}).join('');
+      return `<button class="s-item" onclick="openEditTxFromPicker('${jsAttr(t.id)}')"><span class="s-item-ico" style="color:${isSell?'var(--green)':'var(--blue)'}">${svgIcon(isSell?'trending':'trending',16)}</span><span class="s-item-info"><span class="s-item-name">${esc(txTypeWord(t))} ${q?q+(unitTxt?' '+esc(unitTxt):''):''}</span><span class="s-item-sub">${formatDate(t.date)} · ${fmt(t.amount)}</span></span><span class="s-item-right"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span></button>`;}).join('');
   }
   const sec=document.querySelector('#assetEditPickerModal .settings-sec-lbl');if(sec)sec.style.display=(!txs.length||a.category==='liquidity')?'none':'block';
   const delBtn=el('deleteAllTxBtn');if(delBtn)delBtn.style.display=(!txs.length||a.category==='liquidity')?'none':'block';
@@ -4328,7 +4334,7 @@ let buyAmt=0,sellAmt=0,realizedPnl=0,totalBoughtQty=0,sellQtyTotal=0,incomeAmt=0
     // Cash colours by direction (in green, out red); holdings by outcome.
     const chipCol=isInc?'var(--accent)':isCash?(isSell?'var(--red)':'var(--green)'):(isSell?'var(--green)':'var(--blue)');
     const chipBg=isInc?'var(--accent-glow)':isCash?(isSell?'var(--red-bg)':'var(--green-bg)'):(isSell?'var(--green-bg)':'var(--blue-bg)');
-    return `<tr style="cursor:pointer" onclick="openEditTx('${t.id}')"><td>${formatDate(t.date)}</td><td><span class="atype-chip" style="color:${chipCol};background:${chipBg}">${txTypeLabel(t)}</span></td>${qtyCell}${unitCell}${perCell}<td style="font-weight:800;color:${isInc?'var(--accent)':isSell?sellColor:'var(--text)'}">${fmt(t.amount)}${realizedSub}</td><td class="tx-note-cell" title="${t.notes?esc(t.notes):''}">${t.notes?`<span class="tx-note">${esc(t.notes)}</span>`:'<span class="muted">-</span>'}</td><td style="text-align:center"><button class="tx-edit-btn" onclick="event.stopPropagation();openEditTx('${t.id}')" aria-label="Edit transaction"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button></td></tr>`;}).join('');
+    return `<tr style="cursor:pointer" onclick="openEditTx('${jsAttr(t.id)}')"><td>${formatDate(t.date)}</td><td><span class="atype-chip" style="color:${chipCol};background:${chipBg}">${txTypeLabel(t)}</span></td>${qtyCell}${unitCell}${perCell}<td style="font-weight:800;color:${isInc?'var(--accent)':isSell?sellColor:'var(--text)'}">${fmt(t.amount)}${realizedSub}</td><td class="tx-note-cell" title="${t.notes?esc(t.notes):''}">${t.notes?`<span class="tx-note">${esc(t.notes)}</span>`:'<span class="muted">-</span>'}</td><td style="text-align:center"><button class="tx-edit-btn" onclick="event.stopPropagation();openEditTx('${jsAttr(t.id)}')" aria-label="Edit transaction"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button></td></tr>`;}).join('');
   // The asset's maintained qty; same-day transactions have no reliable order to replay here.
   const netQty=+((a.qty||0).toFixed(6));
   totalBoughtQty=+totalBoughtQty.toFixed(6);
@@ -4396,7 +4402,7 @@ function renderAssetsTable(target,assets){const tm={};ASSET_TYPES.forEach(t=>tm[
     const avg=assetNoQty(a)?'<span class="muted">-</span>':(a.buyPrice?fmt(a.buyPrice):'<span class="muted">-</span>');
     const curC=cur!==null?fmt(cur):'<span class="muted">-</span>';
     const pnlCell=pnl===null?'<span class="muted">-</span>':`<span class="${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}${fmt(pnl)}${pp!==null?'<br><span style="font-size:10px;font-weight:600">('+(pp>=0?'+':'')+pp.toFixed(1)+'%)</span>':''}</span>`;
-    return `<tr onclick="openAssetDetail('${a.id}')" data-asset-id="${a.id}" class="${isPendingSync('assets',a.id)?'unsynced':''}"><td><div class="atname"><div class="ai" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.style.display='none'"/>`:`<span style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',15)}</span>`}</div><span class="nm">${esc(a.name)}</span></div></td><td><span class="atype-chip" style="color:${readableInk(type.color)};background:${type.bg}">${catLabel(a.category)}</span></td><td>${hold}</td><td>${avg}</td><td>${curC}</td><td>${fmt(inv)}</td><td style="font-weight:800">${fmt(cv)}</td><td>${pnlCell}</td></tr>`;}).join('');
+    return `<tr onclick="openAssetDetail('${jsAttr(a.id)}')" data-asset-id="${a.id}" class="${isPendingSync('assets',a.id)?'unsynced':''}"><td><div class="atname"><div class="ai" style="background:${type.bg}">${img?`<img src="${img}" onerror="this.style.display='none'"/>`:`<span style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',15)}</span>`}</div><span class="nm">${esc(a.name)}</span></div></td><td><span class="atype-chip" style="color:${readableInk(type.color)};background:${type.bg}">${catLabel(a.category)}</span></td><td>${hold}</td><td>${avg}</td><td>${curC}</td><td>${fmt(inv)}</td><td style="font-weight:800">${fmt(cv)}</td><td>${pnlCell}</td></tr>`;}).join('');
   const totPp=tInv>0?(tPnl/tInv*100):0;
   target.innerHTML=`<table class="atable"><thead><tr><th>Asset</th><th>Type</th><th>Holdings</th><th>Avg Buy</th><th>Current</th><th>Invested</th><th>Value</th><th>P&amp;L</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>Total · ${assets.length}</td><td></td><td></td><td></td><td></td><td>${fmt(tInv)}</td><td>${fmt(tVal)}</td><td class="${tPnl>=0?'pos':'neg'}">${tPnl>=0?'+':''}${fmt(tPnl)} (${totPp>=0?'+':''}${totPp.toFixed(1)}%)</td></tr></tfoot></table>`;
   requestAnimationFrame(()=>initTableScrollFade('assetsTableWrap','assetsTableFade'));
@@ -4518,7 +4524,7 @@ function renderDebtDetailBody(){
     const tint=inward?'rgba(0,200,150,.14)':'rgba(255,77,106,.14)';
     const word=kind==='pay'?(isOwed?'Received':'Repaid'):(isOwed?'Lent':'Borrowed');
     const an=acctName(e);
-    return `<button type="button" class="dtx" onclick="openDebtEntry('${jsAttr(d.id)}','${kind}','${jsAttr(e.id)}')" aria-label="${word} ${fmt(e.amount)} on ${esc(formatDate(e.date))}, edit">
+    return `<button type="button" class="dtx" onclick="openDebtEntry('${jsAttr(d.id)}','${jsAttr(kind)}','${jsAttr(e.id)}')" aria-label="${word} ${fmt(e.amount)} on ${esc(formatDate(e.date))}, edit">
       <span class="dtx-ico" style="background:${tint};color:${col}">${inward?DTX_IN:DTX_OUT}</span>
       <span class="dtx-main">
         <span class="dtx-top"><span class="dtx-ttl">${word}</span><span class="dtx-amt" style="color:${col}">${inward?'+':'−'}${fmt(e.amount)}</span></span>
@@ -4798,7 +4804,7 @@ function renderDebts(){const owed=state.debts.filter(d=>d.type==='owed'),iowe=st
     const metaHtml=metaBits.join(' &middot; ')||'&nbsp;';
     const subBits=[];
     const accHtml=acc?`<span style="color:var(--accent)">+${fmt(acc)} interest</span>`:'';
-    const totalPaid=(d.payments||[]).reduce((s,p)=>s+p.amount,0);const remaining=Math.max(0,d.amount+(acc||0)-totalPaid);const paidBadge=totalPaid>0?`<span style="color:var(--green)">Paid ${fmt(totalPaid)}</span>`:'';return `<div class="debt-item${enterCls()}${isPendingSync('debts',d.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-debt-id="${d.id}" onclick="openDebtDetail('${d.id}')" aria-label="${esc(d.name)}, ${fmt(remaining)}">${isPendingSync('debts',d.id)?pendingBadge():''}<div class="debt-avatar" style="--dav-h:${debtHue(d.name)}">${esc(ini)}</div><div class="debt-info"><div class="debt-name-row"><span class="debt-name">${esc(d.name)}</span>${d.interest&&d.interest.enabled?`<span class="debt-int-badge">${d.interest.type==='pct'?d.interest.rate+'%/'+freqShort(d.interest.freq):'Flat'}</span>`:''}${duePill}</div><div class="debt-note">${metaHtml}</div></div><div class="debt-vals"><div class="debt-val ${isOwed?'grn':'rd'}">${fmt(remaining)}</div><div class="debt-due">${[paidBadge,accHtml].filter(Boolean).join('')}</div></div></div>`;}).join('');
+    const totalPaid=(d.payments||[]).reduce((s,p)=>s+p.amount,0);const remaining=Math.max(0,d.amount+(acc||0)-totalPaid);const paidBadge=totalPaid>0?`<span style="color:var(--green)">Paid ${fmt(totalPaid)}</span>`:'';return `<div class="debt-item${enterCls()}${isPendingSync('debts',d.id)?' unsynced':''}" style="animation-delay:${_animateEnter?Math.min(i,12)*35:0}ms" role="button" tabindex="0" data-debt-id="${d.id}" onclick="openDebtDetail('${jsAttr(d.id)}')" aria-label="${esc(d.name)}, ${fmt(remaining)}">${isPendingSync('debts',d.id)?pendingBadge():''}<div class="debt-avatar" style="--dav-h:${debtHue(d.name)}">${esc(ini)}</div><div class="debt-info"><div class="debt-name-row"><span class="debt-name">${esc(d.name)}</span>${d.interest&&d.interest.enabled?`<span class="debt-int-badge">${d.interest.type==='pct'?d.interest.rate+'%/'+freqShort(d.interest.freq):'Flat'}</span>`:''}${duePill}</div><div class="debt-note">${metaHtml}</div></div><div class="debt-vals"><div class="debt-val ${isOwed?'grn':'rd'}">${fmt(remaining)}</div><div class="debt-due">${[paidBadge,accHtml].filter(Boolean).join('')}</div></div></div>`;}).join('');
   attachContextMenu(dl,'.debt-item',openDebtContextMenu);}
 // Interest on the balance actually outstanding over each stretch: lends and repayments
 // form one dated timeline. A settled debt stops accruing until more is lent.
@@ -5444,8 +5450,8 @@ function renderHabits(opts){
     const done=habitMonthCount(h.id,anchor);
     const pct=goal?Math.min(1,done/goal):0;
     html+=`<div class="hb-row" data-hid="${h.id}">
-      <div class="hb-name-cell" role="button" tabindex="0" onclick="openHabitMenu('${h.id}')"
-        onkeydown="habitNameKey(event,'${h.id}')" title="Tap to edit \u00b7 hold to drag into a new order">
+      <div class="hb-name-cell" role="button" tabindex="0" onclick="openHabitMenu('${jsAttr(h.id)}')"
+        onkeydown="habitNameKey(event,'${jsAttr(h.id)}')" title="Tap to edit \u00b7 hold to drag into a new order">
         <span class="hb-grip" aria-hidden="true"></span>
         <span class="hb-swatch" style="background:${h.color}"></span>
         <span class="hb-name">${esc(h.name)}</span>
@@ -5663,7 +5669,7 @@ function renderHabitCalendar(){
   const fil=el('hcalFilter');
   if(fil){
     fil.innerHTML=`<button class="hcal-chip${hcalFocus==='all'?' on':''}" onclick="setHcalFocus('all')">All habits</button>`
-      +list.map(h=>`<button class="hcal-chip${hcalFocus===h.id?' on':''}" onclick="setHcalFocus('${h.id}')"
+      +list.map(h=>`<button class="hcal-chip${hcalFocus===h.id?' on':''}" onclick="setHcalFocus('${jsAttr(h.id)}')"
         style="--chip:${h.color}"><span class="hcal-chip-dot" style="background:${h.color}"></span>${esc(h.name)}</button>`).join('');
   }
 
@@ -5695,7 +5701,7 @@ function renderHabitCalendar(){
     const label=future?`${key}, not yet`
       :(focus?`${focus.name} ${key} ${done?'done':'not done'}`:`${key}, ${done} of ${plural(possible,'habit')}`);
     html+=`<button class="${cls}" style="${style}" data-key="${key}" ${future?'disabled':''}
-      onclick="pickHcalDay('${key}')" aria-label="${esc(label)}">
+      onclick="pickHcalDay('${jsAttr(key)}')" aria-label="${esc(label)}">
       <span class="hcal-n">${d}</span>
       ${(!future&&possible>1&&!focus)?`<span class="hcal-frac">${done}/${possible}</span>`:''}
       ${(!future&&focus&&done)?'<span class="hcal-mark"></span>':''}
@@ -5732,7 +5738,7 @@ function renderHabitCalendar(){
         +list.map(h=>{
           const on=!!(log[h.id]&&log[h.id][hcalPickedDay]);
           return `<button class="hcal-row${on?' on':''}${editable?'':' locked'}" style="color:${readableInk(h.color)}"
-            ${editable?`onclick="toggleHabitFromCal('${h.id}','${hcalPickedDay}')"`:'disabled'}>
+            ${editable?`onclick="toggleHabitFromCal('${jsAttr(h.id)}','${jsAttr(hcalPickedDay)}')"`:'disabled'}>
             <span class="hcal-box">${on?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>
             <span class="hcal-row-name">${esc(h.name)}</span>
             <span class="hcal-row-state">${on?'done':(editable?'tap to tick':'not done')}</span>
@@ -5786,7 +5792,7 @@ function openHabitMenu(id){
 function habitPickColor(c){ pickedHabitColor=c; renderHabitColors(); }
 function renderHabitColors(){
   const box=el('habitColorRow'); if(!box) return;
-  box.innerHTML=HABIT_COLORS.map(c=>`<button type="button" class="hb-color${c===pickedHabitColor?' sel':''}" style="background:${c}" onclick="habitPickColor('${c}')" aria-label="Colour"></button>`).join('');
+  box.innerHTML=HABIT_COLORS.map(c=>`<button type="button" class="hb-color${c===pickedHabitColor?' sel':''}" style="background:${c}" onclick="habitPickColor('${jsAttr(c)}')" aria-label="Colour"></button>`).join('');
 }
 function saveHabit(){
   const name=el('habitNameInput').value.trim();
@@ -5837,7 +5843,7 @@ function renderPlan(){syncLinkedGoals();bindHabitGrid();renderHabits();const tt=
   else{gl.innerHTML=goals.map((g,i)=>{const pct=goalPct(g),col=g.colorTheme||'acc',color=GOAL_COLORS.find(c=>c.name===col)?.hex||'#f5a623',rem=Math.max(0,(g.target||0)-(g.saved||0)),done=pct>=100;
     const overdue=!done&&g.date&&parseDay(g.date)<new Date(new Date().toDateString());
     const dateHtml=g.date?(overdue?'<span class="goal-overdue-badge">OVERDUE, was due '+formatDate(g.date)+'</span>':'Target: '+formatDate(g.date)):'No target date';
-    return `<div class="goal-card${enterCls()} ${done?'done':''} ${overdue?'overdue':''}${isPendingSync('goals',g.id)?' unsynced':''}" style="animation-delay:${_animateEnter?i*45:0}ms" role="button" tabindex="0" data-goal-id="${g.id}" onclick="openGoalDetail('${g.id}')">${isPendingSync('goals',g.id)?pendingBadge():''}<div class="goal-top"><div class="goal-icon" style="background:var(--bg3);color:${readableInk(color)}">${svgIcon(g.icon||'target',18)}</div><div class="goal-info"><div class="goal-name">${esc(g.name)} ${done?'<span class="goal-done-badge" title="Goal reached"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${(goalLinkedIds(g).length)?'<span class="goal-link-badge" title="Linked to savings account(s)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>':''}</div><div class="goal-sub">${dateHtml} · ${fmt(rem)} left</div>${(function(){const p=goalProjection(g.target,g.saved,g.monthly,g.date);if(!p||p.done||p.onTrack==null)return '';return `<span class="goal-chip ${p.onTrack?'on':'off'}">${p.onTrack?'On track':fmt(p.shortfall)+' short'}</span>`;})()}</div><div class="goal-pct">${pct.toFixed(1)}%</div></div><div class="progress-bar"><div class="progress-fill ${col}" data-w="${pct}"></div></div><div class="progress-meta"><span>${fmt(g.saved||0)} saved</span><span>${fmt(g.target||0)} goal</span></div></div>`;}).join('');
+    return `<div class="goal-card${enterCls()} ${done?'done':''} ${overdue?'overdue':''}${isPendingSync('goals',g.id)?' unsynced':''}" style="animation-delay:${_animateEnter?i*45:0}ms" role="button" tabindex="0" data-goal-id="${g.id}" onclick="openGoalDetail('${jsAttr(g.id)}')">${isPendingSync('goals',g.id)?pendingBadge():''}<div class="goal-top"><div class="goal-icon" style="background:var(--bg3);color:${readableInk(color)}">${svgIcon(g.icon||'target',18)}</div><div class="goal-info"><div class="goal-name">${esc(g.name)} ${done?'<span class="goal-done-badge" title="Goal reached"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${(goalLinkedIds(g).length)?'<span class="goal-link-badge" title="Linked to savings account(s)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>':''}</div><div class="goal-sub">${dateHtml} · ${fmt(rem)} left</div>${(function(){const p=goalProjection(g.target,g.saved,g.monthly,g.date);if(!p||p.done||p.onTrack==null)return '';return `<span class="goal-chip ${p.onTrack?'on':'off'}">${p.onTrack?'On track':fmt(p.shortfall)+' short'}</span>`;})()}</div><div class="goal-pct">${pct.toFixed(1)}%</div></div><div class="progress-bar"><div class="progress-fill ${col}" data-w="${pct}"></div></div><div class="progress-meta"><span>${fmt(g.saved||0)} saved</span><span>${fmt(g.target||0)} goal</span></div></div>`;}).join('');
     attachContextMenu(gl,'.goal-card',openGoalContextMenu);
     // Grow from zero only on arrival.
     if(_animateEnter)requestAnimationFrame(()=>document.querySelectorAll('#goalsList .progress-fill').forEach(f=>f.style.width=f.dataset.w+'%'));
@@ -5850,7 +5856,7 @@ function renderPlan(){syncLinkedGoals();bindHabitGrid();renderHabits();const tt=
     return oa-ob||da.localeCompare(db);
   });
   rl.innerHTML=ordered.map(r=>{const bill=recurKind(r)==='bill';const sc=bill?spendCat(r.spendCat):null;const type=bill?{bg:(sc.color||'#888')+'22',color:sc.color||'#888'}:(tm[r.category]||ASSET_TYPES[5]);const paused=r.active===false;const due=r.nextDue||r.start;const overdue=!paused&&due<=today;const dueLbl=paused?'Paused':(overdue?'Due now':'Next: '+formatDate(due));const sameWord=bill&&String(r.name||'').trim().toLowerCase()===String(sc.label||'').toLowerCase();const targetLbl=bill?(sameWord?'':' · '+esc(sc.label)):(r.category==='crypto'&&r.coinName?' → '+esc(r.coinName):'');
-    return `<div class="recur-item ${paused?'paused':''}${isPendingSync('recurs',r.id)?' unsynced':''}" data-recur-id="${r.id}" role="button" tabindex="0" onclick="openEditRecur('${r.id}')">${isPendingSync('recurs',r.id)?pendingBadge():''}<div class="recur-ico" style="background:${type.bg};color:${readableInk(type.color)}">${(!bill&&r.coinImage)?`<img src="${esc(r.coinImage)}" style="width:16px;height:16px;border-radius:50%" onerror="this.style.display='none'"/>`:svgIcon(bill?(sc.icon||'receipt'):'coins',14)}</div><div class="recur-info"><div class="recur-name">${esc(r.name)}${targetLbl}</div><div class="recur-freq">${esc(freqLabel(r.freq))} · <span class="${overdue?'recur-due-now':''}">${dueLbl}</span></div></div><div class="recur-right"><div class="recur-val"${bill?' style="color:var(--red)"':''}>${bill?'−':''}${fmt(r.amount)}</div>${overdue?`<button class="recur-run-btn" onclick="event.stopPropagation();runRecurNow('${r.id}')">Run now</button>`:''}</div></div>`;}).join('');
+    return `<div class="recur-item ${paused?'paused':''}${isPendingSync('recurs',r.id)?' unsynced':''}" data-recur-id="${r.id}" role="button" tabindex="0" onclick="openEditRecur('${jsAttr(r.id)}')">${isPendingSync('recurs',r.id)?pendingBadge():''}<div class="recur-ico" style="background:${type.bg};color:${readableInk(type.color)}">${(!bill&&r.coinImage)?`<img src="${esc(r.coinImage)}" style="width:16px;height:16px;border-radius:50%" onerror="this.style.display='none'"/>`:svgIcon(bill?(sc.icon||'receipt'):'coins',14)}</div><div class="recur-info"><div class="recur-name">${esc(r.name)}${targetLbl}</div><div class="recur-freq">${esc(freqLabel(r.freq))} · <span class="${overdue?'recur-due-now':''}">${dueLbl}</span></div></div><div class="recur-right"><div class="recur-val"${bill?' style="color:var(--red)"':''}>${bill?'−':''}${fmt(r.amount)}</div>${overdue?`<button class="recur-run-btn" onclick="event.stopPropagation();runRecurNow('${jsAttr(r.id)}')">Run now</button>`:''}</div></div>`;}).join('');
     attachContextMenu(rl,'.recur-item',openRecurContextMenu);}}
 function openRecurContextMenu(itemEl){const id=itemEl.dataset.recurId;if(!id)return;const r=state.recurs.find(x=>x.id===id);if(!r)return;const paused=r.active===false;
   el('ctxHeader').innerHTML=`<div class="ctx-header-ico" style="background:var(--accent-glow);color:var(--accent)">${svgIcon('coins',18)}</div><div class="ctx-header-text"><div class="ctx-header-name">${esc(r.name)}</div><div class="ctx-header-sub">${fmt(r.amount)} · ${esc(freqLabel(r.freq))}</div></div>`;
@@ -5929,13 +5935,13 @@ function renderCurrList(){
     const rateTxt=c.code===base?'Amounts are stored in this'
       :(per?('1 '+c.code+' = '+per.toFixed(per<1?4:2)+' '+base):'Rate unavailable');
     return `<div class="curr-row${active?' active':''}" role="option" aria-selected="${active}">`
-      +`<button class="curr-pick" onclick="pickCurrency('${c.code}')">`
+      +`<button class="curr-pick" onclick="pickCurrency('${jsAttr(c.code)}')">`
       +`<span class="curr-sym">${esc(c.sym)}</span>`
       +`<span class="curr-txt"><span class="curr-code">${c.code}<span class="curr-name">${esc(c.name)}</span></span>`
       +`<span class="curr-rate${custom?' custom':''}">${rateTxt}${custom?' · yours':''}</span></span>`
       +(active?`<span class="curr-tick"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>`:'')
       +`</button>`
-      +(c.code===base?'':`<button class="curr-edit" onclick="openRateEditor('${c.code}')" aria-label="Set your own rate for ${c.code}" title="Set your own rate"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button>`)
+      +(c.code===base?'':`<button class="curr-edit" onclick="openRateEditor('${jsAttr(c.code)}')" aria-label="Set your own rate for ${c.code}" title="Set your own rate"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button>`)
       +`</div>`;
   }).join('');
 }
@@ -6016,7 +6022,7 @@ function renderAiSettings(){
   const seg=el('aiSpeedSeg');
   if(seg){
     seg.innerHTML=[['instant','Instant'],['fast','Fast'],['normal','Normal'],['slow','Slow']]
-      .map(([v,l])=>`<button class="seg-3-btn${p.speed===v?' on':''}" onclick="event.stopPropagation();setAiSpeed('${v}')">${l}</button>`).join('');
+      .map(([v,l])=>`<button class="seg-3-btn${p.speed===v?' on':''}" onclick="event.stopPropagation();setAiSpeed('${jsAttr(v)}')">${l}</button>`).join('');
   }
   const sub=el('aiStatusSub');
   if(sub)sub.textContent=aiThread.length?(aiThread.filter(t=>t.role==='user').length+' question'+(aiThread.filter(t=>t.role==='user').length!==1?'s':'')+' this session'):'Ask about anything in the app';
@@ -6346,7 +6352,7 @@ function popModalHistoryIfNeeded(){
 function bindModalOverlays(){document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModal(o.id);}));}
 // CUSTOM SELECT
 function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap)return;const c=options.find(o=>o.value===cur)||options[0];
-  wrap.innerHTML=`<div class="custom-select-trigger" id="cst-${cid}" tabindex="0" role="button" aria-haspopup="listbox"><span class="cst-label">${c.label}</span><svg class="caret" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div class="custom-select-dropdown" id="csd-${cid}" role="listbox">${options.map(o=>`<div class="csd-opt ${o.value===cur?'active':''}" data-val="${o.value}" role="option"><span class="csd-opt-name">${o.label}</span>${o.sub?`<span class="csd-opt-sub">${o.sub}</span>`:''}</div>`).join('')}</div>`;
+  wrap.innerHTML=`<div class="custom-select-trigger" id="cst-${cid}" tabindex="0" role="button" aria-haspopup="listbox"><span class="cst-label">${esc(c.label)}</span><svg class="caret" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div><div class="custom-select-dropdown" id="csd-${cid}" role="listbox">${options.map(o=>`<div class="csd-opt ${o.value===cur?'active':''}" data-val="${esc(o.value)}" role="option"><span class="csd-opt-name">${esc(o.label)}</span>${o.sub?`<span class="csd-opt-sub">${esc(o.sub)}</span>`:''}</div>`).join('')}</div>`;
   const trig=el('cst-'+cid),dd=el('csd-'+cid);trig.addEventListener('click',e=>{e.stopPropagation();document.querySelectorAll('.custom-select-trigger.open').forEach(t=>{if(t!==trig){t.classList.remove('open');const d=el('csd-'+t.id.replace('cst-',''));if(d){d.classList.remove('open');d.classList.remove('drop-up');}}});
     const opening=!trig.classList.contains('open');
     if(opening){const r=trig.getBoundingClientRect();const estH=Math.min(220,options.length*40+8);dd.classList.toggle('drop-up',r.bottom+estH>window.innerHeight-16&&r.top-estH>8);trig.scrollIntoView({block:'center',behavior:'smooth'});}
@@ -6418,7 +6424,7 @@ function buildCustomSelect(cid,options,cur,onChange){const wrap=el(cid);if(!wrap
   trig.setAttribute('aria-expanded','false');
 }
 // ASSET TYPE ROW
-function renderAssetTypeRow(){el('assetTypeRow').innerHTML=ASSET_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedAssetType?'active':''}" onclick="setAssetType('${t.id}')">${t.svg}<span>${t.label}</span></button>`).join('');}
+function renderAssetTypeRow(){el('assetTypeRow').innerHTML=ASSET_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedAssetType?'active':''}" onclick="setAssetType('${jsAttr(t.id)}')">${t.svg}<span>${t.label}</span></button>`).join('');}
 function setAssetType(t){if(t===selectedAssetType)return;selectedAssetType=t;state.settings.lastAssetType=t;saveState();haptic('tap');if(t==='stock')ensureNepsePrices();renderAssetTypeRow();
   el('assetQty').value='';el('assetBuyPrice').value='';el('assetCurrentPrice').value='';el('assetName').value='';el('assetNotes').value='';
   el('cryptoSearch').value='';el('cryptoSuggestions').style.display='none';el('cryptoPriceHint').style.display='none';
@@ -6705,7 +6711,7 @@ function syncLiquidityFields(){
   if(!earns&&ir)ir.value='';
   if(!matures&&md)md.value='';
 }
-function renderPropertyTypeRow(){el('propertyTypeRow').innerHTML=PROPERTY_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedPropertyType?'active':''}" onclick="setPropertyType('${t.id}')" style="min-width:58px"><div style="color:${selectedPropertyType===t.id?'var(--accent)':'var(--text3)'}">${svgIcon(t.icon,16)}</div><span>${t.label}</span></button>`).join('');}
+function renderPropertyTypeRow(){el('propertyTypeRow').innerHTML=PROPERTY_TYPES.map(t=>`<button class="atype-btn ${t.id===selectedPropertyType?'active':''}" onclick="setPropertyType('${jsAttr(t.id)}')" style="min-width:58px"><div style="color:${selectedPropertyType===t.id?'var(--accent)':'var(--text3)'}">${svgIcon(t.icon,16)}</div><span>${t.label}</span></button>`).join('');}
 function setPropertyType(id){selectedPropertyType=id;renderPropertyTypeRow();}
 // SEARCHES
 let searchTimeout=null;
@@ -6824,7 +6830,7 @@ function renderGoalIconGrid(){
 }
 function openGoalIconPicker(){openIconPicker(selectedGoalIcon,setGoalIcon,'Goal icon');}
 function setGoalIcon(k){selectedGoalIcon=k;renderGoalIconGrid();}
-function renderGoalColors(){el('goalColorGrid').innerHTML=GOAL_COLORS.map(c=>`<button class="color-opt ${c.name===selGoalColor?'sel':''}" style="background:${c.hex}" onclick="selGoalColor='${c.name}';renderGoalColors()" aria-label="${c.name} color"></button>`).join('');}
+function renderGoalColors(){el('goalColorGrid').innerHTML=GOAL_COLORS.map(c=>`<button class="color-opt ${c.name===selGoalColor?'sel':''}" style="background:${c.hex}" onclick="selGoalColor='${jsAttr(c.name)}';renderGoalColors()" aria-label="${c.name} color"></button>`).join('');}
 // INTEREST
 function refreshAccruedBox(d){
   const box=el('accruedBox');
@@ -7183,13 +7189,13 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
     <div class="mini-actions" role="tablist"><button class="act-pill buy${liqMode==='add'?' active':''}" role="tab" aria-selected="${liqMode==='add'}" onclick="setLiqMode('add')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Deposit</button><button class="act-pill sell${liqMode==='withdraw'?' active':''}" role="tab" aria-selected="${liqMode==='withdraw'}" onclick="setLiqMode('withdraw')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg> Withdraw</button>${cashAccounts().length>1?`<button class="act-pill xfer${liqMode==='transfer'?' active':''}" role="tab" aria-selected="${liqMode==='transfer'}" onclick="setLiqMode('transfer')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 2 21 6 17 10"/><line x1="21" y1="6" x2="7" y2="6"/><polyline points="7 22 3 18 7 14"/><line x1="3" y1="18" x2="17" y2="18"/></svg> Transfer</button>`:''}</div>
     <div class="mini-form" id="liqForm"><div style="font-size:12px;font-weight:700;margin-bottom:8px" id="liqFormTitle"></div>
       <div class="form-row-2" style="margin-bottom:8px">
-        <div><label class="form-lbl" id="liqAmtLbl">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="liqAmt" type="number" step="any" inputmode="decimal" placeholder="0.00" oninput="updateLiqPreview('${a.id}')"/><div class="ccy-sel-wrap" id="liqAmtCcyWrap"></div></div></div>
+        <div><label class="form-lbl" id="liqAmtLbl">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="liqAmt" type="number" step="any" inputmode="decimal" placeholder="0.00" oninput="updateLiqPreview('${jsAttr(a.id)}')"/><div class="ccy-sel-wrap" id="liqAmtCcyWrap"></div></div></div>
         <div><label class="form-lbl">DATE</label><input class="form-input" id="liqDate" type="date"/></div>
       </div>
       <div class="form-row" id="liqXferRow" hidden style="margin-bottom:8px"><label class="form-lbl">TO ACCOUNT</label><div class="custom-select-wrap" id="liqXferWrap"></div></div>
       <div id="liqPreview" style="font-size:11px;font-weight:600;margin:-2px 0 8px;padding:6px 8px;border-radius:6px;background:var(--bg3);color:var(--text2)"></div>
       <div class="form-row" style="margin-bottom:8px"><label class="form-lbl">NOTE</label><input class="form-input" id="liqNote" placeholder="Optional note"/></div>
-      <button class="submit-btn" id="liqSaveBtn" style="margin-top:0" onclick="saveLiqTx('${a.id}')">Save</button>
+      <button class="submit-btn" id="liqSaveBtn" style="margin-top:0" onclick="saveLiqTx('${jsAttr(a.id)}')">Save</button>
     </div>`;}
   
   else if(a.category!=='liquidity'){const _nq=nepseQuote(a);const hasLive=(a.coinId&&livePrices[a.coinId])||(_nq&&_nq.price>0);if(hasLive){
@@ -7199,21 +7205,21 @@ function openAssetDetail(id){const a=state.assets.find(x=>x.id===id);if(!a)retur
       // No per-unit reading; ask for the whole value.
       const _noQ=assetNoQty(a);
       if(_noQ)isQuickCurPerUnit=false;
-      extra=`<div style="margin-bottom:12px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:11px"><label class="form-lbl" style="margin-bottom:6px;display:block" id="quickCurLbl">${_noQ?'WHAT IT IS WORTH TODAY':'CURRENT PRICE / '+(a.unit||'unit').toUpperCase()} (${currentCurrency.code}), keep it updated</label><div style="display:flex;gap:8px"><input class="form-input" id="quickCurPrice" type="number" step="any" inputmode="decimal" value="${_per?(isQuickCurPerUnit?_per:_per*_q).toFixed(2):''}" placeholder="${_noQ?'Value today':isQuickCurPerUnit?"Today's price per unit":'Total value today'}"/><button class="add-btn" style="flex-shrink:0;white-space:nowrap" onclick="quickUpdateCurrentPrice('${a.id}')">Update</button></div>${_noQ?'':`<div class="seg-control" style="margin-top:7px;float:right"><button type="button" class="seg-btn${isQuickCurPerUnit?' active':''}" onclick="setQuickCurMode(true,'${a.id}')">PRICE / UNIT</button><button type="button" class="seg-btn${isQuickCurPerUnit?'':' active'}" onclick="setQuickCurMode(false,'${a.id}')">TOTAL PRICE</button></div><div style="clear:both"></div>`}</div>`;}}
+      extra=`<div style="margin-bottom:12px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:11px"><label class="form-lbl" style="margin-bottom:6px;display:block" id="quickCurLbl">${_noQ?'WHAT IT IS WORTH TODAY':'CURRENT PRICE / '+(a.unit||'unit').toUpperCase()} (${currentCurrency.code}), keep it updated</label><div style="display:flex;gap:8px"><input class="form-input" id="quickCurPrice" type="number" step="any" inputmode="decimal" value="${_per?(isQuickCurPerUnit?_per:_per*_q).toFixed(2):''}" placeholder="${_noQ?'Value today':isQuickCurPerUnit?"Today's price per unit":'Total value today'}"/><button class="add-btn" style="flex-shrink:0;white-space:nowrap" onclick="quickUpdateCurrentPrice('${jsAttr(a.id)}')">Update</button></div>${_noQ?'':`<div class="seg-control" style="margin-top:7px;float:right"><button type="button" class="seg-btn${isQuickCurPerUnit?' active':''}" onclick="setQuickCurMode(true,'${jsAttr(a.id)}')">PRICE / UNIT</button><button type="button" class="seg-btn${isQuickCurPerUnit?'':' active'}" onclick="setQuickCurMode(false,'${jsAttr(a.id)}')">TOTAL PRICE</button></div><div style="clear:both"></div>`}</div>`;}}
   // Any priced holding gets the chart (gold via PAXG); the block removes itself if no
   // history comes back.
   const hasChart=!!a.coinId&&a.category!=='liquidity';
-  el('assetDetailContent').innerHTML=`<div class="modal-hdr"><div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><div style="width:42px;height:42px;border-radius:12px;background:${type.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${img?`<img style="width:30px;height:30px;border-radius:50%;object-fit:cover" src="${img}" onerror="this.style.display='none'" loading="lazy"/>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',20)}</div>`}</div><div style="min-width:0"><div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div><div style="font-size:10px;color:var(--text3)">${catLabel(a.category)}${a.unit?' · '+a.unit:''}</div></div></div><div style="display:flex;gap:6px;flex-shrink:0"><button class="modal-close" onclick="${a.category==='liquidity'?`openEditAsset('${a.id}')`:`openAssetEditPicker('${a.id}')`}" aria-label="Edit asset"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="modal-close" onclick="closeModal('assetDetailModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+  el('assetDetailContent').innerHTML=`<div class="modal-hdr"><div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><div style="width:42px;height:42px;border-radius:12px;background:${type.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${img?`<img style="width:30px;height:30px;border-radius:50%;object-fit:cover" src="${img}" onerror="this.style.display='none'" loading="lazy"/>`:`<div style="color:${readableInk(type.color)}">${svgIcon(a.icon||'coins',20)}</div>`}</div><div style="min-width:0"><div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div><div style="font-size:10px;color:var(--text3)">${catLabel(a.category)}${a.unit?' · '+a.unit:''}</div></div></div><div style="display:flex;gap:6px;flex-shrink:0"><button class="modal-close" onclick="${a.category==='liquidity'?`openEditAsset('${jsAttr(a.id)}')`:`openAssetEditPicker('${jsAttr(a.id)}')`}" aria-label="Edit asset"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="modal-close" onclick="closeModal('assetDetailModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
     <div class="modal-body"><div class="ad-value-row"><span class="ad-value">${fmt(cv)}</span>${adPnl}</div>${extra}
     ${hasChart?`<div class="cs-wrap"><div class="cs-readout"></div><div class="cs-loading" id="csArea">Loading price chart…</div><div class="cs-range" id="csRange"></div></div>`:''}
     ${a.category!=='liquidity'?`<div class="detail-stats"><div class="d-stat"><div class="d-stat-lbl">COST</div><div class="d-stat-val">${a.buyPrice?fmt((a.buyPrice||0)*assetUnits(a)):'-'}</div></div><div class="d-stat"><div class="d-stat-lbl">P&amp;L</div><div class="d-stat-val" style="color:${pos?'var(--green)':'var(--red)'}">${pnl!==null?(pos?'+':'')+fmt(pnl):'N/A'}</div></div><div class="d-stat"><div class="d-stat-lbl">RETURN</div><div class="d-stat-val" style="color:${pos?'var(--green)':'var(--red)'}">${pp!==null?(pos?'+':'')+pp.toFixed(2)+'%':'N/A'}</div></div></div>`:''}
     ${txUI}
     ${(a.qty||a.date)?`<div class="ad-facts">${a.qty?`<div class="ad-fact"><span class="ad-fact-lbl">Holding</span><span class="ad-fact-val">${esc(fmtQty(a.qty,a))} ${esc(a.unit||'units')}</span></div>`:''}${a.date?`<div class="ad-fact"><span class="ad-fact-lbl">Held since</span><span class="ad-fact-val">${esc(formatDate(a.date))}</span></div>`:''}</div>`:''}
-    ${txs.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 6px"><div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase">TRANSACTION HISTORY</div><div style="display:flex;align-items:center;gap:6px">${(a.commodityId&&(COMMODITIES.find(c=>c.id===a.commodityId)||COMMODITIES[0]).unitOptions.length>1)?`<div class="custom-select-wrap tx-hist-unit" id="txHistUnitWrap_${a.id}" style="width:auto;min-width:88px"></div>`:''}<button class="tx-export-btn" onclick="event.stopPropagation();openAssetExportPicker('${a.id}')" aria-label="Export transaction history"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button></div></div>${buildTxTable(txs,a)}`:''}<div id="adPnlCalSlot"></div></div>`;
+    ${txs.length?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 6px"><div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase">TRANSACTION HISTORY</div><div style="display:flex;align-items:center;gap:6px">${(a.commodityId&&(COMMODITIES.find(c=>c.id===a.commodityId)||COMMODITIES[0]).unitOptions.length>1)?`<div class="custom-select-wrap tx-hist-unit" id="txHistUnitWrap_${a.id}" style="width:auto;min-width:88px"></div>`:''}<button class="tx-export-btn" onclick="event.stopPropagation();openAssetExportPicker('${jsAttr(a.id)}')" aria-label="Export transaction history"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button></div></div>${buildTxTable(txs,a)}`:''}<div id="adPnlCalSlot"></div></div>`;
   updateCurrLabels();if(a.category==='liquidity')bindLiqAmtCcy();openModal('assetDetailModal');
   if(hasChart){
     el('csRange').innerHTML=CS_TIMEFRAMES.map(t=>
-      `<button class="pnl-pill ${t.k===CS_DEFAULT_TF?'active':''}" data-tf="${t.k}" onclick="loadCandles('${a.coinId}','${t.k}',this,'${a.id}')">${t.label}</button>`).join('');
+      `<button class="pnl-pill ${t.k===CS_DEFAULT_TF?'active':''}" data-tf="${t.k}" onclick="loadCandles('${jsAttr(a.coinId)}','${jsAttr(t.k)}',this,'${jsAttr(a.id)}')">${t.label}</button>`).join('');
     loadCandles(a.coinId,CS_DEFAULT_TF,null,a.id);
   }
   // Day by day, for this holding on its own.
@@ -7951,7 +7957,7 @@ function syncGoalLinkUI(){
   savedInput.readOnly=linked;savedInput.style.opacity=linked?'.6':'1';
   presetsRow.style.display=linked?'none':'';
   if(!opts.length){el('goalLinkHint').textContent='Add a Liquidity asset (savings, cash, FD) first to link a goal.';if(toggle.classList.contains('on')){toggle.classList.remove('on');toggle.setAttribute('aria-checked','false');picker.style.display='none';savedInput.readOnly=false;savedInput.style.opacity='1';presetsRow.style.display='';goalLinkedAssetIds=[];}}
-  const list=el('goalLinkAssetList');if(list){list.innerHTML=opts.map(o=>{const checked=goalLinkedAssetIds.includes(o.value);return`<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;${checked?'border-color:var(--accent);':''}"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" ${checked?'checked':''} onchange="toggleGoalAsset('${o.value}',this.checked)"/><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--text)">${esc(o.label)}</div><div style="font-size:10px;color:var(--text3)">${o.sub}</div></div></label>`;}).join('');}
+  const list=el('goalLinkAssetList');if(list){list.innerHTML=opts.map(o=>{const checked=goalLinkedAssetIds.includes(o.value);return`<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;${checked?'border-color:var(--accent);':''}"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" ${checked?'checked':''} onchange="toggleGoalAsset('${jsAttr(o.value)}',this.checked)"/><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--text)">${esc(o.label)}</div><div style="font-size:10px;color:var(--text3)">${o.sub}</div></div></label>`;}).join('');}
   applyGoalLinkValue();
 }
 function toggleGoalAsset(id,checked){if(checked){if(!goalLinkedAssetIds.includes(id))goalLinkedAssetIds.push(id);}else{goalLinkedAssetIds=goalLinkedAssetIds.filter(x=>x!==id);}if(!goalLinkedAssetIds.length){el('goalLinkToggle').className='toggle';el('goalLinkToggle').setAttribute('aria-checked','false');el('goalLinkPicker').style.display='none';el('goalSaved').readOnly=false;el('goalSaved').style.opacity='1';el('goalPresetsRow').style.display='';}syncGoalLinkUI();}
@@ -8206,7 +8212,7 @@ function renderExportWizardStep1() {
       <div style="font-size:12px;color:var(--text2);line-height:1.5">Choose what to include in your backup file. Everything's selected by default.</div>
       ${EXPORT_CATS.map(c => `
         <label class="wiz-check-row">
-          <input type="checkbox" ${exportSelected[c.key]?'checked':''} onchange="exportSelected['${c.key}']=this.checked;el('exportNextBtn').disabled=!Object.values(exportSelected).some(Boolean)"/>
+          <input type="checkbox" ${exportSelected[c.key]?'checked':''} onchange="exportSelected['${jsAttr(c.key)}']=this.checked;el('exportNextBtn').disabled=!Object.values(exportSelected).some(Boolean)"/>
           <span class="sync-choice-ico">${svgIcon(c.ico,15)}</span>
           <span><span class="wiz-check-name">${c.label}</span><span class="wiz-check-sub" style="display:block">${c.sub}</span></span>
           <span class="wiz-check-count">${exportCount(c.key)}</span>
@@ -8301,7 +8307,7 @@ function openAssetExportPicker(assetId){
     {key:'md',label:'Markdown',sub:'Formatted text table (.md)',icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 16V8l4 4 4-4v8"/></svg>'},
     {key:'image',label:'Image',sub:'Preview & themed PNG snapshot',icon:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'}
   ];
-  body.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">${fmts.map(f=>`<button class="export-fmt-opt" onclick="runAssetExport('${f.key}')"><span class="export-fmt-icon">${f.icon}</span><span style="text-align:left;flex:1"><span class="export-fmt-name">${f.label}</span><span class="export-fmt-sub">${f.sub}</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="9 18 15 12 9 6"/></svg></button>`).join('')}</div>`;
+  body.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">${fmts.map(f=>`<button class="export-fmt-opt" onclick="runAssetExport('${jsAttr(f.key)}')"><span class="export-fmt-icon">${f.icon}</span><span style="text-align:left;flex:1"><span class="export-fmt-name">${f.label}</span><span class="export-fmt-sub">${f.sub}</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="9 18 15 12 9 6"/></svg></button>`).join('')}</div>`;
   openModal('assetExportModal');
 }
 function assetExportData(assetId){
@@ -8476,7 +8482,7 @@ function openAssetMdPreview(data,safeName,dateStr){
       <button class="wiz-btn ghost" style="flex:1" onclick="copyMdExport()">Copy to Clipboard</button>
       <button class="wiz-btn primary" style="flex:1" onclick="downloadMdExport()">Download .md</button>
     </div>
-    <button class="wiz-btn ghost" onclick="openAssetExportPicker('${data.a.id}')">‹ Back</button>
+    <button class="wiz-btn ghost" onclick="openAssetExportPicker('${jsAttr(data.a.id)}')">‹ Back</button>
   </div>`;
 }
 function copyMdExport(){
@@ -8513,7 +8519,7 @@ function renderAssetImagePreview(){
     <div style="display:flex;gap:8px">
       <button class="wiz-btn primary" style="flex:1" onclick="downloadImgExport()">Download PNG</button>
     </div>
-    <button class="wiz-btn ghost" onclick="openAssetExportPicker('${st.data.a.id}')">‹ Back</button>
+    <button class="wiz-btn ghost" onclick="openAssetExportPicker('${jsAttr(st.data.a.id)}')">‹ Back</button>
   </div>`;
   drawAssetImageCanvas();
 }
@@ -9116,7 +9122,7 @@ let _importPendingData = null;
 // Backups are untrusted: every field is type-checked and coerced.
 const IMPORT_LIMITS = { assets:5000, spends:50000, debts:5000, goals:2000, recurs:2000, transactions:50000 };
 
-// Ids end up in onclick="fn('${id}')"; restrict the charset.
+// Ids end up in onclick="fn('${jsAttr(id)}')"; restrict the charset.
 function safeId(v){
   const s = String(v == null ? '' : v).trim();
   return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null;
@@ -9175,6 +9181,12 @@ function sanitizeImportedItem(kind, raw){
         .map(p => ({ ...p, id: safeId(p.id) || uid(), amount: safeNum(p.amount) ?? 0, date: safeDate(p.date) }))
         .slice(0, 1000);
     } else if ('payments' in out) out.payments = [];
+    if (Array.isArray(out.lendHistory)){
+      out.lendHistory = out.lendHistory
+        .filter(h => h && typeof h === 'object')
+        .map(h => ({ ...h, id: safeId(h.id) || uid(), amount: safeNum(h.amount) ?? 0, date: safeDate(h.date), note: safeStr(h.note, 500) }))
+        .slice(0, 1000);
+    } else if ('lendHistory' in out) out.lendHistory = [];
   }
   if (kind === 'goals'){
     if (Array.isArray(out.linkedAssetIds)){
@@ -9183,6 +9195,7 @@ function sanitizeImportedItem(kind, raw){
   }
   if (kind === 'transactions'){
     if (out.assetId != null) out.assetId = safeId(out.assetId);
+    if (out.linkId != null) out.linkId = safeId(out.linkId);
   }
   if (kind === 'spends'){
     // Only expense or income.
@@ -9795,7 +9808,7 @@ function renderHapticSeg(){
   if(!seg)return;
   const cur=hapticLevel();
   seg.innerHTML=[['light','Light'],['medium','Medium'],['strong','Strong']]
-    .map(([v,l])=>`<button class="seg-3-btn${cur===v?' on':''}" aria-pressed="${cur===v}" onclick="event.stopPropagation();setHapticStrength('${v}')">${l}</button>`).join('');
+    .map(([v,l])=>`<button class="seg-3-btn${cur===v?' on':''}" aria-pressed="${cur===v}" onclick="event.stopPropagation();setHapticStrength('${jsAttr(v)}')">${l}</button>`).join('');
 }
 // HELPERS
 function el(id){return document.getElementById(id);}
@@ -10115,7 +10128,7 @@ function renderNeedsAttention(){
         +(needsExpanded?'Show fewer':`and ${items.length-3} more`)+`</button>`
       : '');
 }
-function renderInsights(ta,to,ti,nw,totalPnL,pct,best,worst){const box=el('insights');if(!box)return;const chips=[];const C=(ico,col,lbl,val)=>chips.push(`<div class="chip"><div class="chip-ico" style="background:${col}1f;color:${col}">${svgIcon(ico,14)}</div><div class="chip-txt"><span class="chip-lbl">${lbl}</span><span class="chip-val">${val}</span></div></div>`);
+function renderInsights(ta,to,ti,nw,totalPnL,pct,best,worst){const box=el('insights');if(!box)return;const chips=[];const C=(ico,col,lbl,val)=>chips.push(`<div class="chip"><div class="chip-ico" style="background:${col}1f;color:${col}">${svgIcon(ico,14)}</div><div class="chip-txt"><span class="chip-lbl">${esc(lbl)}</span><span class="chip-val">${val}</span></div></div>`);
   const acc=cssVar('--accent'),grn=cssVar('--green'),red=cssVar('--red'),blu=cssVar('--blue'),pur=cssVar('--purple');
   const yd=nwYesterday();if(yd!==null){const d=nw-yd,p=d>=0;C('chartline',p?grn:red,'Today',(p?'+':'')+fmt(d));}
   if(state.assets.length){C('trending',totalPnL>=0?grn:red,'Total P&L',
@@ -10126,12 +10139,12 @@ function renderInsights(ta,to,ti,nw,totalPnL,pct,best,worst){const box=el('insig
      fmt(sm.spent)+(bs?' \u00b7 '+bs.statusLabel:''));}
   // Colour by sign, not by label.
   if(best){C('rocket',best.pct>=0?grn:red,'Top performer',
-    clip(stripParens(best.name),12)+' <span class="chip-sub">'+(best.pct>=0?'+':'')+best.pct.toFixed(1)+'%</span>');}
+    esc(clip(stripParens(best.name),12))+' <span class="chip-sub">'+(best.pct>=0?'+':'')+best.pct.toFixed(1)+'%</span>');}
   // Only when different from the best.
   if(worst&&(!best||worst.name!==best.name))C('trending',worst.pct>=0?grn:red,'Worst performer',
-    clip(stripParens(worst.name),12)+' <span class="chip-sub">'+(worst.pct>=0?'+':'')+worst.pct.toFixed(1)+'%</span>');
+    esc(clip(stripParens(worst.name),12))+' <span class="chip-sub">'+(worst.pct>=0?'+':'')+worst.pct.toFixed(1)+'%</span>');
   // biggest holding
-  let big=null;state.assets.forEach(a=>{const v=getAssetCurrentValue(a);if(!big||v>big.v)big={n:a.name,v};});if(big&&ta>0){C('diamond',acc,'Biggest holding',clip(stripParens(big.n),12)+'<span class="chip-sub">'+(big.v/ta*100).toFixed(0)+'%</span>');}
+  let big=null;state.assets.forEach(a=>{const v=getAssetCurrentValue(a);if(!big||v>big.v)big={n:a.name,v};});if(big&&ta>0){C('diamond',acc,'Biggest holding',esc(clip(stripParens(big.n),12))+'<span class="chip-sub">'+(big.v/ta*100).toFixed(0)+'%</span>');}
   // diversification
   const cats=new Set(state.assets.map(a=>a.category)).size;if(state.assets.length){C('shield',pur,'Diversification',cats+' asset type'+(cats!==1?'s':''));}
   // top goal progress
@@ -10818,9 +10831,9 @@ async function renderBackups(){
       +'<span class="bk-tag'+(r.kind==='manual'?' manual':'')+'">'+(r.kind==='manual'?'manual':'auto')+'</span></div>'
       +'<div class="bk-meta">'+esc(parts.join(' · '))+(r.note?' · '+esc(r.note):'')+'</div>'
       +'</div><div class="bk-acts">'
-      +'<button class="bk-btn" title="Restore" aria-label="Restore this backup" onclick="confirmRestoreBackup(\''+r.id+'\')">'+BK_ICON.restore+'</button>'
-      +'<button class="bk-btn" title="Download" aria-label="Download this backup" onclick="downloadBackup(\''+r.id+'\')">'+BK_ICON.down+'</button>'
-      +'<button class="bk-btn danger" title="Delete" aria-label="Delete this backup" onclick="confirmDeleteBackup(\''+r.id+'\')">'+BK_ICON.del+'</button>'
+      +'<button class="bk-btn" title="Restore" aria-label="Restore this backup" onclick="confirmRestoreBackup(\''+jsAttr(r.id)+'\')">'+BK_ICON.restore+'</button>'
+      +'<button class="bk-btn" title="Download" aria-label="Download this backup" onclick="downloadBackup(\''+jsAttr(r.id)+'\')">'+BK_ICON.down+'</button>'
+      +'<button class="bk-btn danger" title="Delete" aria-label="Delete this backup" onclick="confirmDeleteBackup(\''+jsAttr(r.id)+'\')">'+BK_ICON.del+'</button>'
       +'</div></div>';
   }).join('');
 }
@@ -10943,7 +10956,7 @@ function slugCat(label){
 }
 // Title Case, so an invented name sits beside the built-ins without shouting.
 function tidyCatLabel(label){
-  return String(label||'').trim().replace(/\s+/g,' ').slice(0,28)
+  return String(label||'').replace(/[<>"'`{}\\]/g,'').trim().replace(/\s+/g,' ').slice(0,28)
     .replace(/\b\w/g,(m)=>m.toUpperCase());
 }
 // Existing category if the name matches one, else a new one.
@@ -11061,7 +11074,7 @@ function syncCatEditIcon(){
 function openCatIconPicker(){openIconPicker(catEditIcon,k=>{catEditIcon=k;syncCatEditIcon();},'Category icon');}
 function renderCatEditColors(){
   const g=el('catEditColors');if(!g)return;
-  g.innerHTML=NEWCAT_PALETTE.map(c=>`<button type="button" class="color-opt ${c===catEditColor?'sel':''}" style="background:${c}" onclick="pickCatEditColor('${c}')" aria-label="colour ${c}"></button>`).join('');
+  g.innerHTML=NEWCAT_PALETTE.map(c=>`<button type="button" class="color-opt ${c===catEditColor?'sel':''}" style="background:${c}" onclick="pickCatEditColor('${jsAttr(c)}')" aria-label="colour ${c}"></button>`).join('');
 }
 function pickCatEditColor(c){catEditColor=c;renderCatEditColors();syncCatEditIcon();haptic('tap');}
 function saveCatEdit(){
@@ -11771,7 +11784,7 @@ function renderWhereItWent(k,sum){
   host.innerHTML=entries.map(([id,v])=>{
     const c=spendCat(id);
     const pct=(v/total)*100;
-    return `<button class="where-row" onclick="filterSpendCat('${id}')">`+
+    return `<button class="where-row" onclick="filterSpendCat('${jsAttr(id)}')">`+
       `<span class="where-dot" style="background:${c.color}"></span>`+
       `<span class="where-name">${esc(c.label)}</span>`+
       `<span class="where-pct">${pct.toFixed(1)}%</span>`+
@@ -11802,7 +11815,7 @@ function renderSpendList(k){
     const isIn=s.kind==='income';
     const c=catOf(s);
     const acct=s.account?(state.assets||[]).find(a=>a.id===s.account):null;
-    html+=`<button class="spend-row${isPendingSync('spends',s.id)?' unsynced':''}" data-spend-id="${s.id}" onclick="openEditSpend('${s.id}')">`+
+    html+=`<button class="spend-row${isPendingSync('spends',s.id)?' unsynced':''}" data-spend-id="${s.id}" onclick="openEditSpend('${jsAttr(s.id)}')">`+
       (isPendingSync('spends',s.id)?pendingBadge():'')+
       `<span class="spend-ico" style="background:${isIn?'rgba(91,142,125,.16)':'rgba(255,255,255,.05)'};color:${isIn?'var(--green)':(c.color?readableInk(c.color):'var(--text2)')}">${svgIcon(c.icon||'box',15)}</span>`+
       `<span class="spend-info"><span class="spend-name">${esc(s.note||c.label)}</span>`+
@@ -11844,7 +11857,7 @@ function renderBudgetEditor(){
   SPEND_GROUPS.forEach(g=>bindMoneyCcy('bg-'+g.id,'bgccy-'+g.id,updateBudgetTotal));
   // Which categories land in which group, so the labels are not a guess.
   el('budgetLegend').innerHTML=SPEND_GROUPS.map(g=>{
-    const cats=SPEND_CATS.filter(c=>c.group===g.id).map(c=>c.label);
+    const cats=SPEND_CATS.filter(c=>c.group===g.id).map(c=>esc(c.label));
     return cats.length?`<div class="budget-legend-row"><b>${g.label}</b><span>${cats.join(', ')}</span></div>`:'';
   }).join('');
   updateBudgetTotal();
@@ -12180,7 +12193,7 @@ function renderTreemap(){
     const showPct=pctTxt&&pxW>=58&&pxH>=54;
     const small=showLabel&&!showVal;
     const rest=t.id==='__rest';
-    const act=rest?' onclick="tmToggleAll()"':` onclick="openAssetDetail('${t.id}')"`;
+    const act=rest?' onclick="tmToggleAll()"':` onclick="openAssetDetail('${jsAttr(t.id)}')"`;
     const label=rest?t.name+', tap to show':esc(t.name);
     return `<button class="tm-tile${rest?' tm-rest':''}"${act} `+
       `style="left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;`+
@@ -12961,7 +12974,7 @@ function renderAllocTargetRows(){
       <input class="alloc-target-input" type="number" min="0" max="100" inputmode="numeric"
              value="${t[c] ? num(t[c]) : ''}" placeholder="0"
              aria-label="${esc(catLabel(c))} target percent"
-             oninput="setAllocTarget('${c}', this.value); syncAllocTotal(); renderRebalance();"/>
+             oninput="setAllocTarget('${jsAttr(c)}', this.value); syncAllocTotal(); renderRebalance();"/>
       <span class="alloc-target-pct">%</span>
     </div>`).join('');
   syncAllocTotal();
@@ -13394,7 +13407,7 @@ function renderHindsight(){
   {const _fr=el('hsFilterRow');
    if(_fr){
      const pills=(present.size>1?HS_FILTERS.filter(f=>f.k==='all'||present.has(f.k)):[]);
-     _fr.innerHTML=pills.map(f=>`<button class="pnl-pill${f.k===hsFilter?' active':''}" onclick="setHsFilter('${f.k}')">${f.label}</button>`).join('');
+     _fr.innerHTML=pills.map(f=>`<button class="pnl-pill${f.k===hsFilter?' active':''}" onclick="setHsFilter('${jsAttr(f.k)}')">${f.label}</button>`).join('');
      // Hide an empty filter row.
      _fr.style.display=pills.length?'':'none';
    }}
@@ -13460,7 +13473,7 @@ function hsRowHtml(r){
       return `<div class="hs-lot"><span>${esc(formatDate(s.date))}</span>
         <span>${esc(fmtQty(s.qty,r.asset))} at ${fmtUnit(s.per)}</span>
         <b style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':'−'}${fmt(Math.abs(d))}</b></div>`;}).join('')}</div>`:'';
-  return `<div class="hs-row${multi?' hs-clickable':''}"${multi?` onclick="toggleHsRow('${r.key}')" role="button" tabindex="0"`:''}>
+  return `<div class="hs-row${multi?' hs-clickable':''}"${multi?` onclick="toggleHsRow('${jsAttr(r.key)}')" role="button" tabindex="0"`:''}>
     <div class="hs-main">
       <span class="hs-name">${esc(clip(r.name,24))}${multi?`<span class="hs-lots-n">${r.sales.length} sales${open?' ▴':' ▾'}</span>`:''}</span>
       <span class="hs-sub">${esc(qty)} ${esc(r.unit)} · sold ${fmtUnit(r.sellPrice)} · now <span style="color:${src.tone}">${fmtUnit(r.ltp)}</span></span>

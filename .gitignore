@@ -1,12 +1,13 @@
-# Local scratch
-node_modules/
-.vercel
+# Secrets and local environment files never belong in git.
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+.vercel/
+node_modules/
 .DS_Store
 *.log
 
-# Note: sb-config.js is NOT ignored on purpose. Its two values are meant to
-# ship with the site (see the file itself for why), so a fork fills them in
-# and commits them. The secret one, service_role, is an environment variable
-# and never appears in any tracked file.
+# sb-config.js is tracked on purpose: its two values are public by design and a fork
+# fills them in. The service_role key is an environment variable, never a file here.

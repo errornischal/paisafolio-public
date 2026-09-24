@@ -1,5 +1,7 @@
 // CoinGecko proxy (blocked from Nepal). Bounded cache, validated params, own-origin CORS, hard timeouts.
 
+import limit from './_limit.js';
+
 const CG = 'https://api.coingecko.com/api/v3';
 // Binance serves real OHLC at every interval with no key; CoinGecko is the fallback.
 const BINANCE_HOSTS = [
@@ -168,6 +170,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  if (limit.limited(req, res, 'crypto', 120)) return;
 
   const params = req.query || {};
   const action = one(params.action) || 'prices';

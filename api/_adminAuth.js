@@ -35,8 +35,7 @@ async function roleOf(userId) {
 // Returns { ok:true, user } or { ok:false, status, error }.
 async function requireAdmin(req) {
   if (!configured()) {
-    return { ok: false, status: 503, error: 'Admin is not set up on this deployment.',
-      detail: 'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the Vercel project, then redeploy.' };
+    return { ok: false, status: 503, error: 'Admin is not set up on this deployment.' };
   }
   const token = bearerFrom(req);
   if (!token) return { ok: false, status: 401, error: 'Sign in first.' };

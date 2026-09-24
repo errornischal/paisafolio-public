@@ -6,6 +6,8 @@ let sbClient=null, supabaseUser=null;
 // the few helpers this page borrows from the app
 const el=(id)=>document.getElementById(id);
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"'`=\/]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;','=':'&#61;','/':'&#47;'}[c]));
+// For a value inside a JS string inside an HTML attribute: esc() would be decoded back first.
+const jsAttr=(s)=>String(s==null?'':s).replace(/[\\'"<>&`\r\n\u2028\u2029]/g,c=>({'\\':'\\\\',"'":'\\u0027','"':'\\u0022','<':'\\u003C','>':'\\u003E','&':'\\u0026','`':'\\u0060','\r':'','\n':'','\u2028':'','\u2029':''}[c]));
 function formatDate(d){if(!d)return'';try{return new Date(d).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
 function haptic(){try{if(navigator.vibrate)navigator.vibrate(8);}catch(e){}}
 
@@ -110,7 +112,7 @@ function setAdminTab(t){adminTab=t;renderAdmin();haptic('tap');}
 async function renderAdmin(force){
   if(!el('adminBody'))return;
   el('adminTabs').innerHTML=[['ai','AI'],['users','Users'],['data','Data']]
-    .map(([k,l])=>`<button class="pnl-pill${k===adminTab?' active':''}" onclick="setAdminTab('${k}')">${l}</button>`).join('');
+    .map(([k,l])=>`<button class="pnl-pill${k===adminTab?' active':''}" onclick="setAdminTab('${jsAttr(k)}')">${l}</button>`).join('');
   const body=el('adminBody');
   if(!adminData||force){
     body.innerHTML='<div class="admin-loading">Loading…</div>';
@@ -180,21 +182,21 @@ function adminProviderCard(p){
     <div class="admin-models">
       <div class="admin-models-hdr">
         <span class="form-lbl" style="margin:0">MODELS ${chosen.length?`<span class="admin-dim">${chosen.length} chosen</span>`:''}</span>
-        <button class="admin-btn" onclick="adminFetchModels('${p.id}')" ${p.configured?'':'disabled'}>Fetch list</button>
+        <button class="admin-btn" onclick="adminFetchModels('${jsAttr(p.id)}')" ${p.configured?'':'disabled'}>Fetch list</button>
       </div>
       ${chosen.length?`<div class="admin-chosen">${chosen.map((m,i)=>
-        `<span class="admin-chip pick">${i===0?'<b>1st</b> ':''}${esc(m)}<button onclick="adminDropModel('${p.id}',${i})" aria-label="Remove">×</button></span>`).join('')}</div>`
+        `<span class="admin-chip pick">${i===0?'<b>1st</b> ':''}${esc(m)}<button onclick="adminDropModel('${jsAttr(p.id)}',${i})" aria-label="Remove">×</button></span>`).join('')}</div>`
         :`<div class="admin-hint">${p.suggest.length?'Nothing chosen, so these are tried: '+p.suggest.map(esc).join(', '):'Fetch the list and pick at least one, or this provider is skipped.'}</div>`}
       ${models?`<div class="admin-modellist">${models.length?models.map(m=>
-        `<button class="admin-model${chosen.indexOf(m.id)>=0?' picked':''}" onclick="adminPickModel('${p.id}','${esc(m.id).replace(/'/g,"\\\\'")}')">
+        `<button class="admin-model${chosen.indexOf(m.id)>=0?' picked':''}" onclick="adminPickModel('${jsAttr(p.id)}','${jsAttr(m.id)}')">
           <span>${esc(m.id)}</span>${m.free===true?'<i class="free">free</i>':''}${m.free===false?'<i class="paid">paid</i>':''}
           ${m.context?`<i class="ctx">${Math.round(m.context/1000)}k</i>`:''}</button>`).join('')
         :'<div class="admin-hint">That key returned no usable chat models.</div>'}</div>`:''}
     </div>
     <div class="admin-actions">
-      <button class="admin-btn primary" onclick="adminSaveProvider('${p.id}')">Save</button>
-      <button class="admin-btn" onclick="adminTestProvider('${p.id}')" ${p.configured?'':'disabled'}>Test</button>
-      ${p.configured&&p.keySource!=='env'?`<button class="admin-btn danger" onclick="adminClearKey('${p.id}')">Remove key</button>`:''}
+      <button class="admin-btn primary" onclick="adminSaveProvider('${jsAttr(p.id)}')">Save</button>
+      <button class="admin-btn" onclick="adminTestProvider('${jsAttr(p.id)}')" ${p.configured?'':'disabled'}>Test</button>
+      ${p.configured&&p.keySource!=='env'?`<button class="admin-btn danger" onclick="adminClearKey('${jsAttr(p.id)}')">Remove key</button>`:''}
       <label class="admin-toggle"><input type="checkbox" id="admen-${p.id}" ${p.enabled?'checked':''}/> <span>Enabled</span></label>
     </div>
     <div class="admin-result" id="admres-${p.id}"></div>
@@ -262,7 +264,7 @@ async function renderAdminUsers(){
         <span class="admin-user-name">${esc(u.full_name||u.username||u.email||'Unnamed')}</span>
         <span class="admin-user-sub">${esc(u.email||'')}${u.created_at?' · joined '+formatDate(u.created_at):''}</span>
       </div>
-      <button class="admin-btn${u.role==='admin'?' primary':''}" onclick="adminToggleRole('${esc(u.user_id)}','${u.role==='admin'?'user':'admin'}')">
+      <button class="admin-btn${u.role==='admin'?' primary':''}" onclick="adminToggleRole('${jsAttr(u.user_id)}','${jsAttr(u.role==='admin'?'user':'admin')}')">
         ${u.role==='admin'?'Admin':'Make admin'}</button>
     </div>`).join('')}</div>
   </div>`;

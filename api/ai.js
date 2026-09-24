@@ -1,5 +1,11 @@
 // Chat proxy. Keys live in server env/db and never reach app.js, which anyone can read.
 const { callProvider, PROVIDERS } = require('./_providers.js');
+const { limited } = require('./_limit.js');
+
+// Provider errors sometimes echo part of the key; never let that reach the logs.
+function redact(msg) {
+  return String(msg || '').replace(/\b(sk|gsk|csk|pk|rk)[-_][A-Za-z0-9_-]{6,}|\bAIza[0-9A-Za-z_-]{10,}|\bBearer\s+\S+/g, '[redacted]').slice(0, 200);
+}
 const { loadConfig, planFor, markFailed, markOk } = require('./_aiconfig.js');
 
 // First real answer across the job's providers and models; `via` says which key served it.
@@ -21,7 +27,7 @@ async function runAI(job, request, timeoutMs) {
       } catch (err) {
         lastStatus = err.status || 502;
         lastMsg = err.message || '';
-        console.error('[ai]', job, row.id, model, lastStatus, String(lastMsg).slice(0, 200));
+        console.error('[ai]', job, row.id, model, lastStatus, redact(lastMsg));
         markFailed(row.id, lastStatus);
         // A malformed request fails the same on every model; move to the next provider.
         if (!err.retriable) break;
@@ -59,19 +65,6 @@ function allowedOrigin(origin) {
   const extra = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (extra.some((o) => { try { return new URL(o).hostname.toLowerCase() === host; } catch { return false; } })) return origin;
   return null;
-}
-
-// Per-instance limiter; blunts a runaway client loop.
-const HITS = new Map();
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 20;
-function overLimit(key) {
-  const now = Date.now();
-  const hits = (HITS.get(key) || []).filter((t) => now - t < WINDOW_MS);
-  hits.push(now);
-  HITS.set(key, hits);
-  if (HITS.size > 500) { for (const k of HITS.keys()) { if (k !== key) HITS.delete(k); if (HITS.size <= 250) break; } }
-  return hits.length > MAX_PER_WINDOW;
 }
 
 // Classify one line of free text (incl. romanised Nepali) into an app category id.
@@ -246,8 +239,7 @@ module.exports = async function handler(req, res) {
   if (req.headers.origin && !origin) return res.status(403).json({ error: 'Origin not allowed.' });
 
 
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'anon';
-  if (overLimit(ip)) return res.status(429).json({ error: 'Too many questions at once. Give it a minute.' });
+  if (limited(req, res, 'ai-min', 20) || limited(req, res, 'ai-hour', 200, 3_600_000)) return;
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
@@ -289,7 +281,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ category: null, via: out.via });
     } catch (err) {
       if (err && err.noProviders) return res.status(503).json({ error: 'No AI provider is configured.' });
-      console.error('[ai:cat]', err && err.message);
+      console.error('[ai:cat]', redact(err && err.message));
       return res.status(502).json({ error: 'Could not categorise that.' });
     }
   }
@@ -343,7 +335,7 @@ module.exports = async function handler(req, res) {
       : (status === 401 || status === 403) ? 'The AI keys were refused. Check them in the admin page.'
       : status === 404 ? 'No usable AI model is available on these keys.'
       : 'The AI service is busy right now. Try again in a moment.';
-    console.error('[ai]', status, err && err.message);
+    console.error('[ai]', status, redact(err && err.message));
     return res.status(status === 429 ? 429 : 502).json({ error: reason });
   }
 };

@@ -1,5 +1,7 @@
 // Nepal gold and silver in NPR per tola: scraped from arthakendra, with spot x USD/NPR as the fallback.
 
+import limit from './_limit.js';
+
 const TOLA_IN_GRAMS = 11.6638;
 const OZ_IN_GRAMS = 31.1035;
 
@@ -159,6 +161,7 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (limit.limited(req, res, 'metals', 30)) return;
 
   let result = null;
   const errors = [];
@@ -191,7 +194,7 @@ export default async function handler(req, res) {
   }
 
   if (!result) {
-    return res.status(502).json({ error: 'All sources failed', details: errors });
+    return res.status(502).json({ error: 'All sources failed' });
   }
 
   lastGood = { data: result, ts: Date.now() };

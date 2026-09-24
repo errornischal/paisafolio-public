@@ -101,7 +101,7 @@ set search_path = public
 as $$
 begin
   insert into public.profiles (user_id, email, full_name)
-  values (new.id, new.email, new.raw_user_meta_data->>'full_name')
+  values (new.id, new.email, left(new.raw_user_meta_data->>'full_name', 80))
   on conflict (user_id) do nothing;
 
   insert into public.settings (user_id)
@@ -788,15 +788,37 @@ drop policy if exists "networth_select_shared" on public.networth_history;
 create policy "networth_select_shared" on public.networth_history
   for select using (public.shared_with_me(user_id, 'networth'));
 
--- Handle and display name only (never email): how users find each other.
+-- Handle and display name only (never email), for yourself and anyone you are
+-- connected with in either direction. Strangers are found by exact handle only.
 create or replace view public.public_profiles
 with (security_invoker = off) as
-  select user_id, username, full_name, avatar_url
-  from public.profiles
-  where username is not null;
+  select p.user_id, p.username, p.full_name, p.avatar_url
+  from public.profiles p
+  where p.username is not null
+    and (p.user_id = auth.uid()
+      or exists (select 1 from public.friendships f
+                  where (f.user_id = auth.uid() and f.friend_id = p.user_id)
+                     or (f.friend_id = auth.uid() and f.user_id = p.user_id)));
 
 revoke all on public.public_profiles from public, anon;
 grant select on public.public_profiles to authenticated;
+
+-- Exact-handle lookup, so nobody can list the whole user base.
+create or replace function public.find_profile(handle text)
+returns table (user_id uuid, username text, full_name text, avatar_url text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.user_id, p.username, p.full_name, p.avatar_url
+  from public.profiles p
+  where auth.uid() is not null
+    and p.username = lower(trim(handle))
+  limit 1;
+$$;
+revoke all on function public.find_profile(text) from public, anon;
+grant execute on function public.find_profile(text) to authenticated;
 
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -893,8 +915,44 @@ do $$ begin
     add constraint profiles_role_check check (role in ('user','admin'));
 exception when duplicate_object then null; end $$;
 
--- Make yourself the administrator. Run this once, with your own address:
---   update public.profiles set role = 'admin' where email = 'you@example.com';
+-- profiles_update_own lets a user write any column of their own row, so the role is
+-- guarded here: requests made with a user's token cannot set or change it. The
+-- admin API (service role) and the SQL editor (postgres) still can.
+create or replace function public.guard_profile_role()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if current_user in ('anon', 'authenticated') then
+    if tg_op = 'INSERT' then
+      new.role := 'user';
+    elsif new.role is distinct from old.role then
+      new.role := old.role;
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_guard_profile_role on public.profiles;
+create trigger trg_guard_profile_role before insert or update on public.profiles
+  for each row execute function public.guard_profile_role();
+
+-- Other users see these fields, so keep them to sane sizes and shapes. NOT VALID:
+-- enforced on every new write without failing on rows that already exist.
+do $$ begin
+  alter table public.profiles add constraint profiles_full_name_len
+    check (full_name is null or char_length(full_name) <= 80) not valid;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter table public.profiles add constraint profiles_avatar_url_shape
+    check (avatar_url is null or (char_length(avatar_url) <= 2048 and avatar_url ~ '^https://')) not valid;
+exception when duplicate_object then null; end $$;
+
+-- Make yourself the administrator. Run this once, with your own sign-in address
+-- (matched against auth.users, which a user cannot edit, not profiles.email):
+--   update public.profiles set role = 'admin'
+--    where user_id = (select id from auth.users where email = 'you@example.com');
 -- Check it took:
 --   select user_id, email, role from public.profiles where role = 'admin';
 

@@ -156,7 +156,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="lock-logo"><img src="icon.svg" width="58" height="58" style="border-radius:16px;display:block" alt="Paisafolio"/></div>
       <div class="lock-title">Confirm your password</div>
       <div class="lock-sub">Re-enter your account password to remove the PIN on this device.</div>
-      <input class="form-input" id="lockRecoveryPass" type="password" placeholder="Account password" autocomplete="current-password" style="max-width:280px;margin:14px 0 8px;text-align:center"/>
+      <input class="form-input" id="lockRecoveryPass" maxlength="72" type="password" placeholder="Account password" autocomplete="current-password" style="max-width:280px;margin:14px 0 8px;text-align:center"/>
       <div class="lock-error" id="lockRecoveryError">&nbsp;</div>
       <button class="submit-btn" id="lockRecoveryBtn" onclick="confirmLockRecovery()" style="max-width:280px">Remove PIN</button>
       <button class="lock-forgot-btn" onclick="cancelLockRecovery()">Back to PIN</button>
@@ -328,7 +328,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="search-row">
         <div class="search-box">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="assetSearch" type="search" placeholder="Search assets…" oninput="onAssetSearch()" aria-label="Search assets" data-testid="asset-search"/>
+          <input id="assetSearch" maxlength="80" type="search" placeholder="Search assets…" oninput="onAssetSearch()" aria-label="Search assets" data-testid="asset-search"/>
         </div>
         <button class="sort-btn" id="assetSortBtn" onclick="cycleAssetSort()" data-testid="asset-sort" aria-label="Change sort order">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
@@ -445,7 +445,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="search-row">
         <div class="search-box">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="debtSearch" type="search" placeholder="Search people / notes…" oninput="onDebtSearch()" aria-label="Search debts" data-testid="debt-search"/>
+          <input id="debtSearch" maxlength="80" type="search" placeholder="Search people / notes…" oninput="onDebtSearch()" aria-label="Search debts" data-testid="debt-search"/>
         </div>
       </div>
       <div class="debt-tabs">
@@ -478,7 +478,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="search-row">
         <div class="search-box">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="goalSearch" type="search" placeholder="Search goals…" oninput="onGoalSearch()" aria-label="Search goals"/>
+          <input id="goalSearch" maxlength="80" type="search" placeholder="Search goals…" oninput="onGoalSearch()" aria-label="Search goals"/>
         </div>
         <button class="sort-btn" id="goalSortBtn" onclick="cycleGoalSort()" aria-label="Change sort order">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
@@ -844,7 +844,7 @@ if (typeof window.isPendingSync !== 'function') {
         <button class="seg-2-btn" id="spendKindIncome" onclick="setSpendKind('income')">Income</button>
       </div>
       <div class="form-row"><label class="form-lbl" for="spendAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input spend-amt-input" id="spendAmount" type="number" step="any" inputmode="decimal" placeholder="0.00"/><div class="ccy-sel-wrap" id="spendAmountCcyWrap"></div></div></div>
-      <div class="form-row"><label class="form-lbl" id="spendNoteLbl" for="spendNote">WHAT FOR </label><input class="form-input" id="spendNote" placeholder="Khaja at Bhatbhateni, Pathao ride…" oninput="onSpendNoteInput()" autocomplete="off"/></div>
+      <div class="form-row"><label class="form-lbl" id="spendNoteLbl" for="spendNote">WHAT FOR </label><input class="form-input" id="spendNote" maxlength="200" placeholder="Khaja at Bhatbhateni, Pathao ride…" oninput="onSpendNoteInput()" autocomplete="off"/></div>
       <div class="form-row"><label class="form-lbl">CATEGORY <span class="cat-ai-tag" id="spendCatAi" hidden>reading…</span></label><div class="custom-select-wrap" id="spendCatWrap"></div></div>
       <div class="form-row"><label class="form-lbl" id="spendAccountLbl">PAID FROM</label><div class="custom-select-wrap" id="spendAccountWrap"></div></div>
       <div class="form-row"><label class="form-lbl" for="spendDate">DATE</label><input class="form-input" id="spendDate" type="date"/></div>
@@ -947,7 +947,7 @@ if (typeof window.isPendingSync !== 'function') {
     </div>
     <div class="ai-thread" id="aiThread" aria-live="polite" onclick="finishAiReveal()"></div>
     <div class="ai-composer">
-      <textarea id="aiInput" rows="1" placeholder="Ask about your money…" oninput="autoGrowAI()" onkeydown="onAIKey(event)" aria-label="Your question"></textarea>
+      <textarea id="aiInput" maxlength="2000" rows="1" placeholder="Ask about your money…" oninput="autoGrowAI()" onkeydown="onAIKey(event)" aria-label="Your question"></textarea>
       <button class="ai-send" id="aiSendBtn" onclick="sendAI()" aria-label="Send"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
     </div>
   </div>
@@ -963,7 +963,7 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="curr-mode-hint" id="currModeHint">What every figure in the app is shown in. Your saved amounts do not change.</div>
     <div class="curr-search-row">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="currSearch" type="text" placeholder="Search currency" oninput="renderCurrList()" autocomplete="off" aria-label="Search currency"/>
+      <input id="currSearch" maxlength="40" type="text" placeholder="Search currency" oninput="renderCurrList()" autocomplete="off" aria-label="Search currency"/>
     </div>
     <div class="curr-list" id="currList" role="listbox"></div>
   </div>
@@ -1009,9 +1009,9 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="modal-hdr"><div class="modal-title" id="credTitle">Change Email</div><button class="modal-close" onclick="closeModal('credModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-body">
       <div class="cred-note" id="credNote"></div>
-      <div class="form-row"><label class="form-lbl" id="credNewLbl">NEW EMAIL</label><input class="form-input" id="credNew" type="email" autocomplete="off" placeholder="you@example.com"/></div>
-      <div class="form-row" id="credConfirmRow" style="display:none"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="credConfirm" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
-      <div class="form-row" id="credPassRow"><label class="form-lbl">CURRENT PASSWORD</label><input class="form-input" id="credPass" type="password" autocomplete="current-password" placeholder="To prove it is you"/></div>
+      <div class="form-row"><label class="form-lbl" id="credNewLbl">NEW EMAIL</label><input class="form-input" id="credNew" maxlength="254" type="email" autocomplete="off" placeholder="you@example.com"/></div>
+      <div class="form-row" id="credConfirmRow" style="display:none"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="credConfirm" maxlength="72" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
+      <div class="form-row" id="credPassRow"><label class="form-lbl">CURRENT PASSWORD</label><input class="form-input" id="credPass" maxlength="72" type="password" autocomplete="current-password" placeholder="To prove it is you"/></div>
       <div class="form-hint" id="credError" style="color:var(--red);display:none"></div>
       <button class="submit-btn" id="credSubmit" onclick="submitCredChange()">Save</button>
     </div>
@@ -1044,8 +1044,8 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="modal-hdr"><div class="modal-title">Set a New Password</div></div>
     <div class="modal-body">
       <div class="cred-note" id="recoveryNote">You opened a password reset link, so you are signed in for the moment. Choose the password you will use from now on.</div>
-      <div class="form-row"><label class="form-lbl">NEW PASSWORD</label><input class="form-input" id="recoveryNew" type="password" autocomplete="new-password" placeholder="At least 8 characters"/></div>
-      <div class="form-row"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="recoveryConfirm" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
+      <div class="form-row"><label class="form-lbl">NEW PASSWORD</label><input class="form-input" id="recoveryNew" maxlength="72" type="password" autocomplete="new-password" placeholder="At least 8 characters"/></div>
+      <div class="form-row"><label class="form-lbl">CONFIRM NEW PASSWORD</label><input class="form-input" id="recoveryConfirm" maxlength="72" type="password" autocomplete="new-password" placeholder="Repeat it"/></div>
       <div class="form-hint" id="recoveryError" style="color:var(--red);display:none"></div>
       <button class="submit-btn" id="recoverySubmit" onclick="submitRecovery()">Set password</button>
       <button class="link-btn" style="width:100%;margin-top:10px" onclick="skipRecovery()">Skip, keep the old one</button>
@@ -1061,7 +1061,7 @@ if (typeof window.isPendingSync !== 'function') {
   <div class="cmdk-box">
     <div class="cmdk-input-row">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="cmdkInput" type="text" placeholder="Search assets, debts, goals, actions…" oninput="renderPalette()" autocomplete="off"/>
+      <input id="cmdkInput" maxlength="80" type="text" placeholder="Search assets, debts, goals, actions…" oninput="renderPalette()" autocomplete="off"/>
     </div>
     <div class="cmdk-results" id="cmdkResults"></div>
     <div class="cmdk-hint"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
@@ -1111,7 +1111,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="form-row"><label class="form-lbl">ASSET TYPE</label><div class="asset-type-row" id="assetTypeRow"></div></div>
       <div id="cryptoSearchRow" class="form-row" style="display:none">
         <label class="form-lbl" for="cryptoSearch">SEARCH COIN</label>
-        <div class="coin-search-wrap"><input class="form-input" id="cryptoSearch" placeholder="Bitcoin, ETH, Solana…" oninput="onCryptoSearch()" autocomplete="off"/><div class="search-spinner" id="cryptoSpinner"></div><div id="cryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="coin-search-wrap"><input class="form-input" id="cryptoSearch" maxlength="60" placeholder="Bitcoin, ETH, Solana…" oninput="onCryptoSearch()" autocomplete="off"/><div class="search-spinner" id="cryptoSpinner"></div><div id="cryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
         <div class="form-hint green" id="cryptoPriceHint" style="display:none"></div>
       </div>
 
@@ -1122,18 +1122,18 @@ if (typeof window.isPendingSync !== 'function') {
       </div>
       <div id="stockRow" class="form-row" style="display:none">
         <label class="form-lbl" for="stockSearch">SEARCH STOCK</label>
-        <div class="coin-search-wrap"><input class="form-input" id="stockSearch" autocomplete="off" placeholder="NABIL, NTC, AAPL…" oninput="onStockSearch()" autocomplete="off"/><div id="stockSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="coin-search-wrap"><input class="form-input" id="stockSearch" maxlength="60" autocomplete="off" placeholder="NABIL, NTC, AAPL…" oninput="onStockSearch()" autocomplete="off"/><div id="stockSuggestions" class="coin-suggestions" style="display:none"></div></div>
         <div class="form-hint green" id="stockHint" style="display:none"></div>
       </div>
       <div id="propertyIconRow" class="form-row" style="display:none"><label class="form-lbl">PROPERTY TYPE</label><div class="asset-type-row" id="propertyTypeRow"></div></div>
-      <div class="form-row" id="assetNameRow" style="display:none"><label class="form-lbl" for="assetName">NAME</label><div class="coin-search-wrap"><input class="form-input" id="assetName" autocomplete="off" placeholder="Asset name…" oninput="onAssetNameInput()"/><div id="assetNameSuggest" class="coin-suggestions" style="display:none"></div></div></div>
+      <div class="form-row" id="assetNameRow" style="display:none"><label class="form-lbl" for="assetName">NAME</label><div class="coin-search-wrap"><input class="form-input" id="assetName" maxlength="80" autocomplete="off" placeholder="Asset name…" oninput="onAssetNameInput()"/><div id="assetNameSuggest" class="coin-suggestions" style="display:none"></div></div></div>
       <div id="liquidityFields" style="display:none">
-        <div class="form-row"><label class="form-lbl" for="liquidityName">ACCOUNT / LABEL</label><div class="coin-search-wrap"><input class="form-input" id="liquidityName" autocomplete="off" placeholder="e.g. NMB Bank Savings, Cash in Hand…" oninput="onLiquidityNameInput()"/><div id="liquidityNameSuggest" class="coin-suggestions" style="display:none"></div></div><div class="form-hint" id="liquidityNameHint" style="display:none"></div></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityName">ACCOUNT / LABEL</label><div class="coin-search-wrap"><input class="form-input" id="liquidityName" maxlength="80" autocomplete="off" placeholder="e.g. NMB Bank Savings, Cash in Hand…" oninput="onLiquidityNameInput()"/><div id="liquidityNameSuggest" class="coin-suggestions" style="display:none"></div></div><div class="form-hint" id="liquidityNameHint" style="display:none"></div></div>
         <div class="form-row"><label class="form-lbl" for="liquidityValue">VALUE</label><div class="input-ccy-group"><input class="form-input" id="liquidityValue" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="liqValueCcyWrap"></div></div></div>
         <div class="form-row"><label class="form-lbl">TYPE</label><div id="liquidityTypeWrap" class="custom-select-wrap"></div></div>
         <div class="form-row"><label class="form-lbl" for="liquidityInterest">INTEREST RATE % (optional)</label><input class="form-input" id="liquidityInterest" type="number" placeholder="e.g. 7.5 for FD" step="0.1" inputmode="decimal"/></div>
         <div class="form-row"><label class="form-lbl" for="liquidityMaturity">MATURITY DATE <span style="font-size:9px;color:var(--text3);font-weight:500">(optional, when FD/bond matures)</span></label><input class="form-input" id="liquidityMaturity" type="date"/></div>
-        <div class="form-row"><label class="form-lbl" for="liquidityNotes">NOTES (optional)</label><input class="form-input" id="liquidityNotes" placeholder="Bank, account number, etc."/></div>
+        <div class="form-row"><label class="form-lbl" for="liquidityNotes">NOTES (optional)</label><input class="form-input" id="liquidityNotes" maxlength="500" placeholder="Bank, account number, etc."/></div>
       </div>
       <div id="qtyPriceFields">
         <div class="ledger-locked" id="assetLedgerLock" hidden>
@@ -1146,7 +1146,7 @@ if (typeof window.isPendingSync !== 'function') {
         </div>
         <div class="form-row" id="currentPriceRow" style="display:none"><label class="form-lbl" for="assetCurrentPrice">CURRENT PRICE / UNIT <span style="font-size:9px;color:var(--text3);font-weight:500">update anytime to track value</span></label><div class="input-ccy-group"><input class="form-input" id="assetCurrentPrice" type="number" placeholder="Today's price per unit" step="any" inputmode="decimal" oninput="autoFillBuyPriceFromCurrent()"/><div class="ccy-sel-wrap" id="currentPriceCcyWrap"></div></div></div>
         <div class="form-row" id="assetDateRow"><label class="form-lbl" for="assetDate">DATE PURCHASED</label><input class="form-input" id="assetDate" type="date"/></div>
-        <div class="form-row"><label class="form-lbl" for="assetNotes">NOTES (optional)</label><input class="form-input" id="assetNotes" placeholder="Broker, exchange, remarks…"/></div>
+        <div class="form-row"><label class="form-lbl" for="assetNotes">NOTES (optional)</label><input class="form-input" id="assetNotes" maxlength="500" placeholder="Broker, exchange, remarks…"/></div>
       </div>
       <button class="submit-btn" id="saveAssetBtn" onclick="saveAsset()" data-testid="save-asset">Add Asset</button>
       <button class="delete-btn" id="deleteAssetBtn" style="display:none" onclick="deleteAsset()">Delete Asset</button>
@@ -1189,7 +1189,7 @@ if (typeof window.isPendingSync !== 'function') {
           <button class="dtype-btn" id="dtypeIOwe" onclick="setDebtType('iowe')"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 7 7 17"/><polyline points="17 17 7 17 7 7"/></svg><span>I Owe</span></button>
         </div>
       </div>
-      <div class="form-row"><label class="form-lbl" for="debtName">PERSON / ENTITY</label><div class="coin-search-wrap"><input class="form-input" id="debtName" placeholder="Name…" autocomplete="off" oninput="onDebtNameInput()"/><div class="coin-suggestions" id="debtNameSuggest" style="display:none"></div></div></div>
+      <div class="form-row"><label class="form-lbl" for="debtName">PERSON / ENTITY</label><div class="coin-search-wrap"><input class="form-input" id="debtName" maxlength="80" placeholder="Name…" autocomplete="off" oninput="onDebtNameInput()"/><div class="coin-suggestions" id="debtNameSuggest" style="display:none"></div></div></div>
       <div class="ledger-locked" id="debtLedgerLock" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <span id="debtLedgerLockTxt">The amount is the total of the entries in this debt’s history.</span>
@@ -1199,7 +1199,7 @@ if (typeof window.isPendingSync !== 'function') {
         <div id="debtNewAcctWrap" class="custom-select-wrap"></div>
         <div class="form-hint" id="debtNewAcctHint">Which account the money left. Its balance follows.</div>
       </div>
-      <div class="form-row"><label class="form-lbl" for="debtNote">REASON / NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtNote" placeholder="Loan, product, service…"/></div>
+      <div class="form-row"><label class="form-lbl" for="debtNote">REASON / NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtNote" maxlength="500" placeholder="Loan, product, service…"/></div>
       <div class="form-row"><label class="form-lbl" for="debtLentDate">LENT / BORROWED ON</label>
         <div class="freq-row" style="margin-bottom:6px">
           <button class="freq-btn active" id="lentQkToday" onclick="setLentDate(0)">Today</button>
@@ -1271,7 +1271,7 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="modal-body">
       <div class="form-row"><label class="form-lbl" for="debtEntryAmt">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="debtEntryAmt" type="number" placeholder="0.00" step="any" inputmode="decimal"/><div class="ccy-sel-wrap" id="debtEntryAmtCcyWrap"></div></div></div>
       <div class="form-row"><label class="form-lbl" for="debtEntryDate">DATE</label><input class="form-input" id="debtEntryDate" type="date"/></div>
-      <div class="form-row"><label class="form-lbl" for="debtEntryNote">NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtEntryNote" placeholder="Reason, reference…"/></div>
+      <div class="form-row"><label class="form-lbl" for="debtEntryNote">NOTE <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="form-input" id="debtEntryNote" maxlength="500" placeholder="Reason, reference…"/></div>
       <div class="form-row"><label class="form-lbl" id="debtEntryAcctLbl">PAID FROM</label><div id="debtEntryAcctWrap" class="custom-select-wrap"></div><div class="form-hint" id="debtEntryAcctHint"></div></div>
       <div class="form-hint" id="debtEntryHint" style="margin-bottom:12px"></div>
       <button class="submit-btn" id="debtEntrySaveBtn" onclick="saveDebtEntry()">Save Changes</button>
@@ -1293,7 +1293,7 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="modal-handle" data-drag></div>
     <div class="modal-hdr"><div class="modal-title" id="iconPickerTitle">Choose an icon</div><button class="modal-close" onclick="closeModal('iconPickerModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-body">
-      <input class="form-input" id="iconPickerSearch" type="text" placeholder="Search icons…" autocomplete="off" oninput="renderIconPicker()" style="margin-bottom:11px"/>
+      <input class="form-input" id="iconPickerSearch" maxlength="40" type="text" placeholder="Search icons…" autocomplete="off" oninput="renderIconPicker()" style="margin-bottom:11px"/>
       <div class="icon-grid" id="iconPickerGrid"></div>
       <div class="ip-empty" id="iconPickerEmpty" hidden>Nothing matches that.</div>
     </div>
@@ -1304,7 +1304,7 @@ if (typeof window.isPendingSync !== 'function') {
     <div class="modal-handle" data-drag></div>
     <div class="modal-hdr"><div class="modal-title" id="addGoalTitle">Add Goal</div><button class="modal-close" onclick="closeModal('addGoalModal')" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-body">
-      <div class="form-row"><label class="form-lbl" for="goalName">GOAL NAME</label><input class="form-input" id="goalName" placeholder="Emergency Fund, New Car…"/></div>
+      <div class="form-row"><label class="form-lbl" for="goalName">GOAL NAME</label><input class="form-input" id="goalName" maxlength="80" placeholder="Emergency Fund, New Car…"/></div>
       <div class="form-row-2"><div><label class="form-lbl" for="goalTarget">TARGET</label><div class="input-ccy-group"><input class="form-input" id="goalTarget" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalTargetCcyWrap"></div></div></div><div><label class="form-lbl" for="goalSaved">SAVED</label><div class="input-ccy-group"><input class="form-input" id="goalSaved" type="number" placeholder="0" step="any" inputmode="decimal" oninput="renderGoalProjection()"/><div class="ccy-sel-wrap" id="goalSavedCcyWrap"></div></div></div></div>
       <div class="form-row" style="margin-top:-4px" id="goalPresetsRow"><div class="contribute-presets"><span style="font-size:10px;color:var(--text3);align-self:center;margin-right:2px">Quick add:</span><button type="button" class="preset-btn" onclick="presetContribute(1000)">+1K</button><button type="button" class="preset-btn" onclick="presetContribute(5000)">+5K</button><button type="button" class="preset-btn" onclick="presetContribute(10000)">+10K</button><button type="button" class="preset-btn" onclick="presetContribute(50000)">+50K</button></div></div>
       <div class="interest-section" style="margin-bottom:14px">
@@ -1352,14 +1352,14 @@ if (typeof window.isPendingSync !== 'function') {
           <button class="seg-2-btn" id="recurKindBill" role="tab" aria-selected="false" onclick="setRecurKind('bill')">Bill</button>
         </div>
       </div>
-      <div class="form-row"><label class="form-lbl" for="recurName">NAME</label><input class="form-input" id="recurName" placeholder="Monthly SIP, Weekly BTC DCA…"/></div>
+      <div class="form-row"><label class="form-lbl" for="recurName">NAME</label><input class="form-input" id="recurName" maxlength="80" placeholder="Monthly SIP, Weekly BTC DCA…"/></div>
       <div class="form-row-2"><div><label class="form-lbl" for="recurAmount">AMOUNT</label><div class="input-ccy-group"><input class="form-input" id="recurAmount" type="number" placeholder="0" inputmode="decimal"/><div class="ccy-sel-wrap" id="recurAmountCcyWrap"></div></div></div><div><label class="form-lbl">FREQUENCY</label><div class="custom-select-wrap" id="recurFreqWrap"></div></div></div>
       <div class="form-row" id="recurCatRow"><label class="form-lbl">ASSET TYPE</label><div class="custom-select-wrap" id="recurCatWrap"></div></div>
       <div class="form-row" id="recurSpendCatRow" style="display:none"><label class="form-lbl">SPENDING CATEGORY</label><div class="custom-select-wrap" id="recurSpendCatWrap"></div></div>
       <div class="form-row" id="recurAccountRow" style="display:none"><label class="form-lbl">PAY FROM</label><div class="custom-select-wrap" id="recurAccountWrap"></div></div>
       <div class="form-row" id="recurCryptoRow" style="display:none">
         <label class="form-lbl">COIN TO BUY (optional)</label>
-        <div class="coin-search-wrap"><input class="form-input" id="recurCryptoSearch" placeholder="Leave blank to just log a cash contribution" oninput="onRecurCryptoSearch()" autocomplete="off"/><div id="recurCryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
+        <div class="coin-search-wrap"><input class="form-input" id="recurCryptoSearch" maxlength="60" placeholder="Leave blank to just log a cash contribution" oninput="onRecurCryptoSearch()" autocomplete="off"/><div id="recurCryptoSuggestions" class="coin-suggestions" style="display:none"></div></div>
         <div class="form-hint" id="recurCryptoHint" style="display:none;margin-top:4px"></div>
       </div>
       <div class="form-row"><label class="form-lbl" for="recurStart">START DATE</label><input class="form-input" id="recurStart" type="date"/></div>
@@ -1402,7 +1402,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="search-row" style="margin:0 0 10px">
         <div class="search-box">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="globalSearchInput" type="search" placeholder="Search assets, debts, goals, transactions, notes…" oninput="onGlobalSearch()" aria-label="Search everything"/>
+          <input id="globalSearchInput" maxlength="80" type="search" placeholder="Search assets, debts, goals, transactions, notes…" oninput="onGlobalSearch()" aria-label="Search everything"/>
         </div>
       </div>
       <div id="globalSearchResults"></div>
@@ -1418,7 +1418,7 @@ if (typeof window.isPendingSync !== 'function') {
       <div class="search-row" style="margin:0 0 8px">
         <div class="search-box">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="ledgerSearch" type="search" placeholder="Search transactions…" oninput="renderLedger()" aria-label="Search transactions"/>
+          <input id="ledgerSearch" maxlength="80" type="search" placeholder="Search transactions…" oninput="renderLedger()" aria-label="Search transactions"/>
         </div>
       </div>
       <div class="ledger-filter-row" id="ledgerFilterRow">
@@ -1449,7 +1449,7 @@ if (typeof window.isPendingSync !== 'function') {
       </div>
       <div class="form-row" id="editTxUnitRow" style="display:none"><label class="form-lbl">UNIT</label><div id="editTxUnitWrap" class="custom-select-wrap"></div></div>
       <div class="form-row"><label class="form-lbl" for="editTxDate">DATE</label><input class="form-input" id="editTxDate" type="date"/></div>
-      <div class="form-row" id="editTxNotesRow"><label class="form-lbl" for="editTxNotes">NOTES</label><input class="form-input" id="editTxNotes" placeholder="Optional note"/></div>
+      <div class="form-row" id="editTxNotesRow"><label class="form-lbl" for="editTxNotes">NOTES</label><input class="form-input" id="editTxNotes" maxlength="500" placeholder="Optional note"/></div>
       <div class="form-hint" id="editTxHint" style="margin-bottom:10px"></div>
       <button class="submit-btn" onclick="saveEditTx()">Save Changes</button>
       <button class="ctx-cancel" style="margin-top:8px;color:var(--red)" onclick="deleteEditTx()">Delete This Transaction</button>
@@ -1491,12 +1491,12 @@ if (typeof window.isPendingSync !== 'function') {
     <!-- Login form -->
     <div id="authLoginForm" class="auth-form">
       <div>
-        <input class="auth-input" id="authLoginEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authLoginEmailErr',this)"/>
+        <input class="auth-input" id="authLoginEmail" maxlength="254" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authLoginEmailErr',this)"/>
         <div class="auth-field-err" id="authLoginEmailErr"></div>
       </div>
       <div>
         <div class="auth-pw-wrap">
-          <input class="auth-input" id="authLoginPassword" type="password" placeholder="Password" autocomplete="current-password" oninput="clearFieldErr('authLoginPassErr',this)"/>
+          <input class="auth-input" id="authLoginPassword" maxlength="72" type="password" placeholder="Password" autocomplete="current-password" oninput="clearFieldErr('authLoginPassErr',this)"/>
           <button type="button" class="pw-eye" onclick="togglePw('authLoginPassword',this)" aria-label="Toggle password visibility" tabindex="-1">
             <svg id="authLoginPwIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
@@ -1514,12 +1514,12 @@ if (typeof window.isPendingSync !== 'function') {
         <div class="auth-field-err" id="authRegNameErr"></div>
       </div>
       <div>
-        <input class="auth-input" id="authRegEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authRegEmailErr',this)"/>
+        <input class="auth-input" id="authRegEmail" maxlength="254" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authRegEmailErr',this)"/>
         <div class="auth-field-err" id="authRegEmailErr"></div>
       </div>
       <div>
         <div class="auth-pw-wrap">
-          <input class="auth-input" id="authRegPassword" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password" oninput="onRegPasswordInput(this)"/>
+          <input class="auth-input" id="authRegPassword" maxlength="72" type="password" placeholder="Password (min 8 chars)" autocomplete="new-password" oninput="onRegPasswordInput(this)"/>
           <button type="button" class="pw-eye" onclick="togglePw('authRegPassword',this)" aria-label="Toggle password visibility" tabindex="-1">
             <svg id="authRegPwIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
@@ -1530,7 +1530,7 @@ if (typeof window.isPendingSync !== 'function') {
       </div>
       <div>
         <div class="auth-pw-wrap">
-          <input class="auth-input" id="authRegPassword2" type="password" placeholder="Confirm password" autocomplete="new-password" oninput="onConfirmPasswordInput(this)"/>
+          <input class="auth-input" id="authRegPassword2" maxlength="72" type="password" placeholder="Confirm password" autocomplete="new-password" oninput="onConfirmPasswordInput(this)"/>
           <button type="button" class="pw-eye" onclick="togglePw('authRegPassword2',this)" aria-label="Toggle confirm password visibility" tabindex="-1">
             <svg id="authRegPw2Icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
@@ -1544,7 +1544,7 @@ if (typeof window.isPendingSync !== 'function') {
     <div id="authForgotForm" class="auth-form" style="display:none">
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;line-height:1.5">Enter your email and we'll send a password reset link if an account exists.</div>
       <div>
-        <input class="auth-input" id="authForgotEmail" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authForgotEmailErr',this)"/>
+        <input class="auth-input" id="authForgotEmail" maxlength="254" type="email" placeholder="Email address" autocomplete="email" inputmode="email" oninput="clearFieldErr('authForgotEmailErr',this)"/>
         <div class="auth-field-err" id="authForgotEmailErr"></div>
       </div>
       <div class="auth-err" id="authForgotErr"></div>
