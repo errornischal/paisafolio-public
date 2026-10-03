@@ -6472,7 +6472,20 @@ function setAssetType(t){if(t===selectedAssetType)return;selectedAssetType=t;sta
   buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);
   const hint=el('buyPriceHint');if(hint)hint.style.display='none';
   updateAssetFormFields();}
-function updateAssetFormFields(){const isC=selectedAssetType==='crypto',isS=selectedAssetType==='stock',isCo=selectedAssetType==='commodity',isL=selectedAssetType==='liquidity',isP=selectedAssetType==='property';
+// Adding a holding can be paid from a cash account or a held stablecoin, like Record Buy.
+let assetPayChoice=null;
+function syncAssetPay(){
+  const row=el('assetPayRow');if(!row)return;
+  const show=!editingAssetId&&selectedAssetType!=='liquidity';
+  row.style.display=show?'':'none';
+  if(!show){assetPayChoice=CASH_NONE;return;}
+  const forAsset={id:null,category:selectedAssetType};
+  const opts=cashOptions('buy',forAsset).filter(o=>o.value!==CASH_NEW);
+  if(!opts.some(o=>o.value===assetPayChoice))assetPayChoice=defaultCashChoice('buy',forAsset);
+  if(!opts.some(o=>o.value===assetPayChoice))assetPayChoice=CASH_NONE;
+  buildCustomSelect('assetPayWrap',opts,assetPayChoice,v=>{assetPayChoice=v;state.settings.lastBuySrc=v;saveState();});
+}
+function updateAssetFormFields(){syncAssetPay();const isC=selectedAssetType==='crypto',isS=selectedAssetType==='stock',isCo=selectedAssetType==='commodity',isL=selectedAssetType==='liquidity',isP=selectedAssetType==='property';
   el('cryptoSearchRow').style.display=isC?'block':'none';el('stockRow').style.display=isS?'block':'none';el('commodityRow').style.display=isCo?'block':'none';el('liquidityFields').style.display=isL?'block':'none';el('qtyPriceFields').style.display=isL?'none':'block';el('propertyIconRow').style.display=isP?'block':'none';el('assetNameRow').style.display=(isC||isCo||isS||isL)?'none':'block';el('assetDateRow').style.display=isL?'none':'block';el('qtyLabel').textContent=isCo?unitQtyLabel(selectedCommodityUnit||(COMMODITIES.find(c=>c.id===selectedCommodityId)||COMMODITIES[0]).defaultUnit):'QUANTITY';const qtyWrap=el('qtyWrapper');if(qtyWrap)qtyWrap.style.display=isP?'none':'';const qRow=el('qtyPriceRow');if(qRow)qRow.style.gridTemplateColumns=isP?'1fr':'1fr 1fr';
   if(isCo)buildCommoditySelects();if(isL){buildLiquiditySelect();onLiquidityNameInput();}if(isP)renderPropertyTypeRow();if(isS)syncNepseToggle();updateCurrentPriceVisibility();updateBuyPriceLbl();updateBuyPriceHint();}
 function isTotalInvestedMode(){return selectedAssetType!=='liquidity';}
@@ -6937,7 +6950,7 @@ function syncLedgerLock(a){
   // The per-unit/total switch has nothing to edit.
   if(seg&&lock)seg.style.display='none';
 }
-function openAddAsset(){editingAssetId=null;el('addAssetTitle').textContent='Add Asset';el('saveAssetBtn').textContent='Add Asset';el('deleteAssetBtn').style.display='none';selectedAssetType=state.settings.lastAssetType||'crypto';selectedCoinId=null;selectedCoinName=null;selectedCoinImage=null;selectedCommodityId=state.settings.lastCommodityId||'gold';selectedCommodityUnit=state.settings.lastCommodityUnit||'gram';selectedLiquidityType=state.settings.lastLiquidityType||'savings';selectedStockSym=null;selectedStockName=null;selectedStockIsNepse=false;selectedPropertyType='house';
+function openAddAsset(){editingAssetId=null;assetPayChoice=null;el('addAssetTitle').textContent='Add Asset';el('saveAssetBtn').textContent='Add Asset';el('deleteAssetBtn').style.display='none';selectedAssetType=state.settings.lastAssetType||'crypto';selectedCoinId=null;selectedCoinName=null;selectedCoinImage=null;selectedCommodityId=state.settings.lastCommodityId||'gold';selectedCommodityUnit=state.settings.lastCommodityUnit||'gram';selectedLiquidityType=state.settings.lastLiquidityType||'savings';selectedStockSym=null;selectedStockName=null;selectedStockIsNepse=false;selectedPropertyType='house';
   el('cryptoSearch').value='';el('cryptoSuggestions').style.display='none';el('cryptoPriceHint').style.display='none';el('stockSearch').value='';el('stockSuggestions').style.display='none';el('stockHint').style.display='none';el('assetName').value='';el('assetQty').value='';el('assetBuyPrice').value='';el('assetDate').value=todayStr();el('assetNotes').value='';el('liquidityName').value='';el('liquidityValue').value='';el('liquidityInterest').value='';el('liquidityMaturity').value='';el('liquidityNotes').value='';el('assetCurrentPrice').value='';
   syncLedgerLock(null);updateCurrLabels();renderAssetTypeRow();syncNepseToggle();isPricePerUnitMode=true;updateAssetFormFields();buyPriceEntryCcy=null;liqValueEntryCcy=null;currentPriceEntryCcy=null;buildCompactCcySelect('buyPriceCcyWrap',null,onBuyPriceCcyChange);buildCompactCcySelect('liqValueCcyWrap',null,onLiqValueCcyChange);buildCompactCcySelect('currentPriceCcyWrap',null,onCurrentPriceCcyChange);openModal('addAssetModal');}
 function openEditAsset(id){const a=state.assets.find(x=>x.id===id);if(!a)return;editingAssetId=id;el('addAssetTitle').textContent='Edit Asset';el('saveAssetBtn').textContent='Save Changes';el('deleteAssetBtn').style.display='block';selectedAssetType=a.category;selectedCoinId=a.coinId||null;selectedCoinName=a.name;selectedCoinImage=a.coinImage||null;selectedCommodityId=a.commodityId||'gold';selectedCommodityUnit=a.unit||'gram';selectedStockSym=a.ticker||null;selectedStockName=a.name;selectedStockIsNepse=a.isNepse||false;selectedPropertyType=a.propertyType||'house';
@@ -7022,6 +7035,14 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
     }
     trackPnLHistory();saveState();closeModal('addAssetModal');renderAll();haptic('success');toast(note,'success');return;
   }
+  // The account paying for it must cover the cost; checked before anything is written.
+  const payAcct=(selectedAssetType!=='liquidity'&&assetPayChoice&&assetPayChoice!==CASH_NONE)?resolveCashAccount(assetPayChoice):null;
+  const payCost=(buyPriceNPR||0)*(qty||1);
+  if(payAcct){
+    const have=isStablecoin(payAcct)?getAssetCurrentValue(payAcct):(payAcct.value||0);
+    if(have+1e-9<payCost){toast((payAcct.ticker||payAcct.name)+' only has '+fmt(have),'error');return;}
+    const blk=cashLegBlocked(payAcct);if(blk){toast(blk,'error');return;}
+  }
   // Find existing asset of the same identity to merge into, instead of creating a duplicate
   let existing=null;
   if(selectedAssetType==='crypto')existing=state.assets.find(a=>a.category==='crypto'&&a.coinId===coinId);
@@ -7064,6 +7085,12 @@ function saveAsset(){let name='',ticker=null,coinId=null,coinImage=null,commodit
     const amt=selectedAssetType==='liquidity'?value:(buyPriceNPR||0)*(qty||1);
     state.transactions.push({id:uid(),assetId:asset.id,name,category:selectedAssetType,icon,coinImage,amount:amt,qty:assetNoQty(asset)?null:qty,txType:'buy',notes:asset.notes||null,date:asset.date||new Date().toISOString()});
     toast('Asset added!','success');
+  }
+  if(payAcct&&payCost>0){
+    const t=state.transactions[state.transactions.length-1];
+    t.linkId=uid();
+    applyCashLegBalance(payAcct,payCost,'out');
+    pushCashLeg(payAcct,payCost,'out',t.date,t.linkId,'Paid for '+t.name);
   }
   trackPnLHistory();saveState();closeModal('addAssetModal');renderAll();haptic('success');}
 async function deleteAsset(){if(!editingAssetId)return;const linkedGoals=state.goals.filter(g=>g.linkedAssetId===editingAssetId);const warnMsg='Delete this asset? Its transaction history will be removed too.'+(linkedGoals.length?(' This will also unlink '+linkedGoals.length+' goal'+(linkedGoals.length>1?'s':'')+' ('+linkedGoals.map(g=>g.name).join(', ')+').'):'');if(!await askConfirm({title:'Delete asset?',message:warnMsg,confirmText:'Delete asset'}))return;const a=state.assets.find(x=>x.id===editingAssetId);const delId=editingAssetId;
